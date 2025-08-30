@@ -4,7 +4,7 @@ import { useTheme } from './hooks/useTheme';
 import { AuthForm } from './components/Auth/AuthForm';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
-import { Dashboard } from './components/Dashboard/Dashboard';
+import Dashboard from './components/Dashboard/Dashboard';
 import { Coach } from './components/Coach/Coach';
 import { Goals } from './components/Goals/Goals';
 import { DataImport } from './components/Import/DataImport';
