@@ -4,13 +4,19 @@ import SpendingChart from './SpendingChart';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
 import AddExpenseButton from './AddExpenseButton';
+<<<<<<< Updated upstream
 import { useAuth } from '../../hooks/useAuth';
 import { transactions, getSpendingData } from '../../lib/supabase';
 import type { SpendingData, Transaction, CategoryDetails as CategoryDetailsType, SpendingCategory } from '../../types';
+=======
+import ConnectionTest from '../ConnectionTest';
+import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
+>>>>>>> Stashed changes
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [chartType, setChartType] = useState<'doughnut' | 'bar'>('doughnut');
+<<<<<<< Updated upstream
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('month');
   const [spendingData, setSpendingData] = useState<SpendingData>({
     safe: 0,
@@ -178,28 +184,66 @@ const Dashboard: React.FC = () => {
       console.error('Error adding expense:', error);
     }
   };
+=======
+  const [timeRange, setTimeRange] = useState('month');
+  const [spendingData, setSpendingData] = useState<SpendingData>({});
+  // Array format for SpendingChart
+  const spendingChartData = Object.entries(spendingData).map(([categoryId, amount]) => ({
+    label: categoryId,
+    value: amount
+  }));
+  const [categoryDetails, setCategoryDetails] = useState<CategoryDetailsType[]>([]);
+  const [monthlyBudget] = useState(40000);
 
+  useEffect(() => {
+    // For now, use mock data until we connect to the backend
+    const mockSpendingData: SpendingData = {
+      'Food & Dining': 24500,
+      'Transportation': 6800,
+      'Entertainment': 3200
+    };
+    
+    setSpendingData(mockSpendingData);
+    
+    // TODO: Replace with actual API call to get expenses by category
+    // const fetchExpenses = async () => {
+    //   try {
+    //     const response = await expensesAPI.getAll({ 
+    //       startDate: monthStart.toISOString(),
+    //       endDate: now.toISOString()
+    //     });
+    //     // Process expenses by category
+    //   } catch (error) {
+    //     console.error('Failed to fetch expenses:', error);
+    //   }
+    // };
+  }, []);
+>>>>>>> Stashed changes
+
+  const totalSpent = Object.values(spendingData).reduce((sum, amount) => sum + amount, 0);
+  
   const stats = [
     {
       name: 'Total Spent',
-      value: `₹${(spendingData.safe + spendingData.impulsive + spendingData.anxious).toLocaleString()}`,
+      value: `₹${totalSpent.toLocaleString()}`,
       icon: IndianRupee,
       color: 'text-slate-600 dark:text-slate-400'
     },
     {
-      name: 'Safe Spending',
-      value: `₹${spendingData.safe.toLocaleString()}`,
+      name: 'Top Category',
+      value: Object.entries(spendingData).sort(([,a], [,b]) => b - a)[0]?.[0] || 'None',
       icon: TrendingUp,
       color: 'text-green-600 dark:text-green-400'
     },
     {
       name: 'Budget Remaining',
-      value: `₹${Math.max(0, monthlyBudget - (spendingData.safe + spendingData.impulsive + spendingData.anxious)).toLocaleString()}`,
+      value: `₹${Math.max(0, monthlyBudget - totalSpent).toLocaleString()}`,
       icon: Activity,
       color: 'text-cyan-600 dark:text-cyan-400'
     }
   ];
 
+<<<<<<< Updated upstream
   if (loading) {
     return (
       <div className="space-y-6">
@@ -214,6 +258,40 @@ const Dashboard: React.FC = () => {
       </div>
     );
   }
+=======
+  const handleExpenseAdd = (expense: {
+    amount: number;
+    category: string;
+    description?: string;
+    merchantName?: string;
+    upiId?: string;
+  }) => {
+    // TODO: When backend is connected, save expense to database
+    // const newExpense: Omit<Expense, '_id' | 'user' | 'createdAt' | 'updatedAt'> = {
+    //   amount: expense.amount,
+    //   currency: 'INR',
+    //   description: expense.description || (expense.merchantName ? `Paid to ${expense.merchantName}` : ''),
+    //   category: expense.category,
+    //   date: new Date().toISOString(),
+    //   paymentMethod: 'digital_wallet',
+    //   isRecurring: false,
+    //   status: 'completed'
+    // };
+
+    // Update spending data
+    setSpendingData(prev => ({
+      ...prev,
+      [expense.category]: (prev[expense.category] || 0) + expense.amount
+    }));
+
+    // TODO: When backend is connected, save expense to database
+    // try {
+    //   await expensesAPI.create(newExpense);
+    // } catch (error) {
+    //   console.error('Failed to save expense:', error);
+    // }
+  };
+>>>>>>> Stashed changes
 
   return (
     <div className="space-y-6">
@@ -292,12 +370,19 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
+<<<<<<< Updated upstream
              {/* Category Details */}
        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
          {categoryDetails.map((category) => (
            <CategoryDetails key={category.category} {...category} />
          ))}
        </div>
+=======
+      {/* Connection Test Component */}
+      <div className="mt-6">
+        <ConnectionTest />
+      </div>
+>>>>>>> Stashed changes
     </div>
   );
 };
