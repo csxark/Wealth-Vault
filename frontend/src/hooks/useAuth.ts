@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { auth } from '../lib/supabase';
+import { authAPI } from '../services/api';
 import type { User } from '../types';
 
 export const useAuth = () => {
@@ -10,61 +10,98 @@ export const useAuth = () => {
     // Check current session
     const checkSession = async () => {
       try {
-        const { user, error } = await auth.getCurrentUser();
-        if (!error && user) {
-          setUser({
-            id: user.id,
-            email: user.email || '',
-            created_at: user.created_at || ''
-          });
+        // Check if we have a token in localStorage
+        const token = localStorage.getItem('authToken');
+        if (token) {
+          // Try to get user profile from backend
+          const response = await authAPI.getProfile();
+          if (response.success && response.data.user) {
+            setUser(response.data.user);
+          } else {
+            // Token might be invalid, remove it
+            localStorage.removeItem('authToken');
+          }
         }
       } catch (error) {
         console.error('Error checking session:', error);
+        // Remove invalid token
+        localStorage.removeItem('authToken');
       } finally {
         setLoading(false);
       }
     };
 
     checkSession();
-
-    // Listen for auth changes
-    const { data: { subscription } } = auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email || '',
-          created_at: session.user.created_at || ''
-        });
-        localStorage.setItem('user', JSON.stringify(session.user));
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        localStorage.removeItem('user');
-      }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, firstName: string, lastName: string) => {
     setLoading(true);
-    const result = await auth.signUp(email, password);
-    setLoading(false);
-    return result;
+    try {
+      const result = await authAPI.register({
+        email,
+        password,
+        firstName,
+        lastName
+      });
+      
+      if (result.success && result.data.user) {
+        setUser(result.data.user);
+        localStorage.setItem('authToken', result.data.token);
+        return { success: true, user: result.data.user };
+      } else {
+        return { success: false, error: 'Registration failed' };
+      }
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Registration failed' };
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signIn = async (email: string, password: string) => {
     setLoading(true);
-    const result = await auth.signIn(email, password);
-    setLoading(false);
-    return result;
+    try {
+      const result = await authAPI.login({ email, password });
+      
+      if (result.success && result.data.user) {
+        setUser(result.data.user);
+        localStorage.setItem('authToken', result.data.token);
+        return { success: true, user: result.data.user };
+      } else {
+        return { success: false, error: 'Login failed' };
+      }
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Login failed' };
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signOut = async () => {
     setLoading(true);
-    const result = await auth.signOut();
-    setLoading(false);
-    return result;
+    try {
+      await authAPI.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+      localStorage.removeItem('authToken');
+      setLoading(false);
+    }
+  };
+
+  const updateProfile = async (profileData: Partial<User>) => {
+    try {
+      const result = await authAPI.updateProfile(profileData);
+      if (result.success && result.data.user) {
+        setUser(result.data.user);
+        return { success: true, user: result.data.user };
+      } else {
+        return { success: false, error: 'Profile update failed' };
+      }
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Profile update failed' };
+    }
   };
 
   return {
@@ -72,6 +109,7 @@ export const useAuth = () => {
     loading,
     signUp,
     signIn,
-    signOut
+    signOut,
+    updateProfile
   };
 };
