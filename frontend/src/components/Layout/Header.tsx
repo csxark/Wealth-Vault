@@ -16,7 +16,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   };
 
   return (
-    <header className="bg-white dark:bg-slate-800 shadow-sm border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50">
+    <header className="bg-white dark:bg-slate-800 shadow-sm border-b border-slate-200 dark:border-slate-700 absolute top-0 z-50 w-full">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
@@ -26,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             >
               <Menu className="h-6 w-6" />
             </button>
-            
+
             <div className="flex items-center ml-2 md:ml-0">
               <div className="bg-gradient-to-br from-blue-900 to-cyan-600 p-2 rounded-lg">
                 <Vault className="h-6 w-6 text-white" />
