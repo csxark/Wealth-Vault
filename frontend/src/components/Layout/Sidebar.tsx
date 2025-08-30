@@ -18,7 +18,8 @@ const navigation = [
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen }) => {
   return (
     <div
-      className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700
+      className={`fixed inset-y-0 left-0 z-100 w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700
+        pt-16
         transform ${isOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out
         md:translate-x-0 md:static md:inset-0 shadow-lg dark:shadow-black/50`}
     >
@@ -56,5 +57,4 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen
       </nav>
     </div>
   );
-  
 };
