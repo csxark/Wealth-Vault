@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, PieChart, Calendar, IndianRupee, TrendingUp, Activity } from 'lucide-react';
 import SpendingChart from './SpendingChart';
-
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
 import type { SpendingData, Transaction, CategoryDetails as CategoryDetailsType } from '../../types';
@@ -14,6 +13,12 @@ export const Dashboard: React.FC = () => {
     impulsive: 6800,
     anxious: 3200
   });
+  // Array format for SpendingChart
+  const spendingChartData = [
+    { label: 'Safe', value: spendingData.safe },
+    { label: 'Impulsive', value: spendingData.impulsive },
+    { label: 'Anxious', value: spendingData.anxious }
+  ];
   const [categoryDetails, setCategoryDetails] = useState<CategoryDetailsType[]>([]);
   const [monthlyBudget] = useState(40000);
 
@@ -158,14 +163,7 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Spending Trends</h3>
-          <SpendingChart
-            data={[
-              { label: 'Safe', value: spendingData.safe },
-              { label: 'Impulsive', value: spendingData.impulsive },
-              { label: 'Anxious', value: spendingData.anxious }
-            ]}
-            chartType={chartType}
-          />
+          <SpendingChart data={spendingChartData} chartType={chartType} />
         </div>
 
         <SafeSpendZone data={spendingData} monthlyBudget={monthlyBudget} />
