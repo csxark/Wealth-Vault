@@ -26,9 +26,39 @@ A comprehensive financial wellness application that helps users track spending p
 ## Prerequisites
 
 - Node.js 18+ and npm
-- Supabase account and project
+- MongoDB (running locally or accessible)
+- Git (for version control)
 
-## Setup Instructions
+## Quick Setup
+
+### Option 1: Automated Setup (Recommended)
+```bash
+# Run the automated sync script
+npm run sync
+```
+
+### Option 2: Manual Setup
+```bash
+# 1. Install all dependencies
+npm run install-all
+
+# 2. Set up environment files
+npm run setup
+
+# 3. Start both applications
+npm run dev
+```
+
+### Windows Users
+Double-click `run-setup.bat` for automated setup.
+
+### Unix/Mac Users
+```bash
+chmod +x run-setup.sh
+./run-setup.sh
+```
+
+## Detailed Setup Instructions
 
 ### 1. Clone the Repository
 
@@ -37,55 +67,42 @@ git clone <repository-url>
 cd Wealth-Vault
 ```
 
-### 2. Install Dependencies
+### 2. Environment Configuration
+
+The setup script will automatically create the necessary environment files:
+
+- **Backend** (`.env`): MongoDB connection, JWT configuration, CORS settings
+- **Frontend** (`.env`): API URL, Supabase configuration (for future use)
+
+### 3. Database Setup
+
+The application uses MongoDB for data storage. Ensure MongoDB is running locally or update the connection string in `backend/.env`.
+
+### 4. Run the Application
 
 ```bash
-cd frontend
-npm install
-```
-
-### 3. Set Up Supabase
-
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. Once your project is created, go to Settings > API
-3. Copy your Project URL and anon/public key
-
-### 4. Configure Environment Variables
-
-1. Create a `.env` file in the `frontend` directory:
-
-```bash
-cd frontend
-cp env.example .env
-```
-
-2. Edit the `.env` file with your Supabase credentials:
-
-```env
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_DEBUG=false
-```
-
-### 5. Set Up Database Schema
-
-1. In your Supabase dashboard, go to SQL Editor
-2. Copy and paste the contents of `supabase-schema.sql`
-3. Run the SQL script to create all necessary tables and policies
-
-### 6. Configure Authentication
-
-1. In Supabase dashboard, go to Authentication > Settings
-2. Add your app's domain to the Site URL
-3. Configure any additional authentication providers if needed
-
-### 7. Run the Application
-
-```bash
+# Start both frontend and backend
 npm run dev
+
+# Or start individually
+npm run dev:backend  # Backend only (port 5000)
+npm run dev:frontend # Frontend only (port 3000)
 ```
 
-The app will be available at `http://localhost:5173`
+### 5. Access the Application
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:5000/api
+- **API Health Check**: http://localhost:5000/api/health
+
+## API Synchronization
+
+The frontend and backend are fully synchronized with matching data models:
+
+- **User Management**: JWT authentication with MongoDB
+- **Expense Tracking**: Real-time expense management with categories
+- **Goal Management**: Financial goals with progress tracking
+- **Category Management**: Hierarchical categories with budgets
 
 ## Database Schema
 

@@ -8,11 +8,11 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   server: {
-    port: 3000,
+    port: 3001,
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:5001',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/api'),
@@ -20,6 +20,6 @@ export default defineConfig({
     },
   },
   define: {
-    'process.env.VITE_API_URL': JSON.stringify('http://localhost:5000/api'),
+    'process.env.VITE_API_URL': JSON.stringify('http://localhost:5001/api'),
   },
 });

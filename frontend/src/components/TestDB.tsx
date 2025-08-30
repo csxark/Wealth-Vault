@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { profiles, transactions, goals, utils } from '../lib/simple-db';
+import { authAPI, expensesAPI, categoriesAPI, goalsAPI, healthAPI } from '../services/api';
 
 export const TestDB: React.FC = () => {
   const { user } = useAuth();
@@ -15,22 +15,17 @@ export const TestDB: React.FC = () => {
     setTestResults([]);
   };
 
-  // Test database connection
+  // Test API connection
   const testConnection = async () => {
-    if (!user) {
-      addLog('❌ No user logged in');
-      return;
-    }
-
     setStatus('Testing connection...');
-    addLog('🔍 Testing database connection...');
+    addLog('🔍 Testing API connection...');
 
     try {
-      const result = await utils.testConnection();
-      if (result.success) {
-        addLog('✅ Database connection successful');
+      const result = await healthAPI.check();
+      if (result.status === 'OK') {
+        addLog('✅ API connection successful');
       } else {
-        addLog('❌ Database connection failed');
+        addLog('❌ API connection failed');
       }
     } catch (error) {
       addLog(`❌ Connection test error: ${error}`);
@@ -39,7 +34,7 @@ export const TestDB: React.FC = () => {
     setStatus('Ready');
   };
 
-  // Test profile operations
+  // Test user profile operations
   const testProfile = async () => {
     if (!user) {
       addLog('❌ No user logged in');
@@ -50,26 +45,24 @@ export const TestDB: React.FC = () => {
     addLog('👤 Testing profile operations...');
 
     try {
-      // Save profile
-      const saveResult = await profiles.save({
-        id: user.id,
-        full_name: 'Test User',
-        phone: '+91 98765 43210',
-        monthly_income: 50000
-      });
-
-      if (saveResult.error) {
-        addLog(`❌ Save profile failed: ${saveResult.error.message}`);
+      // Get current user profile
+      const getResult = await authAPI.getProfile();
+      if (getResult.success) {
+        addLog(`✅ Profile retrieved: ${getResult.data.user.firstName} ${getResult.data.user.lastName}`);
       } else {
-        addLog('✅ Profile saved successfully');
+        addLog('❌ Get profile failed');
       }
 
-      // Get profile
-      const getResult = await profiles.get(user.id);
-      if (getResult.error) {
-        addLog(`❌ Get profile failed: ${getResult.error.message}`);
+      // Update profile
+      const updateResult = await authAPI.updateProfile({
+        monthlyIncome: 50000,
+        monthlyBudget: 40000
+      });
+
+      if (updateResult.success) {
+        addLog('✅ Profile updated successfully');
       } else {
-        addLog(`✅ Profile retrieved: ${getResult.data?.full_name}`);
+        addLog('❌ Update profile failed');
       }
     } catch (error) {
       addLog(`❌ Profile test error: ${error}`);
@@ -78,41 +71,97 @@ export const TestDB: React.FC = () => {
     setStatus('Ready');
   };
 
-  // Test transaction operations
-  const testTransactions = async () => {
+  // Test expense operations
+  const testExpenses = async () => {
     if (!user) {
       addLog('❌ No user logged in');
       return;
     }
 
-    setStatus('Testing transaction operations...');
-    addLog('💰 Testing transaction operations...');
+    setStatus('Testing expense operations...');
+    addLog('💰 Testing expense operations...');
 
     try {
-      // Add transaction
-      const addResult = await transactions.add({
-        user_id: user.id,
-        amount: -1500,
+      // Get all expenses
+      const getAllResult = await expensesAPI.getAll();
+      if (getAllResult.success) {
+        addLog(`✅ Retrieved ${getAllResult.data.expenses.length} expenses`);
+      } else {
+        addLog('❌ Get expenses failed');
+      }
+
+      // Add test expense
+      const addResult = await expensesAPI.create({
+        amount: 1500,
+        currency: 'INR',
         description: 'Test Grocery Shopping',
-        category: 'safe',
-        date: new Date().toISOString().split('T')[0]
+        category: 'Food & Dining',
+        date: new Date().toISOString(),
+        paymentMethod: 'cash',
+        status: 'completed'
       });
 
-      if (addResult.error) {
-        addLog(`❌ Add transaction failed: ${addResult.error.message}`);
+      if (addResult.success) {
+        addLog('✅ Test expense added successfully');
+        
+        // Get expense statistics
+        const statsResult = await expensesAPI.getStats();
+        if (statsResult.success) {
+          addLog(`✅ Expense stats: Total ${statsResult.data.summary.total}, Count ${statsResult.data.summary.count}`);
+        }
       } else {
-        addLog('✅ Transaction added successfully');
-      }
-
-      // Get all transactions
-      const getAllResult = await transactions.getAll(user.id);
-      if (getAllResult.error) {
-        addLog(`❌ Get transactions failed: ${getAllResult.error.message}`);
-      } else {
-        addLog(`✅ Retrieved ${getAllResult.data?.length || 0} transactions`);
+        addLog('❌ Add expense failed');
       }
     } catch (error) {
-      addLog(`❌ Transaction test error: ${error}`);
+      addLog(`❌ Expense test error: ${error}`);
+    }
+
+    setStatus('Ready');
+  };
+
+  // Test category operations
+  const testCategories = async () => {
+    if (!user) {
+      addLog('❌ No user logged in');
+      return;
+    }
+
+    setStatus('Testing category operations...');
+    addLog('🏷️ Testing category operations...');
+
+    try {
+      // Get all categories
+      const getAllResult = await categoriesAPI.getAll();
+      if (getAllResult.success) {
+        addLog(`✅ Retrieved ${getAllResult.data.categories.length} categories`);
+      } else {
+        addLog('❌ Get categories failed');
+      }
+
+      // Add test category
+      const addResult = await categoriesAPI.create({
+        name: 'Test Category',
+        description: 'A test category for testing purposes',
+        color: '#FF6B6B',
+        icon: 'tag',
+        type: 'expense',
+        isDefault: false,
+        isActive: true,
+        budget: {
+          monthly: 5000,
+          yearly: 60000
+        },
+        spendingLimit: 5000,
+        priority: 1
+      });
+
+      if (addResult.success) {
+        addLog('✅ Test category added successfully');
+      } else {
+        addLog('❌ Add category failed');
+      }
+    } catch (error) {
+      addLog(`❌ Category test error: ${error}`);
     }
 
     setStatus('Ready');
@@ -129,26 +178,36 @@ export const TestDB: React.FC = () => {
     addLog('🎯 Testing goal operations...');
 
     try {
-      // Add goal
-      const addResult = await goals.add({
-        user_id: user.id,
-        title: 'Test Goal',
-        target_amount: 100000,
-        target_date: '2025-12-31'
-      });
-
-      if (addResult.error) {
-        addLog(`❌ Add goal failed: ${addResult.error.message}`);
+      // Get all goals
+      const getAllResult = await goalsAPI.getAll();
+      if (getAllResult.success) {
+        addLog(`✅ Retrieved ${getAllResult.data.goals.length} goals`);
       } else {
-        addLog('✅ Goal added successfully');
+        addLog('❌ Get goals failed');
       }
 
-      // Get all goals
-      const getAllResult = await goals.getAll(user.id);
-      if (getAllResult.error) {
-        addLog(`❌ Get goals failed: ${getAllResult.error.message}`);
+      // Add test goal
+      const addResult = await goalsAPI.create({
+        title: 'Test Savings Goal',
+        description: 'A test goal for testing purposes',
+        targetAmount: 100000,
+        currency: 'INR',
+        type: 'savings',
+        priority: 'medium',
+        deadline: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year from now
+        isPublic: false
+      });
+
+      if (addResult.success) {
+        addLog('✅ Test goal added successfully');
+        
+        // Get goals summary
+        const summaryResult = await goalsAPI.getSummary();
+        if (summaryResult.success) {
+          addLog(`✅ Goals summary: Total ${summaryResult.data.summary.total}, Active ${summaryResult.data.summary.active}`);
+        }
       } else {
-        addLog(`✅ Retrieved ${getAllResult.data?.length || 0} goals`);
+        addLog('❌ Add goal failed');
       }
     } catch (error) {
       addLog(`❌ Goal test error: ${error}`);
@@ -157,138 +216,105 @@ export const TestDB: React.FC = () => {
     setStatus('Ready');
   };
 
-  // Test spending summary
-  const testSpendingSummary = async () => {
-    if (!user) {
-      addLog('❌ No user logged in');
-      return;
-    }
-
-    setStatus('Testing spending summary...');
-    addLog('📊 Testing spending summary...');
-
-    try {
-      const result = await utils.getSpendingSummary(user.id);
-      if (result.error) {
-        addLog(`❌ Get spending summary failed: ${result.error.message}`);
-      } else {
-        addLog(`✅ Spending summary: Safe: ₹${result.data?.safe}, Impulsive: ₹${result.data?.impulsive}, Anxious: ₹${result.data?.anxious}`);
-      }
-    } catch (error) {
-      addLog(`❌ Spending summary test error: ${error}`);
-    }
-
-    setStatus('Ready');
-  };
-
   // Run all tests
   const runAllTests = async () => {
-    clearLogs();
-    addLog('🚀 Starting all database tests...');
-    
+    addLog('🚀 Starting comprehensive API tests...');
     await testConnection();
     await testProfile();
-    await testTransactions();
+    await testExpenses();
+    await testCategories();
     await testGoals();
-    await testSpendingSummary();
-    
-    addLog('🎉 All tests completed!');
+    addLog('✅ All tests completed!');
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">
-          Database Test Panel
-        </h2>
-        
-        <div className="mb-4">
-          <p className="text-slate-600 dark:text-slate-400">
-            Status: <span className="font-medium">{status}</span>
-          </p>
-          {user && (
-            <p className="text-sm text-slate-500 dark:text-slate-500">
-              User ID: {user.id}
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-6">API Testing Panel</h1>
+          
+          <div className="mb-6">
+            <p className="text-gray-600 mb-4">
+              Test the Wealth Vault API endpoints and database operations.
             </p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-          <button
-            onClick={testConnection}
-            disabled={!user || status !== 'Ready'}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Test Connection
-          </button>
-          
-          <button
-            onClick={testProfile}
-            disabled={!user || status !== 'Ready'}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Test Profile
-          </button>
-          
-          <button
-            onClick={testTransactions}
-            disabled={!user || status !== 'Ready'}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Test Transactions
-          </button>
-          
-          <button
-            onClick={testGoals}
-            disabled={!user || status !== 'Ready'}
-            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Test Goals
-          </button>
-          
-          <button
-            onClick={testSpendingSummary}
-            disabled={!user || status !== 'Ready'}
-            className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Test Summary
-          </button>
-          
-          <button
-            onClick={runAllTests}
-            disabled={!user || status !== 'Ready'}
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Run All Tests
-          </button>
-        </div>
-
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-            Test Results
-          </h3>
-          <button
-            onClick={clearLogs}
-            className="px-3 py-1 bg-slate-600 text-white rounded-lg hover:bg-slate-700 text-sm"
-          >
-            Clear Logs
-          </button>
-        </div>
-
-        <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-4 h-96 overflow-y-auto">
-          {testResults.length === 0 ? (
-            <p className="text-slate-500 dark:text-slate-400 text-center py-8">
-              No test results yet. Run a test to see results here.
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {testResults.map((result, index) => (
-                <div key={index} className="text-sm font-mono text-slate-700 dark:text-slate-300">
-                  {result}
-                </div>
-              ))}
+            
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                onClick={runAllTests}
+                disabled={status !== 'Ready'}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🚀 Run All Tests
+              </button>
+              
+              <button
+                onClick={testConnection}
+                disabled={status !== 'Ready'}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🔍 Test Connection
+              </button>
+              
+              <button
+                onClick={testProfile}
+                disabled={status !== 'Ready' || !user}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                👤 Test Profile
+              </button>
+              
+              <button
+                onClick={testExpenses}
+                disabled={status !== 'Ready' || !user}
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                💰 Test Expenses
+              </button>
+              
+              <button
+                onClick={testCategories}
+                disabled={status !== 'Ready' || !user}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🏷️ Test Categories
+              </button>
+              
+              <button
+                onClick={testGoals}
+                disabled={status !== 'Ready' || !user}
+                className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🎯 Test Goals
+              </button>
+              
+              <button
+                onClick={clearLogs}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                🗑️ Clear Logs
+              </button>
             </div>
-          )}
+            
+            <div className="text-sm text-gray-500">
+              Status: <span className="font-medium">{status}</span>
+              {!user && <span className="ml-2 text-red-500">⚠️ Please log in to test user-specific operations</span>}
+            </div>
+          </div>
+          
+          <div className="bg-gray-100 rounded-lg p-4 h-96 overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Test Results:</h3>
+            {testResults.length === 0 ? (
+              <p className="text-gray-500">No test results yet. Click a test button to start.</p>
+            ) : (
+              <div className="space-y-1">
+                {testResults.map((result, index) => (
+                  <div key={index} className="text-sm font-mono bg-white p-2 rounded border">
+                    {result}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

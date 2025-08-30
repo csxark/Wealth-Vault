@@ -1,21 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { User, Phone, Calendar, Briefcase, IndianRupee, Target, Edit3, Save, X } from 'lucide-react';
+import { User as UserIcon, Phone, Calendar, Briefcase, IndianRupee, Target, Edit3, Save, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { profiles } from '../../lib/supabase';
-import type { UserProfile } from '../../types';
+import { authAPI } from '../../services/api';
+import type { User } from '../../types';
 
 export const Profile: React.FC = () => {
   const { user } = useAuth();
-  const [profile, setProfile] = useState<UserProfile>({
-    full_name: '',
-    phone: '',
-    date_of_birth: '',
-    occupation: '',
-    monthly_income: 0,
-    financial_goals: ''
-  });
+  const [profile, setProfile] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedProfile, setEditedProfile] = useState<UserProfile>(profile);
+  const [editedProfile, setEditedProfile] = useState<Partial<User>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -30,15 +23,12 @@ export const Profile: React.FC = () => {
     
     setLoading(true);
     try {
-      const { data, error } = await profiles.get(user.id);
-      if (error) {
-        console.error('Error loading profile:', error);
-        return;
-      }
-      
-      if (data) {
-        setProfile(data);
-        setEditedProfile(data);
+      const response = await authAPI.getProfile();
+      if (response.success) {
+        setProfile(response.data.user);
+        setEditedProfile(response.data.user);
+      } else {
+        console.error('Error loading profile');
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -52,28 +42,25 @@ export const Profile: React.FC = () => {
     
     setSaving(true);
     try {
-      const { error } = await profiles.upsert({
-        id: user.id,
-        ...editedProfile
-      });
+      const response = await authAPI.updateProfile(editedProfile);
       
-      if (error) {
-        console.error('Error saving profile:', error);
-        return;
+      if (response.success) {
+        setProfile(response.data.user);
+        setIsEditing(false);
+      } else {
+        console.error('Error saving profile');
       }
-      
-      setProfile(editedProfile);
-      setIsEditing(false);
     } catch (error) {
       console.error('Error saving profile:', error);
-      return;
     } finally {
       setSaving(false);
     }
   };
 
   const handleCancel = () => {
-    setEditedProfile(profile);
+    if (profile) {
+      setEditedProfile(profile);
+    }
     setIsEditing(false);
   };
 
@@ -91,53 +78,65 @@ export const Profile: React.FC = () => {
 
   const profileFields = [
     {
-      key: 'full_name' as keyof UserProfile,
-      label: 'Full Name',
-      icon: User,
+      key: 'firstName' as keyof User,
+      label: 'First Name',
+      icon: UserIcon,
       type: 'text',
-      placeholder: 'Enter your full name'
+      placeholder: 'Enter your first name'
     },
     {
-      key: 'phone' as keyof UserProfile,
+      key: 'lastName' as keyof User,
+      label: 'Last Name',
+      icon: UserIcon,
+      type: 'text',
+      placeholder: 'Enter your last name'
+    },
+    {
+      key: 'phoneNumber' as keyof User,
       label: 'Phone Number',
       icon: Phone,
       type: 'tel',
-      placeholder: '+91 98765 43210'
+      placeholder: 'Enter your phone number'
     },
     {
-      key: 'date_of_birth' as keyof UserProfile,
+      key: 'dateOfBirth' as keyof User,
       label: 'Date of Birth',
       icon: Calendar,
       type: 'date',
-      placeholder: ''
+      placeholder: 'Select your date of birth'
     },
     {
-      key: 'occupation' as keyof UserProfile,
-      label: 'Occupation',
-      icon: Briefcase,
-      type: 'text',
-      placeholder: 'Software Engineer, Teacher, etc.'
-    },
-    {
-      key: 'monthly_income' as keyof UserProfile,
+      key: 'monthlyIncome' as keyof User,
       label: 'Monthly Income',
       icon: IndianRupee,
       type: 'number',
-      placeholder: '50000'
+      placeholder: 'Enter your monthly income'
+    },
+    {
+      key: 'monthlyBudget' as keyof User,
+      label: 'Monthly Budget',
+      icon: Target,
+      type: 'number',
+      placeholder: 'Enter your monthly budget'
     }
   ];
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-1/4 mb-4"></div>
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="h-16 bg-slate-200 dark:bg-slate-700 rounded"></div>
-              ))}
-            </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-lg shadow p-12 text-center">
+            <UserIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Profile not found</h3>
+            <p className="text-gray-600">Unable to load your profile information.</p>
           </div>
         </div>
       </div>
@@ -145,80 +144,97 @@ export const Profile: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Profile</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">Manage your personal information and preferences</p>
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Profile</h1>
+          <p className="text-gray-600">Manage your personal information and preferences</p>
         </div>
-        
-        {!isEditing ? (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-900 to-cyan-600 text-white rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200"
-          >
-            <Edit3 className="h-4 w-4 mr-2" />
-            Edit Profile
-          </button>
-        ) : (
-          <div className="mt-4 sm:mt-0 flex space-x-2">
-            <button
-              onClick={handleCancel}
-              className="inline-flex items-center px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-900 to-cyan-600 text-white rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200 disabled:opacity-50"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-        )}
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Personal Information</h2>
-            
+        <div className="bg-white rounded-lg shadow">
+          {/* Profile Header */}
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                  <UserIcon className="h-8 w-8 text-blue-600" />
+                </div>
+                <div className="ml-4">
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    {profile.firstName} {profile.lastName}
+                  </h2>
+                  <p className="text-gray-600">{profile.email}</p>
+                </div>
+              </div>
+              
+              <div className="flex space-x-2">
+                {isEditing ? (
+                  <>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      {saving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={handleCancel}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+                  >
+                    <Edit3 className="h-4 w-4 mr-2" />
+                    Edit Profile
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Profile Fields */}
+          <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {profileFields.map((field) => {
                 const Icon = field.icon;
-                const value = isEditing ? editedProfile[field.key] : profile[field.key];
+                const value = isEditing 
+                  ? (editedProfile[field.key] as string || '')
+                  : (profile[field.key] as string || '');
                 
                 return (
-                  <div key={field.key}>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      <Icon className="inline h-4 w-4 mr-1" />
+                  <div key={field.key} className="space-y-2">
+                    <label className="flex items-center text-sm font-medium text-gray-700">
+                      <Icon className="h-4 w-4 mr-2" />
                       {field.label}
                     </label>
+                    
                     {isEditing ? (
                       <input
                         type={field.type}
-                        value={value || ''}
+                        value={value}
                         onChange={(e) => setEditedProfile({
                           ...editedProfile,
-                          [field.key]: field.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value
+                          [field.key]: field.type === 'number' ? Number(e.target.value) : e.target.value
                         })}
-                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
                         placeholder={field.placeholder}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     ) : (
-                      <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
-                        {field.key === 'monthly_income' && value 
-                          ? `₹${(value as number).toLocaleString()}`
-                          : value || 'Not provided'
+                      <div className="px-3 py-2 bg-gray-50 rounded-lg">
+                        {field.key === 'monthlyIncome' || field.key === 'monthlyBudget' 
+                          ? `₹${(Number(value) || 0).toLocaleString()}`
+                          : field.key === 'dateOfBirth' && value
+                            ? `${value} (${calculateAge(value as string)} years old)`
+                            : value || 'Not specified'
                         }
-                        {field.key === 'date_of_birth' && value && (
-                          <span className="text-slate-500 dark:text-slate-400 ml-2">
-                            (Age: {calculateAge(value as string)})
-                          </span>
-                        )}
                       </div>
                     )}
                   </div>
@@ -226,63 +242,23 @@ export const Profile: React.FC = () => {
               })}
             </div>
 
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                <Target className="inline h-4 w-4 mr-1" />
-                Financial Goals
-              </label>
-              {isEditing ? (
-                <textarea
-                  value={editedProfile.financial_goals}
-                  onChange={(e) => setEditedProfile({ ...editedProfile, financial_goals: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
-                  placeholder="Describe your financial goals..."
-                  rows={3}
-                />
-              ) : (
-                <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
-                  {profile.financial_goals || 'No goals specified'}
+            {/* Additional Information */}
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Account Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Currency</label>
+                  <div className="px-3 py-2 bg-gray-50 rounded-lg">
+                    {profile.currency || 'USD'}
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Account Details</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
-                <div className="text-slate-900 dark:text-white">{user?.email}</div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Member Since</label>
-                <div className="text-slate-900 dark:text-white">
-                  {user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Member Since</label>
+                  <div className="px-3 py-2 bg-gray-50 rounded-lg">
+                    {new Date(profile.createdAt).toLocaleDateString()}
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-6">
-            <h3 className="text-lg font-semibold text-cyan-900 dark:text-cyan-100 mb-2">Financial Health Score</h3>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-cyan-600 dark:text-cyan-400 mb-2">85/100</div>
-              <div className="text-sm text-cyan-800 dark:text-cyan-200">Excellent financial habits!</div>
-            </div>
-            <div className="mt-4 space-y-2 text-xs text-cyan-700 dark:text-cyan-300">
-              <div className="flex justify-between">
-                <span>Safe Spending</span>
-                <span className="font-medium">92%</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Goal Progress</span>
-                <span className="font-medium">78%</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Budget Adherence</span>
-                <span className="font-medium">85%</span>
               </div>
             </div>
           </div>

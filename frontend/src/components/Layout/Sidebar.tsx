@@ -1,5 +1,6 @@
 import React from 'react';
 import { BarChart3, MessageCircle, Target, Upload, User, Database } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 
 interface SidebarProps {
   activeTab: string;
@@ -8,12 +9,12 @@ interface SidebarProps {
 }
 
 const navigation = [
-  { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
-  { id: 'coach', name: 'AI Coach', icon: MessageCircle },
-  { id: 'goals', name: 'Goals', icon: Target },
-  { id: 'import', name: 'Import Data', icon: Upload },
-  { id: 'profile', name: 'Profile', icon: User },
-  { id: 'testdb', name: 'Test DB', icon: Database },
+  { id: 'dashboard', name: 'Dashboard', icon: BarChart3, path: '/dashboard' },
+  { id: 'coach', name: 'AI Coach', icon: MessageCircle, path: '/coach' },
+  { id: 'goals', name: 'Goals', icon: Target, path: '/goals' },
+  { id: 'import', name: 'Import Data', icon: Upload, path: '/import' },
+  { id: 'profile', name: 'Profile', icon: User, path: '/profile' },
+  { id: 'testdb', name: 'Test DB', icon: Database, path: '/testdb' },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen }) => {
@@ -31,8 +32,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen
             const isActive = activeTab === item.id;
 
             return (
-              <button
+              <Link
                 key={item.id}
+                to={item.path}
                 onClick={() => onTabChange(item.id)}
                 className={`w-full flex items-center px-5 py-3 rounded-xl transition-all duration-300
                   ${
@@ -42,7 +44,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen
                   }
                   focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-opacity-75`}
                 aria-current={isActive ? 'page' : undefined}
-                type="button"
               >
                 <Icon
                   className={`mr-4 h-6 w-6 flex-shrink-0 ${
@@ -51,7 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen
                   aria-hidden="true"
                 />
                 <span className="font-semibold text-lg">{item.name}</span>
-              </button>
+              </Link>
             );
           })}
         </div>

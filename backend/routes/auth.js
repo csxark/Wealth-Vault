@@ -49,6 +49,7 @@ router.post('/register', [
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
+    console.log(existingUser);
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -177,21 +178,40 @@ router.post('/login', [
 // @access  Private
 router.get('/me', protect, async (req, res) => {
   try {
+    // Check if user exists in the request
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
     const user = await User.findById(req.user._id)
       .select('-password')
-      .populate('categories', 'name color icon');
+      .populate('categories', 'name color icon')
+      .lean(); // Convert to plain JavaScript object
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Remove sensitive fields
+    const { password, __v, ...publicUser } = user;
 
     res.json({
       success: true,
       data: {
-        user: user.getPublicProfile()
+        user: publicUser
       }
     });
   } catch (error) {
     console.error('Get profile error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while fetching profile'
+      message: error.message || 'Server error while fetching profile'
     });
   }
 });

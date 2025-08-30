@@ -2,27 +2,30 @@
   "name": "wealth-vault",
   "version": "1.0.0",
   "description": "Wealth Vault - Financial Management Application",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
+    "setup": "node setup-env.js",
+    "sync": "node sync-app.js",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
-    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
-    "start:backend": "cd backend && npm start",
-    "start:frontend": "cd frontend && npm run build && npm run preview",
-    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "test-api": "node test-api.js",
     "build": "cd frontend && npm run build",
-    "test": "cd backend && npm test"
+    "start": "cd backend && npm start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   },
   "keywords": [
     "financial",
     "budgeting",
     "expense-tracking",
-    "wealth-management"
+    "wealth-management",
+    "react",
+    "nodejs",
+    "mongodb"
   ],
   "author": "Wealth Vault Team",
-  "license": "MIT",
-  "devDependencies": {
-    "concurrently": "^8.2.2"
-  }
+  "license": "MIT"
 }

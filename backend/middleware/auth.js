@@ -4,6 +4,15 @@ import User from '../models/User.js';
 // Middleware to protect routes
 export const protect = async (req, res, next) => {
   try {
+    // Check if JWT_SECRET is configured
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET is not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
     let token;
 
     // Check if token exists in headers
@@ -22,13 +31,22 @@ export const protect = async (req, res, next) => {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
+      if (!decoded || !decoded.id) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid token format.'
+        });
+      }
+
       // Get user from token
-      const user = await User.findById(decoded.id).select('-password');
+      const user = await User.findById(decoded.id)
+        .select('-password -__v')
+        .lean();
       
       if (!user) {
         return res.status(401).json({
           success: false,
-          message: 'Token is not valid. User not found.'
+          message: 'User not found or token expired.'
         });
       }
 
@@ -43,9 +61,25 @@ export const protect = async (req, res, next) => {
       req.user = user;
       next();
     } catch (error) {
+      console.error('Token verification error:', error);
+      
+      if (error.name === 'JsonWebTokenError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid token.'
+        });
+      }
+      
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Token has expired.'
+        });
+      }
+
       return res.status(401).json({
         success: false,
-        message: 'Token is not valid.'
+        message: 'Authentication failed.'
       });
     }
   } catch (error) {

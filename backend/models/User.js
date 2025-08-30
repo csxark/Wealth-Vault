@@ -81,7 +81,11 @@ const userSchema = new mongoose.Schema({
       type: String,
       default: 'en'
     }
-  }
+  },
+  categories: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category'
+  }]
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

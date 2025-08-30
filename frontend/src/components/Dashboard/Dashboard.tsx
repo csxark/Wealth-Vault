@@ -5,8 +5,8 @@ import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
 import AddExpenseButton from './AddExpenseButton';
 import { useAuth } from '../../hooks/useAuth';
-import { transactions, getSpendingData } from '../../lib/supabase';
-import type { SpendingData, Transaction, CategoryDetails as CategoryDetailsType, SpendingCategory } from '../../types';
+import { expensesAPI } from '../../services/api';
+import type { SpendingData, CategoryDetails as CategoryDetailsType, SpendingCategory } from '../../types';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -39,90 +39,101 @@ const Dashboard: React.FC = () => {
     
     setLoading(true);
     try {
-      // Get spending data from Supabase
-      const { data: spendingResult, error: spendingError } = await getSpendingData(user.id, timeRange);
-      
-      if (spendingError) {
-        console.error('Error loading spending data:', spendingError);
-        // Set default values if there's an error
-        setSpendingData({
+      // Calculate date range
+      const now = new Date();
+      let startDate: Date;
+
+      switch (timeRange) {
+        case 'week':
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        case 'year':
+          startDate = new Date(now.getFullYear(), 0, 1);
+          break;
+        default:
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+
+      // Get expenses from API
+      const response = await expensesAPI.getAll({
+        startDate: startDate.toISOString(),
+        endDate: now.toISOString(),
+        limit: 1000 // Get all expenses for the period
+      });
+
+      if (response.success) {
+        const expenses = response.data.expenses;
+        
+        // Calculate spending by category
+        const spending: SpendingData = {
           safe: 0,
           impulsive: 0,
           anxious: 0
-        });
-        return;
-      }
+        };
 
-      if (spendingResult) {
-        setSpendingData(spendingResult);
-      }
-
-      // Get all transactions for the time range to generate category details
-      const { data: allTransactions, error: transactionsError } = await transactions.getAll(user.id);
-      
-      if (transactionsError) {
-        console.error('Error loading transactions:', transactionsError);
-        setCategoryDetails([]);
-        return;
-      }
-
-      if (allTransactions) {
-        const now = new Date();
-        let startDate: Date;
-
-        switch (timeRange) {
-          case 'week':
-            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            break;
-          case 'month':
-            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-            break;
-          case 'year':
-            startDate = new Date(now.getFullYear(), 0, 1);
-            break;
-          default:
-            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        }
-
-        const monthlyTransactions = allTransactions.filter(t => {
-          try {
-            const transactionDate = new Date(t.date);
-            return transactionDate >= startDate && t.amount < 0; // Only expenses
-          } catch (error) {
-            console.error('Error parsing transaction date:', t.date, error);
-            return false;
+        // Group expenses by category and calculate totals
+        expenses.forEach(expense => {
+          // Map expense categories to spending categories
+          // This is a simplified mapping - you may need to adjust based on your category structure
+          const category = expense.category.toLowerCase();
+          if (category.includes('food') || category.includes('groceries') || category.includes('dining')) {
+            spending.safe += expense.amount;
+          } else if (category.includes('entertainment') || category.includes('shopping') || category.includes('luxury')) {
+            spending.impulsive += expense.amount;
+          } else {
+            spending.anxious += expense.amount;
           }
         });
 
+        setSpendingData(spending);
+
         // Generate category details
         const details: CategoryDetailsType[] = (['safe', 'impulsive', 'anxious'] as SpendingCategory[]).map(category => {
-          const categoryTransactions = monthlyTransactions.filter(t => 
-            t.category === category
-          );
-          const totalAmount = categoryTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-          const totalSpent = spendingData.safe + spendingData.impulsive + spendingData.anxious;
-          
+          const categoryExpenses = expenses.filter(expense => {
+            const expenseCategory = expense.category.toLowerCase();
+            if (category === 'safe') {
+              return expenseCategory.includes('food') || expenseCategory.includes('groceries') || expenseCategory.includes('dining');
+            } else if (category === 'impulsive') {
+              return expenseCategory.includes('entertainment') || expenseCategory.includes('shopping') || expenseCategory.includes('luxury');
+            } else {
+              return !expenseCategory.includes('food') && !expenseCategory.includes('groceries') && 
+                     !expenseCategory.includes('dining') && !expenseCategory.includes('entertainment') && 
+                     !expenseCategory.includes('shopping') && !expenseCategory.includes('luxury');
+            }
+          });
+
+          const total = categoryExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+          const percentage = spendingData.safe + spendingData.impulsive + spendingData.anxious > 0 
+            ? (total / (spendingData.safe + spendingData.impulsive + spendingData.anxious)) * 100 
+            : 0;
+
+          // Get top expenses for this category
+          const topExpenses = categoryExpenses
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5)
+            .map(expense => ({
+              description: expense.description,
+              amount: expense.amount,
+              date: expense.date
+            }));
+
           return {
             category,
-            amount: totalAmount,
-            percentage: totalSpent > 0 ? (totalAmount / totalSpent) * 100 : 0,
-            transactions: categoryTransactions,
-            topExpenses: categoryTransactions
-              .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-              .slice(0, 5)
-              .map(t => ({
-                description: t.description,
-                amount: Math.abs(t.amount),
-                date: t.date
-              }))
+            amount: total,
+            percentage,
+            transactions: [], // Legacy field - not used in new structure
+            topExpenses
           };
         });
-        
+
         setCategoryDetails(details);
       }
     } catch (error) {
-      console.error('Error loading data:', error);
-      // Set default values on error
+      console.error('Error loading spending data:', error);
+      // Set default values if there's an error
       setSpendingData({
         safe: 0,
         impulsive: 0,
@@ -134,6 +145,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
+<<<<<<< Updated upstream
   const handleExpenseAdd = async (expense: {
     amount: number;
     category: string;
@@ -201,105 +213,160 @@ const Dashboard: React.FC = () => {
       color: 'text-cyan-600 dark:text-cyan-400'
     }
   ];
+=======
+  const totalSpending = spendingData.safe + spendingData.impulsive + spendingData.anxious;
+  const remainingBudget = monthlyBudget - totalSpending;
+  const spendingPercentage = (totalSpending / monthlyBudget) * 100;
+>>>>>>> Stashed changes
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-1/4 mb-4"></div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 bg-slate-200 dark:bg-slate-700 rounded"></div>
-            ))}
-          </div>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Dashboard</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">Track your spending and financial health</p>
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
+          <p className="text-gray-600">Welcome back, {user?.firstName || 'User'}!</p>
         </div>
-        
-        <div className="mt-4 sm:mt-0 flex flex-col sm:flex-row gap-3">
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value as 'week' | 'month' | 'year')}
-            className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-          >
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
-            <option value="year">This Year</option>
-          </select>
-          
-          <AddExpenseButton 
-            onExpenseAdd={handleExpenseAdd}
-            label="Add Expense"
-            className="bg-gradient-to-r from-blue-900 to-cyan-600 text-white px-4 py-2 rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200"
-          />
-        </div>
-      </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {stats.map((stat, index) => (
-          <div key={index} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{stat.name}</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
+        {/* Quick Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <IndianRupee className="h-6 w-6 text-blue-600" />
               </div>
-              <div className={`p-3 rounded-lg bg-slate-100 dark:bg-slate-700 ${stat.color}`}>
-                <stat.icon className="h-6 w-6" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Total Spending</p>
+                <p className="text-2xl font-bold text-gray-900">₹{totalSpending.toLocaleString()}</p>
               </div>
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Spending Overview</h3>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setChartType('doughnut')}
-                className={`p-2 rounded ${chartType === 'doughnut' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}
-              >
-                <PieChart className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setChartType('bar')}
-                className={`p-2 rounded ${chartType === 'bar' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}
-              >
-                <BarChart className="h-4 w-4" />
-              </button>
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <TrendingUp className="h-6 w-6 text-green-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Remaining Budget</p>
+                <p className="text-2xl font-bold text-gray-900">₹{remainingBudget.toLocaleString()}</p>
+              </div>
             </div>
           </div>
-          <SpendingChart data={spendingChartData} type={chartType} />
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <Activity className="h-6 w-6 text-yellow-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Budget Used</p>
+                <p className="text-2xl font-bold text-gray-900">{spendingPercentage.toFixed(1)}%</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Calendar className="h-6 w-6 text-purple-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Time Range</p>
+                <p className="text-2xl font-bold text-gray-900 capitalize">{timeRange}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Safe Spend Zone</h3>
-          <SafeSpendZone 
-            monthlyBudget={monthlyBudget}
-            totalSpent={spendingData.safe + spendingData.impulsive + spendingData.anxious}
-            safeSpending={spendingData.safe}
-          />
+        {/* Chart Controls */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center space-x-4">
+              <label className="text-sm font-medium text-gray-700">Chart Type:</label>
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setChartType('doughnut')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    chartType === 'doughnut'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <PieChart className="h-4 w-4 inline mr-1" />
+                  Doughnut
+                </button>
+                <button
+                  onClick={() => setChartType('bar')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    chartType === 'bar'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <BarChart className="h-4 w-4 inline mr-1" />
+                  Bar
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <label className="text-sm font-medium text-gray-700">Time Range:</label>
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                {(['week', 'month', 'year'] as const).map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                      timeRange === range
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {range.charAt(0).toUpperCase() + range.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Spending Chart */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Spending Overview</h2>
+              <SpendingChart data={spendingChartData} type={chartType} />
+            </div>
+          </div>
+
+          {/* Safe Spend Zone */}
+          <div className="lg:col-span-1">
+            <SafeSpendZone
+              totalSpending={totalSpending}
+              monthlyBudget={monthlyBudget}
+              spendingPercentage={spendingPercentage}
+            />
+          </div>
+        </div>
+
+        {/* Category Details */}
+        <div className="mt-8">
+          <CategoryDetails details={categoryDetails} />
+        </div>
+
+        {/* Add Expense Button */}
+        <AddExpenseButton onExpenseAdded={loadSpendingData} />
       </div>
-
-             {/* Category Details */}
-       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         {categoryDetails.map((category) => (
-           <CategoryDetails key={category.category} {...category} />
-         ))}
-       </div>
     </div>
   );
 };

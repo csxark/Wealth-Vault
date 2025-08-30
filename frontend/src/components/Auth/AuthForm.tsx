@@ -15,11 +15,48 @@ export const AuthForm: React.FC = () => {
   
   const { signUp, signIn, loading } = useAuth();
 
-  const handleProfileComplete = (profileData: UserProfile) => {
-    // Save profile data to localStorage
-    const userId = Date.now().toString(); // This would be the actual user ID from Supabase
-    localStorage.setItem(`profile-${userId}`, JSON.stringify(profileData));
-    setShowProfileSetup(false);
+  const handleProfileComplete = async (profileData: UserProfile) => {
+    try {
+      // Double-check email availability before final registration
+      const checkResponse = await fetch('http://localhost:5001/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (checkResponse.status !== 401) {
+        setError('This email is already registered. Please use a different email.');
+        setShowProfileSetup(false);
+        return;
+      }
+
+      // Extract first and last name from full name
+      const nameParts = profileData.full_name.split(' ');
+      const firstName = nameParts[0];
+      const lastName = nameParts.slice(1).join(' ') || firstName;
+
+      // Register the user with the complete profile data
+      const result = await signUp(email, password, firstName, lastName);
+      
+      if (!result.success) {
+        const errorMessage = result.error === 'User with this email already exists' 
+          ? 'This email is already registered. Please use a different email or sign in.'
+          : result.error || 'Registration failed';
+        setError(errorMessage);
+        setShowProfileSetup(false);
+      } else {
+        // Redirect to dashboard after successful registration
+        window.location.href = '/dashboard';
+      }
+    } catch (err: any) {
+      const errorMessage = err.message === 'User with this email already exists'
+        ? 'This email is already registered. Please use a different email or sign in.'
+        : err.message || 'Registration failed';
+      setError(errorMessage);
+      setShowProfileSetup(false);
+    }
   };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,18 +73,41 @@ export const AuthForm: React.FC = () => {
     }
 
     try {
-      const { error } = isSignUp 
-        ? await signUp(email, password)
-        : await signIn(email, password);
-
-      if (error) {
-        setError(error.message);
-      } else if (isSignUp) {
-        setNewUserEmail(email);
-        setShowProfileSetup(true);
+      if (isSignUp) {
+        // Try to sign in first to check if the email exists
+        try {
+          const response = await fetch('http://localhost:5001/api/auth/login', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, password }),
+          });
+          
+          if (response.status === 401) {
+            // Email doesn't exist, proceed with registration
+            setNewUserEmail(email);
+            setShowProfileSetup(true);
+          } else {
+            setError('An account with this email already exists. Please sign in or use a different email.');
+          }
+        } catch (err) {
+          // If server error or network error, assume email is available
+          setNewUserEmail(email);
+          setShowProfileSetup(true);
+        }
+      } else {
+        // For sign in, proceed with authentication
+        const result = await signIn(email, password);
+        if (!result.success) {
+          setError(result.error || 'Login failed');
+        } else {
+          // Redirect to dashboard after successful login
+          window.location.href = '/dashboard';
+        }
       }
-    } catch (err) {
-      setError('An unexpected error occurred');
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred');
     }
   };
 
