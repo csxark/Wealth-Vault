@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Target, DollarSign, Calendar, FileText } from 'lucide-react';
+import { X, Target, DollarSign, Calendar, FileText, IndianRupee } from 'lucide-react';
 import type { Goal } from '../../types';
 
 interface GoalFormProps {
@@ -52,7 +52,7 @@ export const GoalForm: React.FC<GoalFormProps> = ({ goal, onSave, onCancel }) =>
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-black dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-blue-900 to-cyan-600 rounded-t-xl">
-          <h2 className="text-xl font-semibold text-slate-900">
+          <h2 className="text-xl font-semibold text-white">
             {goal ? 'Edit Goal' : 'Create New Goal'}
           </h2>
           <button
