@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Phone, Calendar, Briefcase, IndianRupee, Target, Edit3, Save, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { profiles } from '../../lib/supabase';
 import type { UserProfile } from '../../types';
 
 export const Profile: React.FC = () => {
@@ -15,21 +16,60 @@ export const Profile: React.FC = () => {
   });
   const [isEditing, setIsEditing] = useState(false);
   const [editedProfile, setEditedProfile] = useState<UserProfile>(profile);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    // Load profile from localStorage
-    const savedProfile = localStorage.getItem(`profile-${user?.id}`);
-    if (savedProfile) {
-      const profileData = JSON.parse(savedProfile);
-      setProfile(profileData);
-      setEditedProfile(profileData);
+    if (user) {
+      loadProfile();
     }
   }, [user]);
 
-  const handleSave = () => {
-    localStorage.setItem(`profile-${user?.id}`, JSON.stringify(editedProfile));
-    setProfile(editedProfile);
-    setIsEditing(false);
+  const loadProfile = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const { data, error } = await profiles.get(user.id);
+      if (error) {
+        console.error('Error loading profile:', error);
+        return;
+      }
+      
+      if (data) {
+        setProfile(data);
+        setEditedProfile(data);
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+    
+    setSaving(true);
+    try {
+      const { error } = await profiles.upsert({
+        id: user.id,
+        ...editedProfile
+      });
+      
+      if (error) {
+        console.error('Error saving profile:', error);
+        return;
+      }
+      
+      setProfile(editedProfile);
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      return;
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -87,6 +127,23 @@ export const Profile: React.FC = () => {
     }
   ];
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-1/4 mb-4"></div>
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-16 bg-slate-200 dark:bg-slate-700 rounded"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
@@ -114,10 +171,11 @@ export const Profile: React.FC = () => {
             </button>
             <button
               onClick={handleSave}
-              className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-900 to-cyan-600 text-white rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200"
+              disabled={saving}
+              className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-900 to-cyan-600 text-white rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200 disabled:opacity-50"
             >
               <Save className="h-4 w-4 mr-2" />
-              Save Changes
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         )}

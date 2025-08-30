@@ -22,6 +22,9 @@ export interface Transaction {
   upi_id?: string;
 }
 
+// Spending category type for consistency
+export type SpendingCategory = 'safe' | 'impulsive' | 'anxious';
+
 export interface Goal {
   id: string;
   user_id: string;
@@ -48,8 +51,17 @@ export interface SpendingData {
   anxious: number;
 }
 
+// New interface for expense form data
+export interface ExpenseFormData {
+  amount: number;
+  category: SpendingCategory;
+  description: string;
+  merchantName?: string;
+  upiId?: string;
+}
+
 export interface CategoryDetails {
-  category: 'safe' | 'impulsive' | 'anxious';
+  category: SpendingCategory;
   amount: number;
   percentage: number;
   transactions: Transaction[];

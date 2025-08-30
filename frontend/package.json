@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "setup": "node setup.js",
+    "verify": "node verify-db.js",
+    "test-db": "echo 'Use the Test DB panel in the app to test database operations'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.56.1",

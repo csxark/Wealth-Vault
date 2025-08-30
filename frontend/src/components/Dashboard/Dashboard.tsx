@@ -4,78 +4,180 @@ import SpendingChart from './SpendingChart';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
 import AddExpenseButton from './AddExpenseButton';
-import type { SpendingData, Transaction, CategoryDetails as CategoryDetailsType } from '../../types';
+import { useAuth } from '../../hooks/useAuth';
+import { transactions, getSpendingData } from '../../lib/supabase';
+import type { SpendingData, Transaction, CategoryDetails as CategoryDetailsType, SpendingCategory } from '../../types';
 
 const Dashboard: React.FC = () => {
+  const { user } = useAuth();
   const [chartType, setChartType] = useState<'doughnut' | 'bar'>('doughnut');
-  const [timeRange, setTimeRange] = useState('month');
+  const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('month');
   const [spendingData, setSpendingData] = useState<SpendingData>({
-    safe: 24500,
-    impulsive: 6800,
-    anxious: 3200
+    safe: 0,
+    impulsive: 0,
+    anxious: 0
   });
+  const [categoryDetails, setCategoryDetails] = useState<CategoryDetailsType[]>([]);
+  const [monthlyBudget] = useState(40000);
+  const [loading, setLoading] = useState(true);
+
   // Array format for SpendingChart
   const spendingChartData = [
     { label: 'Safe', value: spendingData.safe },
     { label: 'Impulsive', value: spendingData.impulsive },
     { label: 'Anxious', value: spendingData.anxious }
   ];
-  const [categoryDetails, setCategoryDetails] = useState<CategoryDetailsType[]>([]);
-  const [monthlyBudget] = useState(40000);
 
   useEffect(() => {
-    // Load transactions from localStorage
-    const savedTransactions = localStorage.getItem('transactions');
-    if (savedTransactions) {
-      const transactions: Transaction[] = JSON.parse(savedTransactions);
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      
-      const monthlyTransactions = transactions.filter(t => 
-        new Date(t.date) >= monthStart
-      );
+    if (user) {
+      loadSpendingData();
+    }
+  }, [user, timeRange]);
 
-      const newSpendingData: SpendingData = {
+  const loadSpendingData = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      // Get spending data from Supabase
+      const { data: spendingResult, error: spendingError } = await getSpendingData(user.id, timeRange);
+      
+      if (spendingError) {
+        console.error('Error loading spending data:', spendingError);
+        // Set default values if there's an error
+        setSpendingData({
+          safe: 0,
+          impulsive: 0,
+          anxious: 0
+        });
+        return;
+      }
+
+      if (spendingResult) {
+        setSpendingData(spendingResult);
+      }
+
+      // Get all transactions for the time range to generate category details
+      const { data: allTransactions, error: transactionsError } = await transactions.getAll(user.id);
+      
+      if (transactionsError) {
+        console.error('Error loading transactions:', transactionsError);
+        setCategoryDetails([]);
+        return;
+      }
+
+      if (allTransactions) {
+        const now = new Date();
+        let startDate: Date;
+
+        switch (timeRange) {
+          case 'week':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case 'month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+          case 'year':
+            startDate = new Date(now.getFullYear(), 0, 1);
+            break;
+          default:
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        }
+
+        const monthlyTransactions = allTransactions.filter(t => {
+          try {
+            const transactionDate = new Date(t.date);
+            return transactionDate >= startDate && t.amount < 0; // Only expenses
+          } catch (error) {
+            console.error('Error parsing transaction date:', t.date, error);
+            return false;
+          }
+        });
+
+        // Generate category details
+        const details: CategoryDetailsType[] = (['safe', 'impulsive', 'anxious'] as SpendingCategory[]).map(category => {
+          const categoryTransactions = monthlyTransactions.filter(t => 
+            t.category === category
+          );
+          const totalAmount = categoryTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+          const totalSpent = spendingData.safe + spendingData.impulsive + spendingData.anxious;
+          
+          return {
+            category,
+            amount: totalAmount,
+            percentage: totalSpent > 0 ? (totalAmount / totalSpent) * 100 : 0,
+            transactions: categoryTransactions,
+            topExpenses: categoryTransactions
+              .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+              .slice(0, 5)
+              .map(t => ({
+                description: t.description,
+                amount: Math.abs(t.amount),
+                date: t.date
+              }))
+          };
+        });
+        
+        setCategoryDetails(details);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+      // Set default values on error
+      setSpendingData({
         safe: 0,
         impulsive: 0,
         anxious: 0
-      };
-
-      monthlyTransactions.forEach(transaction => {
-        if (transaction.amount > 0) return; // Only count expenses
-        const amount = Math.abs(transaction.amount);
-        newSpendingData[transaction.category] += amount;
       });
-
-      setSpendingData(newSpendingData);
-      
-      // Generate category details
-      const details: CategoryDetailsType[] = ['safe', 'impulsive', 'anxious'].map(category => {
-        const categoryTransactions = monthlyTransactions.filter(t => 
-          t.category === category && t.amount < 0
-        );
-        const totalAmount = categoryTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-        const totalSpent = newSpendingData.safe + newSpendingData.impulsive + newSpendingData.anxious;
-        
-        return {
-          category: category as 'safe' | 'impulsive' | 'anxious',
-          amount: totalAmount,
-          percentage: totalSpent > 0 ? (totalAmount / totalSpent) * 100 : 0,
-          transactions: categoryTransactions,
-          topExpenses: categoryTransactions
-            .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-            .slice(0, 5)
-            .map(t => ({
-              description: t.description,
-              amount: Math.abs(t.amount),
-              date: t.date
-            }))
-        };
-      });
-      
-      setCategoryDetails(details);
+      setCategoryDetails([]);
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  };
+
+  const handleExpenseAdd = async (expense: {
+    amount: number;
+    category: string;
+    description?: string;
+    merchantName?: string;
+    upiId?: string;
+  }) => {
+    if (!user) return;
+
+    try {
+      // Map the expense category to our spending categories
+      let mappedCategory: SpendingCategory = 'safe';
+      
+      // Simple mapping logic - you can customize this based on your needs
+      if (['Food', 'Transport', 'Bills'].includes(expense.category)) {
+        mappedCategory = 'safe';
+      } else if (['Shopping', 'Entertainment'].includes(expense.category)) {
+        mappedCategory = 'impulsive';
+      } else {
+        mappedCategory = 'anxious';
+      }
+
+      // Create transaction in Supabase
+      const { error } = await transactions.create({
+        user_id: user.id,
+        amount: -Math.abs(expense.amount), // Negative for expenses
+        description: expense.description || expense.category,
+        category: mappedCategory,
+        date: new Date().toISOString(),
+        merchant_name: expense.merchantName,
+        upi_id: expense.upiId
+      });
+
+      if (error) {
+        console.error('Error adding expense:', error);
+        return;
+      }
+
+      // Reload spending data
+      await loadSpendingData();
+    } catch (error) {
+      console.error('Error adding expense:', error);
+    }
+  };
 
   const stats = [
     {
@@ -98,138 +200,104 @@ const Dashboard: React.FC = () => {
     }
   ];
 
-  const handleExpenseAdd = (expense: {
-    amount: number;
-    category: string;
-    description?: string;
-    merchantName?: string;
-    upiId?: string;
-  }) => {
-    const transaction: Transaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      user_id: 'local',
-      amount: -expense.amount, // Negative for expenses
-      description: expense.description || (expense.merchantName ? `Paid to ${expense.merchantName}` : ''),
-      category: expense.category.toLowerCase() as 'safe' | 'impulsive' | 'anxious',
-      date: new Date().toISOString().slice(0, 10),
-      created_at: new Date().toISOString(),
-      merchant_name: expense.merchantName,
-      upi_id: expense.upiId
-    };
-
-    // Update local storage
-    const savedTransactions = localStorage.getItem('transactions');
-    const transactions: Transaction[] = savedTransactions ? JSON.parse(savedTransactions) : [];
-    transactions.push(transaction);
-    localStorage.setItem('transactions', JSON.stringify(transactions));
-
-    // Update spending data
-    setSpendingData(prev => ({
-      ...prev,
-      [transaction.category]: prev[transaction.category] + Math.abs(transaction.amount)
-    }));
-
-    // Update category details
-    setCategoryDetails(prev => 
-      prev.map(cat => {
-        if (cat.category === transaction.category) {
-          return {
-            ...cat,
-            amount: cat.amount + Math.abs(transaction.amount),
-            transactions: [...cat.transactions, transaction],
-            topExpenses: [...cat.transactions, transaction]
-              .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-              .slice(0, 5)
-              .map(t => ({
-                description: t.description,
-                amount: Math.abs(t.amount),
-                date: t.date
-              }))
-          };
-        }
-        return cat;
-      })
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-1/4 mb-4"></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-24 bg-slate-200 dark:bg-slate-700 rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
     );
-  };
+  }
 
   return (
-    <div className="space-y-8 px-2 sm:px-6 md:px-12 lg:px-24 py-8 bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 min-h-screen">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 bg-white dark:bg-slate-900 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-800">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold text-cyan-700 dark:text-cyan-400 tracking-tight">Dashboard</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2 text-base">Track your spending patterns and financial wellbeing</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Dashboard</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">Track your spending and financial health</p>
         </div>
-        <div className="flex flex-col justify-center items-center sm:items-end">
-          <AddExpenseButton 
-            className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2" 
-            onExpenseAdd={handleExpenseAdd} 
-          />
-        </div>
-        <div className="flex items-center space-x-3">
+        
+        <div className="mt-4 sm:mt-0 flex flex-col sm:flex-row gap-3">
           <select
             value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="px-4 py-2 border border-cyan-200 dark:border-cyan-700 dark:bg-slate-800 dark:text-white rounded-xl text-base focus:ring-2 focus:ring-cyan-500 focus:border-transparent shadow-sm"
+            onChange={(e) => setTimeRange(e.target.value as 'week' | 'month' | 'year')}
+            className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
           >
             <option value="week">This Week</option>
             <option value="month">This Month</option>
-            <option value="quarter">This Quarter</option>
+            <option value="year">This Year</option>
           </select>
           
+          <AddExpenseButton 
+            onExpenseAdd={handleExpenseAdd}
+            label="Add Expense"
+            className="bg-gradient-to-r from-blue-900 to-cyan-600 text-white px-4 py-2 rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200"
+          />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-6">
-        {stats.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <div key={index} className="bg-gradient-to-br from-white via-cyan-50 to-blue-100 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 flex items-center gap-4 hover:scale-[1.03] transition-transform">
-              <div className="bg-cyan-100 dark:bg-cyan-900 p-4 rounded-xl flex items-center justify-center">
-                <Icon className={`h-8 w-8 ${stat.color}`} />
-              </div>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {stats.map((stat, index) => (
+          <div key={index} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-base font-medium text-cyan-700 dark:text-cyan-400 mb-1">{stat.name}</p>
-                <p className="text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{stat.name}</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
+              </div>
+              <div className={`p-3 rounded-lg bg-slate-100 dark:bg-slate-700 ${stat.color}`}>
+                <stat.icon className="h-6 w-6" />
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
-          <div className="flex justify-center items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 gap-2 shadow-sm w-fit">
-            <button
-              onClick={() => setChartType('doughnut')}
-              className={`flex items-center justify-center p-2 rounded-lg transition-all min-w-[40px] ${
-                chartType === 'doughnut' 
-                  ? 'bg-white dark:bg-slate-700 shadow text-cyan-600 dark:text-cyan-400' 
-                  : 'text-slate-600 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-300'
-              }`}
-            >
-              <PieChart className="h-5 w-5" />
-            </button>
-            <button
-              onClick={() => setChartType('bar')}
-              className={`flex items-center justify-center p-2 rounded-lg transition-all min-w-[40px] ${
-                chartType === 'bar' 
-                  ? 'bg-white dark:bg-slate-700 shadow text-cyan-600 dark:text-cyan-400' 
-                  : 'text-slate-600 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-300'
-              }`}
-            >
-              <BarChart className="h-5 w-5" />
-            </button>
           </div>
-          <h3 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 mb-6">Spending Trends</h3>
-          <SpendingChart data={spendingChartData} chartType={chartType} />
-        </div>
-        <SafeSpendZone data={spendingData} monthlyBudget={monthlyBudget} />
+        ))}
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
-        <h3 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 mb-6">Category Breakdown</h3>
-        {/* <CategoryDetails categoryData={categoryDetails} /> */}
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Spending Overview</h3>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setChartType('doughnut')}
+                className={`p-2 rounded ${chartType === 'doughnut' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}
+              >
+                <PieChart className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setChartType('bar')}
+                className={`p-2 rounded ${chartType === 'bar' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}
+              >
+                <BarChart className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <SpendingChart data={spendingChartData} type={chartType} />
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Safe Spend Zone</h3>
+          <SafeSpendZone 
+            monthlyBudget={monthlyBudget}
+            totalSpent={spendingData.safe + spendingData.impulsive + spendingData.anxious}
+            safeSpending={spendingData.safe}
+          />
+        </div>
       </div>
+
+             {/* Category Details */}
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+         {categoryDetails.map((category) => (
+           <CategoryDetails key={category.category} {...category} />
+         ))}
+       </div>
     </div>
   );
 };

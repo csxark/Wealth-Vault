@@ -3,57 +3,75 @@ import { Plus, Target } from 'lucide-react';
 import { GoalCard } from './GoalCard';
 import { GoalForm } from './GoalForm';
 import { useAuth } from '../../hooks/useAuth';
+import { goals } from '../../lib/supabase';
 import type { Goal } from '../../types';
 
 export const Goals: React.FC = () => {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | undefined>();
+  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
 
   useEffect(() => {
-    loadGoals();
+    if (user) {
+      loadGoals();
+    }
   }, [user]);
 
-  const loadGoals = () => {
-    const savedGoals = localStorage.getItem(`goals-${user?.id}`);
-    if (savedGoals) {
-      setGoals(JSON.parse(savedGoals));
-    }
-  };
-
-  const saveGoals = (updatedGoals: Goal[]) => {
-    localStorage.setItem(`goals-${user?.id}`, JSON.stringify(updatedGoals));
-    setGoals(updatedGoals);
-  };
-
-  const handleSaveGoal = (goalData: Partial<Goal>) => {
-    if (editingGoal) {
-      // Update existing goal
-      const updatedGoals = goals.map(g => 
-        g.id === editingGoal.id 
-          ? { ...g, ...goalData, updated_at: new Date().toISOString() }
-          : g
-      );
-      saveGoals(updatedGoals);
-    } else {
-      // Create new goal
-      const newGoal: Goal = {
-        id: Date.now().toString(),
-        user_id: user?.id || '',
-        title: goalData.title || '',
-        description: goalData.description || '',
-        target_amount: goalData.target_amount || 0,
-        current_amount: goalData.current_amount || 0,
-        target_date: goalData.target_date || '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      saveGoals([...goals, newGoal]);
-    }
+  const loadGoals = async () => {
+    if (!user) return;
     
-    setShowForm(false);
-    setEditingGoal(undefined);
+    setLoading(true);
+    try {
+      const { data, error } = await goals.getAll(user.id);
+      if (error) {
+        console.error('Error loading goals:', error);
+        return;
+      }
+      setGoals(data || []);
+    } catch (error) {
+      console.error('Error loading goals:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveGoal = async (goalData: Partial<Goal>) => {
+    if (!user) return;
+
+    try {
+      if (editingGoal) {
+        // Update existing goal
+        const { error } = await goals.update(editingGoal.id, goalData);
+        if (error) {
+          console.error('Error updating goal:', error);
+          return;
+        }
+      } else {
+        // Create new goal
+        const { error } = await goals.create({
+          user_id: user.id,
+          title: goalData.title || '',
+          description: goalData.description || '',
+          target_amount: goalData.target_amount || 0,
+          current_amount: goalData.current_amount || 0,
+          target_date: goalData.target_date || ''
+        });
+        
+        if (error) {
+          console.error('Error creating goal:', error);
+          return;
+        }
+      }
+      
+      // Reload goals
+      await loadGoals();
+      setShowForm(false);
+      setEditingGoal(undefined);
+    } catch (error) {
+      console.error('Error saving goal:', error);
+    }
   };
 
   const handleEditGoal = (goal: Goal) => {
@@ -61,14 +79,39 @@ export const Goals: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleDeleteGoal = (goalId: string) => {
-    const updatedGoals = goals.filter(g => g.id !== goalId);
-    saveGoals(updatedGoals);
+  const handleDeleteGoal = async (goalId: string) => {
+    try {
+      const { error } = await goals.delete(goalId);
+      if (error) {
+        console.error('Error deleting goal:', error);
+        return;
+      }
+      
+      // Reload goals
+      await loadGoals();
+    } catch (error) {
+      console.error('Error deleting goal:', error);
+    }
   };
 
   const totalGoalsValue = goals.reduce((sum, goal) => sum + goal.target_amount, 0);
   const totalProgress = goals.reduce((sum, goal) => sum + goal.current_amount, 0);
   const overallProgress = totalGoalsValue > 0 ? (totalProgress / totalGoalsValue) * 100 : 0;
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-1/4 mb-4"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-48 bg-slate-200 dark:bg-slate-700 rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -100,42 +143,49 @@ export const Goals: React.FC = () => {
             </div>
           </div>
           
-          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-4 mb-2">
-            <div
-              className="bg-gradient-to-r from-cyan-500 to-blue-600 h-4 rounded-full transition-all duration-1000 ease-out"
+          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3">
+            <div 
+              className="bg-gradient-to-r from-cyan-500 to-blue-600 h-3 rounded-full transition-all duration-300"
               style={{ width: `${Math.min(overallProgress, 100)}%` }}
             />
           </div>
           
-          <div className="text-sm text-slate-600 dark:text-slate-400">
-            {goals.length} active goal{goals.length !== 1 ? 's' : ''} • ₹{(totalGoalsValue - totalProgress).toLocaleString()} remaining
+          <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-slate-600 dark:text-slate-400">Total Goal Value:</span>
+              <span className="ml-2 font-semibold text-slate-900 dark:text-white">₹{totalGoalsValue.toLocaleString()}</span>
+            </div>
+            <div>
+              <span className="text-slate-600 dark:text-slate-400">Remaining:</span>
+              <span className="ml-2 font-semibold text-slate-900 dark:text-white">₹{(totalGoalsValue - totalProgress).toLocaleString()}</span>
+            </div>
           </div>
         </div>
       )}
 
-      {goals.length === 0 ? (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {goals.map((goal) => (
+          <GoalCard
+            key={goal.id}
+            goal={goal}
+            onEdit={() => handleEditGoal(goal)}
+            onDelete={() => handleDeleteGoal(goal.id)}
+          />
+        ))}
+      </div>
+
+      {goals.length === 0 && !loading && (
         <div className="text-center py-12">
-          <Target className="h-12 w-12 text-slate-400 dark:text-slate-500 mx-auto mb-4" />
+          <Target className="h-16 w-16 text-slate-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">No goals yet</h3>
-          <p className="text-slate-600 dark:text-slate-400 mb-6">Create your first financial goal to start tracking your progress</p>
+          <p className="text-slate-600 dark:text-slate-400 mb-6">Create your first financial goal to get started</p>
           <button
             onClick={() => setShowForm(true)}
             className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-900 to-cyan-600 text-white rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200"
           >
             <Plus className="h-5 w-5 mr-2" />
-            Create Your First Goal
+            Create Goal
           </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {goals.map((goal) => (
-            <GoalCard
-              key={goal.id}
-              goal={goal}
-              onEdit={handleEditGoal}
-              onDelete={handleDeleteGoal}
-            />
-          ))}
         </div>
       )}
 

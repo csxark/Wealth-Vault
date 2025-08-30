@@ -14,10 +14,10 @@ ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarEle
 
 interface SpendingChartProps {
   data: { label: string; value: number }[];
-  chartType: 'doughnut' | 'bar';
+  type: 'doughnut' | 'bar';
 }
 
-const SpendingChart: React.FC<SpendingChartProps> = ({ data, chartType }) => {
+const SpendingChart: React.FC<SpendingChartProps> = ({ data, type }) => {
   const chartData = {
     labels: data.map(d => d.label),
     datasets: [
@@ -38,7 +38,7 @@ const SpendingChart: React.FC<SpendingChartProps> = ({ data, chartType }) => {
         Spending
       </h3>
       <div className="flex justify-center items-center h-80">
-        {chartType === 'doughnut' ? (
+        {type === 'doughnut' ? (
           <Doughnut data={chartData} />
         ) : (
           <Bar data={chartData} />
