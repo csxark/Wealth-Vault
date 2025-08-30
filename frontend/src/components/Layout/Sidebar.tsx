@@ -17,25 +17,38 @@ const navigation = [
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen }) => {
   return (
-    <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-50 dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 transform ${isOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-200 ease-in-out md:translate-x-0 md:static md:inset-0`}>
-      <nav className="mt-8 px-4">
-        <div className="space-y-2">
+    <div
+      className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700
+        transform ${isOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out
+        md:translate-x-0 md:static md:inset-0 shadow-lg dark:shadow-black/50`}
+    >
+      <nav className="mt-10 px-6">
+        <div className="space-y-3">
           {navigation.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
-            
+
             return (
               <button
                 key={item.id}
                 onClick={() => onTabChange(item.id)}
-                className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
-                  isActive
-                    ? 'bg-gradient-to-r from-blue-900 to-cyan-600 text-white shadow-md'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white hover:shadow-sm'
-                }`}
+                className={`w-full flex items-center px-5 py-3 rounded-xl transition-all duration-300
+                  ${
+                    isActive
+                      ? 'bg-gradient-to-r from-cyan-500 via-blue-400 to-cyan-500 text-white shadow-lg shadow-cyan-400/50 border border-cyan-400'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-cyan-600 hover:scale-105'
+                  }
+                  focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-opacity-75`}
+                aria-current={isActive ? 'page' : undefined}
+                type="button"
               >
-                <Icon className={`mr-3 h-5 w-5 ${isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
-                {item.name}
+                <Icon
+                  className={`mr-4 h-6 w-6 flex-shrink-0 ${
+                    isActive ? 'text-white' : 'text-gray-400 dark:text-slate-400'
+                  } transition-colors duration-300`}
+                  aria-hidden="true"
+                />
+                <span className="font-semibold text-lg">{item.name}</span>
               </button>
             );
           })}
@@ -43,4 +56,5 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen
       </nav>
     </div>
   );
+  
 };
