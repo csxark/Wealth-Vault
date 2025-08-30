@@ -56,4 +56,5 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen
       </nav>
     </div>
   );
+  
 };
