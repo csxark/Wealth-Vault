@@ -7,15 +7,8 @@ interface SafeSpendZoneProps {
   safeSpending: number;
 }
 
-<<<<<<< Updated upstream
 export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, totalSpent, safeSpending }) => {
   const safeSpendPercentage = monthlyBudget > 0 ? (safeSpending / monthlyBudget) * 100 : 0;
-=======
-export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ data, monthlyBudget }) => {
-  const totalSpent = Object.values(data).reduce((sum, amount) => sum + amount, 0);
-  const safeSpendAmount = data['Food & Dining'] || 0; // Use a default category for safe spending
-  const safeSpendPercentage = monthlyBudget > 0 ? (safeSpendAmount / monthlyBudget) * 100 : 0;
->>>>>>> Stashed changes
   const totalSpentPercentage = monthlyBudget > 0 ? (totalSpent / monthlyBudget) * 100 : 0;
   const remainingBudget = Math.max(0, monthlyBudget - totalSpent);
 
@@ -41,13 +34,8 @@ export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ data, monthlyBudge
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="text-center">
-<<<<<<< Updated upstream
           <div className="text-2xl font-bold text-green-600 dark:text-green-400">₹{safeSpending.toLocaleString()}</div>
           <div className="text-sm text-slate-600 dark:text-slate-400">Safe Spending</div>
-=======
-          <div className="text-2xl font-bold text-green-600 dark:text-green-400">₹{safeSpendAmount.toLocaleString()}</div>
-          <div className="text-sm text-slate-600 dark:text-slate-400">Essential Spending</div>
->>>>>>> Stashed changes
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold text-slate-900 dark:text-white">₹{remainingBudget.toLocaleString()}</div>

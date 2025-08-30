@@ -62,7 +62,7 @@ router.post('/register', [
       password,
       firstName,
       lastName,
-      currency: currency || 'USD',
+      currency: currency || 'INR',
       monthlyIncome: monthlyIncome || 0,
       monthlyBudget: monthlyBudget || 0
     });

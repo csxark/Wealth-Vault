@@ -159,11 +159,7 @@ export interface ExpenseFormData {
 }
 
 export interface CategoryDetails {
-<<<<<<< Updated upstream
   category: SpendingCategory;
-=======
-  category: Category;
->>>>>>> Stashed changes
   amount: number;
   percentage: number;
   expenses: Expense[];
