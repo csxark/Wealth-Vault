@@ -1,8 +1,17 @@
 import React from 'react';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement } from 'chart.js';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement
+} from 'chart.js';
 import { Doughnut, Bar } from 'react-chartjs-2';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
+
 interface SpendingChartProps {
   data: { label: string; value: number }[];
   chartType: 'doughnut' | 'bar';
@@ -24,13 +33,17 @@ const SpendingChart: React.FC<SpendingChartProps> = ({ data, chartType }) => {
   };
 
   return (
-    <div style={{ border: '1px solid #ccc', padding: '2rem', borderRadius: '8px', textAlign: 'center' }}>
-      <h3>Spending Chart ({chartType})</h3>
-      {chartType === 'doughnut' ? (
-        <Doughnut data={chartData} />
-      ) : (
-        <Bar data={chartData} />
-      )}
+    <div className="border border-gray-300 p-8 rounded-lg text-center bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-50">
+      <h3 className="text-2xl font-bold mb-4">
+        Spending
+      </h3>
+      <div className="flex justify-center items-center h-80">
+        {chartType === 'doughnut' ? (
+          <Doughnut data={chartData} />
+        ) : (
+          <Bar data={chartData} />
+        )}
+      </div>
     </div>
   );
 };
