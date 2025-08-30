@@ -3,9 +3,10 @@ import { BarChart, PieChart, Calendar, IndianRupee, TrendingUp, Activity } from 
 import SpendingChart from './SpendingChart';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
+import AddExpenseButton from './AddExpenseButton';
 import type { SpendingData, Transaction, CategoryDetails as CategoryDetailsType } from '../../types';
 
-export const Dashboard: React.FC = () => {
+const Dashboard: React.FC = () => {
   const [chartType, setChartType] = useState<'doughnut' | 'bar'>('doughnut');
   const [timeRange, setTimeRange] = useState('month');
   const [spendingData, setSpendingData] = useState<SpendingData>({
@@ -98,81 +99,84 @@ export const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-8 px-2 sm:px-6 md:px-12 lg:px-24 py-8 bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 min-h-screen">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 bg-white dark:bg-slate-900 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-800">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-slate-600 mt-1">Track your spending patterns and financial wellbeing</p>
+          <h1 className="text-3xl font-extrabold text-cyan-700 dark:text-cyan-400 tracking-tight">Dashboard</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 text-base">Track your spending patterns and financial wellbeing</p>
         </div>
-        
-        <div className="flex items-center space-x-2 mt-4 sm:mt-0">
+        <div className="flex flex-col justify-center items-center sm:items-end">
+          <AddExpenseButton className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2" onClick={function (): void {
+            throw new Error('Function not implemented.');
+          } } />
+        </div>
+        <div className="flex items-center space-x-3">
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
-            className="px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+            className="px-4 py-2 border border-cyan-200 dark:border-cyan-700 dark:bg-slate-800 dark:text-white rounded-xl text-base focus:ring-2 focus:ring-cyan-500 focus:border-transparent shadow-sm"
           >
             <option value="week">This Week</option>
             <option value="month">This Month</option>
             <option value="quarter">This Quarter</option>
           </select>
           
-          <div className="flex bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
-            <button
-              onClick={() => setChartType('doughnut')}
-              className={`p-2 rounded-md transition-all ${
-                chartType === 'doughnut' 
-                  ? 'bg-white dark:bg-slate-600 shadow-sm text-cyan-600 dark:text-cyan-400' 
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <PieChart className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setChartType('bar')}
-              className={`p-2 rounded-md transition-all ${
-                chartType === 'bar' 
-                  ? 'bg-white dark:bg-slate-600 shadow-sm text-cyan-600 dark:text-cyan-400' 
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <BarChart className="h-4 w-4" />
-            </button>
-          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
-            <div key={index} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-              <div className="flex items-center">
-                <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-lg">
-                  <Icon className={`h-6 w-6 ${stat.color}`} />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm text-slate-600 dark:text-slate-400">{stat.name}</p>
-                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">{stat.value}</p>
-                </div>
+            <div key={index} className="bg-gradient-to-br from-white via-cyan-50 to-blue-100 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 flex items-center gap-4 hover:scale-[1.03] transition-transform">
+              <div className="bg-cyan-100 dark:bg-cyan-900 p-4 rounded-xl flex items-center justify-center">
+                <Icon className={`h-8 w-8 ${stat.color}`} />
+              </div>
+              <div>
+                <p className="text-base font-medium text-cyan-700 dark:text-cyan-400 mb-1">{stat.name}</p>
+                <p className="text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Spending Trends</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
+          <div className="flex justify-center items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 gap-2 shadow-sm w-fit">
+            <button
+              onClick={() => setChartType('doughnut')}
+              className={`flex items-center justify-center p-2 rounded-lg transition-all min-w-[40px] ${
+                chartType === 'doughnut' 
+                  ? 'bg-white dark:bg-slate-700 shadow text-cyan-600 dark:text-cyan-400' 
+                  : 'text-slate-600 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-300'
+              }`}
+            >
+              <PieChart className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => setChartType('bar')}
+              className={`flex items-center justify-center p-2 rounded-lg transition-all min-w-[40px] ${
+                chartType === 'bar' 
+                  ? 'bg-white dark:bg-slate-700 shadow text-cyan-600 dark:text-cyan-400' 
+                  : 'text-slate-600 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-300'
+              }`}
+            >
+              <BarChart className="h-5 w-5" />
+            </button>
+          </div>
+          <h3 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 mb-6">Spending Trends</h3>
           <SpendingChart data={spendingChartData} chartType={chartType} />
         </div>
-
         <SafeSpendZone data={spendingData} monthlyBudget={monthlyBudget} />
       </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Category Breakdown</h3>
-        <CategoryDetails categoryData={categoryDetails} />
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
+        <h3 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 mb-6">Category Breakdown</h3>
+        {/* <CategoryDetails categoryData={categoryDetails} /> */}
       </div>
     </div>
   );
 };
+
+export default Dashboard;
