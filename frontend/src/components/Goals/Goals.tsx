@@ -71,7 +71,7 @@ export const Goals: React.FC = () => {
   const overallProgress = totalGoalsValue > 0 ? (totalProgress / totalGoalsValue) * 100 : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 pt-16">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Financial Goals</h1>
