@@ -98,6 +98,60 @@ const Dashboard: React.FC = () => {
     }
   ];
 
+  const handleExpenseAdd = (expense: {
+    amount: number;
+    category: string;
+    description?: string;
+    merchantName?: string;
+    upiId?: string;
+  }) => {
+    const transaction: Transaction = {
+      id: Math.random().toString(36).substr(2, 9),
+      user_id: 'local',
+      amount: -expense.amount, // Negative for expenses
+      description: expense.description || (expense.merchantName ? `Paid to ${expense.merchantName}` : ''),
+      category: expense.category.toLowerCase() as 'safe' | 'impulsive' | 'anxious',
+      date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
+      merchant_name: expense.merchantName,
+      upi_id: expense.upiId
+    };
+
+    // Update local storage
+    const savedTransactions = localStorage.getItem('transactions');
+    const transactions: Transaction[] = savedTransactions ? JSON.parse(savedTransactions) : [];
+    transactions.push(transaction);
+    localStorage.setItem('transactions', JSON.stringify(transactions));
+
+    // Update spending data
+    setSpendingData(prev => ({
+      ...prev,
+      [transaction.category]: prev[transaction.category] + Math.abs(transaction.amount)
+    }));
+
+    // Update category details
+    setCategoryDetails(prev => 
+      prev.map(cat => {
+        if (cat.category === transaction.category) {
+          return {
+            ...cat,
+            amount: cat.amount + Math.abs(transaction.amount),
+            transactions: [...cat.transactions, transaction],
+            topExpenses: [...cat.transactions, transaction]
+              .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+              .slice(0, 5)
+              .map(t => ({
+                description: t.description,
+                amount: Math.abs(t.amount),
+                date: t.date
+              }))
+          };
+        }
+        return cat;
+      })
+    );
+  };
+
   return (
     <div className="space-y-8 px-2 sm:px-6 md:px-12 lg:px-24 py-8 bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 min-h-screen">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 bg-white dark:bg-slate-900 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-800">
@@ -106,9 +160,10 @@ const Dashboard: React.FC = () => {
           <p className="text-slate-500 dark:text-slate-400 mt-2 text-base">Track your spending patterns and financial wellbeing</p>
         </div>
         <div className="flex flex-col justify-center items-center sm:items-end">
-          <AddExpenseButton className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2" onClick={function (): void {
-            throw new Error('Function not implemented.');
-          } } />
+          <AddExpenseButton 
+            className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2" 
+            onExpenseAdd={handleExpenseAdd} 
+          />
         </div>
         <div className="flex items-center space-x-3">
           <select

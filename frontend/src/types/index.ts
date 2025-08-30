@@ -18,6 +18,8 @@ export interface Transaction {
   category: 'safe' | 'impulsive' | 'anxious';
   date: string;
   created_at: string;
+  merchant_name?: string;
+  upi_id?: string;
 }
 
 export interface Goal {
