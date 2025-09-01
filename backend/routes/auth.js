@@ -7,6 +7,49 @@ import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
+// @route   POST /api/auth/check-email
+// @desc    Check if email already exists
+// @access  Public
+router.post('/check-email', [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email')
+    .normalizeEmail(),
+], async (req, res) => {
+  try {
+    // Validate request
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format',
+        errors: errors.array()
+      });
+    }
+
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    const existingUser = await User.findOne({ email });
+    
+    return res.json({
+      success: true,
+      exists: !!existingUser
+    });
+  } catch (error) {
+    console.error('Email check error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while checking email'
+    });
+  }
+});
+
 // Generate JWT Token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {

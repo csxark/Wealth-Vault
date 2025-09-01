@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, MessageCircle, Target, Upload, User, Database } from 'lucide-react';
+import { BarChart3, MessageCircle, Target, Upload, User } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 interface SidebarProps {
@@ -14,7 +14,6 @@ const navigation = [
   { id: 'goals', name: 'Goals', icon: Target, path: '/goals' },
   { id: 'import', name: 'Import Data', icon: Upload, path: '/import' },
   { id: 'profile', name: 'Profile', icon: User, path: '/profile' },
-  { id: 'testdb', name: 'Test DB', icon: Database, path: '/testdb' },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen }) => {

@@ -20,7 +20,7 @@ export const Profile: React.FC = () => {
 
   const loadProfile = async () => {
     if (!user) return;
-    
+
     setLoading(true);
     try {
       const response = await authAPI.getProfile();
@@ -39,11 +39,11 @@ export const Profile: React.FC = () => {
 
   const handleSave = async () => {
     if (!user) return;
-    
+
     setSaving(true);
     try {
       const response = await authAPI.updateProfile(editedProfile);
-      
+
       if (response.success) {
         setProfile(response.data.user);
         setIsEditing(false);
@@ -123,142 +123,132 @@ export const Profile: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-cyan-600 dark:border-cyan-400"></div>
       </div>
     );
   }
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-lg shadow p-12 text-center">
-            <UserIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Profile not found</h3>
-            <p className="text-gray-600">Unable to load your profile information.</p>
-          </div>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 flex items-center justify-center">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-10 text-center max-w-md w-full border border-cyan-200 dark:border-cyan-700">
+          <UserIcon className="h-12 w-12 text-cyan-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Profile not found</h3>
+          <p className="text-gray-600 dark:text-gray-300">Unable to load your profile information.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 lg:p-12 transition-colors mt-18">
+      <div className="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-cyan-200 dark:border-cyan-700">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Profile</h1>
-          <p className="text-gray-600">Manage your personal information and preferences</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow">
-          {/* Profile Header */}
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                  <UserIcon className="h-8 w-8 text-blue-600" />
-                </div>
-                <div className="ml-4">
-                  <h2 className="text-xl font-semibold text-gray-900">
-                    {profile.firstName} {profile.lastName}
-                  </h2>
-                  <p className="text-gray-600">{profile.email}</p>
-                </div>
-              </div>
-              
-              <div className="flex space-x-2">
-                {isEditing ? (
-                  <>
-                    <button
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
-                    >
-                      <Save className="h-4 w-4 mr-2" />
-                      {saving ? 'Saving...' : 'Save'}
-                    </button>
-                    <button
-                      onClick={handleCancel}
-                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center"
-                    >
-                      <X className="h-4 w-4 mr-2" />
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
-                  >
-                    <Edit3 className="h-4 w-4 mr-2" />
-                    Edit Profile
-                  </button>
-                )}
-              </div>
+        <div className="px-6 py-8 sm:px-12 sm:py-10 border-b border-cyan-200 dark:border-cyan-700 flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+          <div className="flex items-center space-x-4">
+            <div className="w-16 h-16 bg-cyan-100 dark:bg-cyan-900 rounded-full flex items-center justify-center">
+              <UserIcon className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                {profile.firstName} {profile.lastName}
+              </h2>
+              <p className="text-cyan-600 dark:text-cyan-400 font-medium">{profile.email}</p>
             </div>
           </div>
 
-          {/* Profile Fields */}
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {profileFields.map((field) => {
-                const Icon = field.icon;
-                const value = isEditing 
-                  ? (editedProfile[field.key] as string || '')
-                  : (profile[field.key] as string || '');
-                
-                return (
-                  <div key={field.key} className="space-y-2">
-                    <label className="flex items-center text-sm font-medium text-gray-700">
-                      <Icon className="h-4 w-4 mr-2" />
-                      {field.label}
-                    </label>
-                    
-                    {isEditing ? (
-                      <input
-                        type={field.type}
-                        value={value}
-                        onChange={(e) => setEditedProfile({
-                          ...editedProfile,
-                          [field.key]: field.type === 'number' ? Number(e.target.value) : e.target.value
-                        })}
-                        placeholder={field.placeholder}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    ) : (
-                      <div className="px-3 py-2 bg-gray-50 rounded-lg">
-                        {field.key === 'monthlyIncome' || field.key === 'monthlyBudget' 
-                          ? `₹${(Number(value) || 0).toLocaleString()}`
-                          : field.key === 'dateOfBirth' && value
-                            ? `${value} (${calculateAge(value as string)} years old)`
-                            : value || 'Not specified'
-                        }
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          <div className="flex space-x-3">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center px-5 py-2 rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Save className="w-5 h-5 mr-2" />
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="flex items-center px-5 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700 transition"
+                >
+                  <X className="w-5 h-5 mr-2" />
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="flex items-center px-5 py-2 rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 transition"
+              >
+                <Edit3 className="w-5 h-5 mr-2" />
+                Edit Profile
+              </button>
+            )}
+          </div>
+        </div>
 
-            {/* Additional Information */}
-            <div className="mt-8 pt-6 border-t border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Account Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Currency</label>
-                  <div className="px-3 py-2 bg-gray-50 rounded-lg">
-                    {profile.currency || 'USD'}
+        {/* Profile Fields */}
+        <div className="px-6 py-8 sm:px-12 sm:py-10 grid grid-cols-1 md:grid-cols-2 gap-8 text-gray-800 dark:text-gray-200">
+          {profileFields.map((field) => {
+            const Icon = field.icon;
+            const value = isEditing
+              ? (editedProfile[field.key] as string | number | undefined) ?? ''
+              : (profile[field.key] as string | number | undefined) ?? '';
+
+            return (
+              <div key={field.key} className="flex flex-col space-y-2">
+                <label className="flex items-center text-sm font-medium text-cyan-700 dark:text-cyan-400">
+                  <Icon className="w-5 h-5 mr-2" />
+                  {field.label}
+                </label>
+                {isEditing ? (
+                  <input
+                    type={field.type}
+                    value={value}
+                    onChange={(e) =>
+                      setEditedProfile({
+                        ...editedProfile,
+                        [field.key]:
+                          field.type === 'number'
+                            ? e.target.value === ''
+                              ? ''
+                              : Number(e.target.value)
+                            : e.target.value,
+                      })
+                    }
+                    placeholder={field.placeholder}
+                    className="px-4 py-2 rounded-lg border border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-900 text-cyan-900 dark:text-cyan-200 focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition"
+                  />
+                ) : (
+                  <div className="px-4 py-2 bg-cyan-50 dark:bg-cyan-900 rounded-lg border border-cyan-200 dark:border-cyan-700 font-medium break-words">
+                    {(field.key === 'monthlyIncome' || field.key === 'monthlyBudget') && value !== ''
+                      ? `₹${Number(value).toLocaleString()}`
+                      : field.key === 'dateOfBirth' && value
+                      ? `${String(value)} (${calculateAge(String(value))} years old)`
+                      : String(value) || 'Not specified'}
                   </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Member Since</label>
-                  <div className="px-3 py-2 bg-gray-50 rounded-lg">
-                    {new Date(profile.createdAt).toLocaleDateString()}
-                  </div>
-                </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Additional Account Info */}
+        <div className="border-t border-cyan-200 dark:border-cyan-700 px-6 py-8 sm:px-12 sm:py-10">
+          <h3 className="text-lg font-semibold text-cyan-700 dark:text-cyan-400 mb-6">Account Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-gray-800 dark:text-gray-200">
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium text-cyan-600 dark:text-cyan-400">Currency</label>
+              <div className="px-4 py-2 bg-cyan-50 dark:bg-cyan-900 rounded-lg border border-cyan-200 dark:border-cyan-700 font-semibold">
+                {profile.currency || 'USD'}
+              </div>
+            </div>
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium text-cyan-600 dark:text-cyan-400">Member Since</label>
+              <div className="px-4 py-2 bg-cyan-50 dark:bg-cyan-900 rounded-lg border border-cyan-200 dark:border-cyan-700 font-semibold">
+                {new Date(profile.createdAt).toLocaleDateString()}
               </div>
             </div>
           </div>

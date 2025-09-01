@@ -1,8 +1,8 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import { User, Expense, Category, Goal } from '../types';
 
-// Use the Vite proxy in development, fallback to direct URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+// Use environment variable for API URL
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 // Create axios instance
 const api: AxiosInstance = axios.create({
@@ -10,8 +10,8 @@ const api: AxiosInstance = axios.create({
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
-  // Enable credentials for CORS
   withCredentials: true,
 });
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, Zap, DollarSign, TrendingDown } from 'lucide-react';
 import type { ChatMessage } from '../../types';
+import { fetchGeminiResponse } from '../../services/gemini';
 
 const quickReplies = [
   { text: "Help me reduce impulsive spending", icon: TrendingDown },
@@ -22,7 +23,7 @@ export const Coach: React.FC = () => {
     } else {
       // Welcome message
       const welcomeMessage: ChatMessage = {
-        id: '1',
+    _id: '1',
         content: "Hi! I'm your financial wellness coach. I'm here to help you build healthier spending habits and achieve your financial goals. How can I support you today?",
         isUser: false,
         timestamp: new Date().toISOString()
@@ -42,33 +43,18 @@ export const Coach: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const generateResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase();
-    
-    if (lowerMessage.includes('impulsive') || lowerMessage.includes('impulse')) {
-      return "I understand you'd like to work on impulsive spending. Here are some strategies: Try the 24-hour rule - wait a day before making non-essential purchases. Create a 'wants vs needs' list, and consider setting up automatic transfers to savings right after payday to reduce available spending money.";
-    }
-    
-    if (lowerMessage.includes('goal') || lowerMessage.includes('save')) {
-      return "Setting savings goals is powerful for financial wellness! Start with SMART goals - Specific, Measurable, Achievable, Relevant, and Time-bound. Would you like help creating a specific savings goal? I can guide you through breaking it down into manageable monthly targets.";
-    }
-    
-    if (lowerMessage.includes('pattern') || lowerMessage.includes('analyze') || lowerMessage.includes('spending')) {
-      return "Based on your spending patterns, I can see you're doing well with safe spending! To improve further, try categorizing each purchase as 'essential', 'beneficial', or 'impulsive' before buying. This mindful approach can help reduce anxiety-driven purchases.";
-    }
-    
-    if (lowerMessage.includes('anxious') || lowerMessage.includes('anxiety')) {
-      return "Financial anxiety is common and manageable. Try these techniques: Set up automatic bill payments to reduce worry, create a small emergency fund even if it's just $100 to start, and practice the 5-4-3-2-1 grounding technique when feeling overwhelmed about money decisions.";
-    }
-    
-    return "That's a thoughtful question! I'd recommend starting with small, consistent changes to your financial habits. Whether it's tracking daily expenses, setting up automatic savings, or practicing mindful spending, small steps lead to lasting change. What specific area would you like to focus on first?";
+
+  // Async Gemini response
+  const generateGeminiResponse = async (userMessage: string): Promise<string> => {
+    // Optionally, you can add prompt engineering here
+    return await fetchGeminiResponse(userMessage);
   };
 
   const handleSendMessage = async (content: string) => {
     if (!content.trim()) return;
 
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      _id: Date.now().toString(),
       content: content.trim(),
       isUser: true,
       timestamp: new Date().toISOString()
@@ -78,18 +64,16 @@ export const Coach: React.FC = () => {
     setInputValue('');
     setIsTyping(true);
 
-    // Simulate AI response delay
-    setTimeout(() => {
-      const botResponse: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: generateResponse(content),
-        isUser: false,
-        timestamp: new Date().toISOString()
-      };
-      
-      setMessages(prev => [...prev, botResponse]);
-      setIsTyping(false);
-    }, 1500);
+    // Get Gemini response
+    const geminiReply = await generateGeminiResponse(content);
+    const botResponse: ChatMessage = {
+      _id: (Date.now() + 1).toString(),
+      content: geminiReply,
+      isUser: false,
+      timestamp: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, botResponse]);
+    setIsTyping(false);
   };
 
   const handleQuickReply = (reply: string) => {
@@ -113,7 +97,7 @@ export const Coach: React.FC = () => {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message) => (
           <div
-            key={message.id}
+            key={message._id}
             className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
           >
             <div className={`flex items-start space-x-2 max-w-[80%] ${message.isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
@@ -148,9 +132,13 @@ export const Coach: React.FC = () => {
               </div>
               <div className="bg-slate-100 dark:bg-slate-700 p-3 rounded-2xl">
                 <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="w-2 h-2 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={`dot-${i}`}
+                      className="w-2 h-2 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce"
+                      style={{ animationDelay: `${i * 0.1}s` }}
+                    ></div>
+                  ))}
                 </div>
               </div>
             </div>

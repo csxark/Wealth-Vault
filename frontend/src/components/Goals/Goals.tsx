@@ -21,59 +21,39 @@ export const Goals: React.FC = () => {
 
   const loadGoals = async () => {
     if (!user) return;
-    
     setLoading(true);
     try {
       const response = await goalsAPI.getAll();
-      if (response.success) {
-        setGoals(response.data.goals);
-      } else {
-        console.error('Error loading goals');
-      }
-    } catch (error) {
-      console.error('Error loading goals:', error);
-    } finally {
-      setLoading(false);
-    }
+      if (response.success) setGoals(response.data.goals);
+    } catch { /* Handle error quietly for sleek UI */ }
+    finally { setLoading(false); }
   };
 
   const handleSaveGoal = async (goalData: Partial<Goal>) => {
     if (!user) return;
-
     try {
       if (editingGoal) {
-        // Update existing goal
         const response = await goalsAPI.update(editingGoal._id, goalData);
-        if (!response.success) {
-          console.error('Error updating goal');
-          return;
-        }
+        if (!response.success) return;
       } else {
-        // Create new goal
         const response = await goalsAPI.create({
           title: goalData.title || '',
           description: goalData.description || '',
           targetAmount: goalData.targetAmount || 0,
-          currency: 'INR',
+          currentAmount: goalData.currentAmount ?? 0,
           type: 'savings',
           priority: 'medium',
+          status: 'active',
+          targetDate: goalData.targetDate || goalData.deadline || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           deadline: goalData.deadline || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-          isPublic: false
+          contributions: goalData.contributions ?? [],
         });
-        
-        if (!response.success) {
-          console.error('Error creating goal');
-          return;
-        }
+        if (!response.success) return;
       }
-      
-      // Reload goals
       await loadGoals();
       setShowForm(false);
       setEditingGoal(undefined);
-    } catch (error) {
-      console.error('Error saving goal:', error);
-    }
+    } catch { /* Silently fail for minimalist UX */ }
   };
 
   const handleEditGoal = (goal: Goal) => {
@@ -84,16 +64,8 @@ export const Goals: React.FC = () => {
   const handleDeleteGoal = async (goalId: string) => {
     try {
       const response = await goalsAPI.delete(goalId);
-      if (!response.success) {
-        console.error('Error deleting goal');
-        return;
-      }
-      
-      // Reload goals
-      await loadGoals();
-    } catch (error) {
-      console.error('Error deleting goal:', error);
-    }
+      if (response.success) await loadGoals();
+    } catch { /* Silent */ }
   };
 
   const totalGoalsValue = goals.reduce((sum, goal) => sum + goal.targetAmount, 0);
@@ -102,87 +74,64 @@ export const Goals: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
+        <div className="animate-spin h-10 w-10 border-4 border-gray-200 dark:border-gray-800 rounded-full border-b-cyan-500" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-blue-950 px-2 sm:px-6 md:px-12 lg:px-24 py-8 transition-all">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Financial Goals</h1>
-          <p className="text-gray-600">Track your progress towards financial milestones</p>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Target className="h-6 w-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Goals</p>
-                <p className="text-2xl font-bold text-gray-900">{goals.length}</p>
-              </div>
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-cyan-700 dark:text-cyan-400">Financial Goals</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">Track your progress towards financial milestones</p>
           </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <Target className="h-6 w-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Target Value</p>
-                <p className="text-2xl font-bold text-gray-900">₹{totalGoalsValue.toLocaleString()}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Target className="h-6 w-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Overall Progress</p>
-                <p className="text-2xl font-bold text-gray-900">{overallProgress.toFixed(1)}%</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Add Goal Button */}
-        <div className="mb-6">
           <button
             onClick={() => setShowForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+            className="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-xl shadow hover:from-cyan-600 hover:to-blue-700 transition"
           >
-            <Plus className="h-5 w-5 mr-2" />
-            Add New Goal
+            <Plus className="w-5 h-5 mr-2" />
+            Add Goal
           </button>
         </div>
-
-        {/* Goals Grid */}
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          <SummaryCard
+            icon={<Target className="h-6 w-6 text-cyan-600" />}
+            label="Total Goals"
+            value={goals.length}
+          />
+          <SummaryCard
+            icon={<Target className="h-6 w-6 text-green-500" />}
+            label="Target Value"
+            value={`₹${totalGoalsValue.toLocaleString()}`}
+          />
+          <SummaryCard
+            icon={<Target className="h-6 w-6 text-purple-600" />}
+            label="Overall Progress"
+            value={`${overallProgress.toFixed(1)}%`}
+          />
+        </div>
+        {/* Empty State */}
         {goals.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
-            <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No goals yet</h3>
-            <p className="text-gray-600 mb-4">Start by creating your first financial goal</p>
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow p-12 flex flex-col items-center text-center border border-cyan-100 dark:border-cyan-900">
+            <Target className="h-10 w-10 text-gray-400 mb-3" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No goals yet</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">Start by creating your first financial goal</p>
             <button
               onClick={() => setShowForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              className="bg-cyan-600 text-white px-4 py-2 rounded-lg shadow hover:bg-cyan-700 transition"
             >
-              Create Your First Goal
+              Create First Goal
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {goals.map((goal) => (
+          // Goals Grid
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {goals.map(goal => (
               <GoalCard
                 key={goal._id}
                 goal={goal}
@@ -208,3 +157,20 @@ export const Goals: React.FC = () => {
     </div>
   );
 };
+
+// Single Summary Card Component for minimalist look
+function SummaryCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-xl shadow flex items-center gap-4 p-6 border border-cyan-100 dark:border-cyan-900">
+      <div className="bg-cyan-100 dark:bg-cyan-900 p-3 rounded-xl">
+        {icon}
+      </div>
+      <div>
+        <p className="text-sm font-medium text-gray-500 dark:text-gray-300">{label}</p>
+        <p className="text-xl font-bold text-gray-900 dark:text-white">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+export default Goals;

@@ -18,99 +18,75 @@ export interface UPIData {
 const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, onScanError }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<QrScanner | null>(null);
-  const [hasPermission, setHasPermission] = useState<boolean>(false);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null); // null = not requested yet
 
-  useEffect(() => {
-    if (!videoRef.current) return;
-
-    // Request camera permission first
+  // Request permission on button click
+  const requestPermission = () => {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
       .then(() => {
         setHasPermission(true);
-        // Create QR Scanner instance
-        scannerRef.current = new QrScanner(
-          videoRef.current,
-          (result) => {
-            handleQRCode(result.data);
-          },
-          {
-            preferredCamera: 'environment',
-            highlightScanRegion: true,
-            highlightCodeOutline: true,
-            maxScansPerSecond: 5,
-            returnDetailedScanResult: true,
-          }
-        );
-
-        // Start scanning
-        scannerRef.current.start().catch((err) => {
-          if (onScanError) {
-            onScanError(err.message || 'Failed to start camera');
-          }
-        });
       })
-      .catch((err) => {
+      .catch(() => {
+        setHasPermission(false);
         if (onScanError) {
           onScanError('Camera permission denied. Please allow camera access to scan QR codes.');
         }
       });
+  };
 
-    // Cleanup
+  useEffect(() => {
+    if (!videoRef.current || hasPermission !== true) return;
+
+    // Initialize and start scanner
+    if (!scannerRef.current) {
+      scannerRef.current = new QrScanner(
+        videoRef.current,
+        (result) => {
+          handleQRCode(result.data);
+        },
+        {
+          preferredCamera: 'environment',
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+          maxScansPerSecond: 5,
+          returnDetailedScanResult: true,
+        }
+      );
+    }
+
+    if (scannerRef.current) {
+      // QrScanner does not have isScanning() in all versions; just call start safely
+      scannerRef.current.start().catch((err) => {
+        if (onScanError) onScanError(err.message || 'Failed to start camera');
+      });
+    }
+
     return () => {
       if (scannerRef.current) {
         scannerRef.current.destroy();
+        scannerRef.current = null;
       }
     };
-  }, [onScanError]);
+  }, [hasPermission, onScanError]);
 
   const handleQRCode = (decodedText: string) => {
+    // Parse UPI QR code (format: upi://pay?pa=...&pn=...&am=...&tn=...)
     try {
-      let upiData: UPIData;
-      
-      // Handle both URL and plain text formats
-      if (decodedText.startsWith('upi://')) {
-        // Parse UPI URL format
-        const url = new URL(decodedText);
-        if (url.protocol !== 'upi:') {
-          throw new Error('Not a valid UPI QR code');
-        }
-
-        const searchParams = new URLSearchParams(url.search);
-        upiData = {
-          pa: searchParams.get('pa') || '',
-          pn: searchParams.get('pn') || '',
-          am: searchParams.get('am') || undefined,
-          tn: searchParams.get('tn') || undefined,
-          cu: searchParams.get('cu') || 'INR',
-          mc: searchParams.get('mc') || undefined
-        };
-      } else {
-        // Try to parse plain text format (common in some UPI QRs)
-        const parts = decodedText.split('&').reduce((acc, part) => {
-          const [key, value] = part.split('=');
-          acc[key.toLowerCase()] = decodeURIComponent(value);
-          return acc;
-        }, {} as Record<string, string>);
-
-        upiData = {
-          pa: parts.pa || '',
-          pn: parts.pn || '',
-          am: parts.am,
-          tn: parts.tn,
-          cu: parts.cu || 'INR',
-          mc: parts.mc
-        };
+      if (!decodedText.startsWith('upi://pay?')) {
+        throw new Error('Not a valid UPI QR code');
       }
-
-      if (!upiData.pa) {
-        throw new Error('Invalid UPI QR code: Missing UPI ID');
+      const params = new URLSearchParams(decodedText.replace('upi://pay?', ''));
+      const upiData: UPIData = {
+        pa: params.get('pa') || '',
+        pn: params.get('pn') || '',
+        am: params.get('am') || undefined,
+        tn: params.get('tn') || undefined,
+        cu: params.get('cu') || undefined,
+        mc: params.get('mc') || undefined,
+      };
+      if (!upiData.pa || !upiData.pn) {
+        throw new Error('Missing UPI ID or Payee Name');
       }
-
-      // If merchant name is missing, use UPI ID as name
-      if (!upiData.pn) {
-        upiData.pn = upiData.pa.split('@')[0];
-      }
-
       onScanSuccess(upiData);
     } catch (error) {
       if (onScanError) {
@@ -119,6 +95,35 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, onScanError }) => 
     }
   };
 
+  if (hasPermission === null) {
+    // Permission not requested yet
+    return (
+      <div className="w-full max-w-md mx-auto p-4 text-center bg-gray-50 rounded-lg dark:bg-gray-900">
+        <p className="mb-4 text-gray-700 dark:text-gray-300">
+          To scan a QR code, this app needs access to your camera.
+        </p>
+        <button
+          onClick={requestPermission}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+        >
+          Allow Camera Access
+        </button>
+      </div>
+    );
+  }
+
+  if (hasPermission === false) {
+    // Permission denied
+    return (
+      <div className="w-full max-w-md mx-auto p-4 text-center bg-red-50 rounded-lg dark:bg-red-900">
+        <p className="text-red-700 dark:text-red-400">
+          Camera permission denied. Please enable camera access in your browser settings to scan QR codes.
+        </p>
+      </div>
+    );
+  }
+
+  // Permission granted - show camera preview
   return (
     <div className="w-full max-w-md mx-auto">
       <video 
@@ -129,7 +134,7 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, onScanError }) => 
           objectFit: 'cover'
         }}
       />
-      <div className="mt-4 text-center text-sm text-gray-600">
+      <div className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
         Position the QR code within the frame to scan
       </div>
     </div>

@@ -8,7 +8,7 @@ export const CategoryDetails: React.FC<CategoryDetailsProps> = ({
   category, 
   amount, 
   percentage, 
-  transactions, 
+  expenses, 
   topExpenses 
 }) => {
   const getCategoryIcon = () => {
@@ -71,10 +71,10 @@ export const CategoryDetails: React.FC<CategoryDetailsProps> = ({
 
       <div className="space-y-3">
         <div className="text-sm text-slate-600 dark:text-slate-400">
-          {transactions.length} transaction{transactions.length !== 1 ? 's' : ''}
+          {Array.isArray(expenses) ? expenses.length : 0} transaction{Array.isArray(expenses) && expenses.length !== 1 ? 's' : ''}
         </div>
 
-        {topExpenses.length > 0 && (
+        {Array.isArray(topExpenses) && topExpenses.length > 0 && (
           <div>
             <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
               Top Expenses
