@@ -175,4 +175,53 @@ export interface UserProfile {
   occupation?: string;
   monthlyIncome: number;
   financialGoals?: string;
+<<<<<<< Updated upstream
+=======
+  full_name?: string; // For legacy compatibility
+}
+
+// API Response types
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
+
+export interface PaginatedResponse<T> {
+  success: boolean;
+  data: {
+    items: T[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalItems: number;
+      itemsPerPage: number;
+    };
+  };
+}
+
+// Auth types
+export interface AuthResponse {
+  success: boolean;
+  data: {
+    user: User;
+    token: string;
+  };
+}
+
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export interface RegisterData {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  currency?: string;
+  monthlyIncome?: number;
+  monthlyBudget?: number;
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 }
