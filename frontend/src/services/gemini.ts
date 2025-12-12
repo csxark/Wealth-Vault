@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 // Get API key directly from environment
-const GEMINI_API_KEY = 'AIzaSyAXIPWb466pn3aJWUa2cQ_VCZhwUnd1hQo';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+const GEMINI_API_KEY = '';  // Use .env paths to access it
+const GEMINI_API_URL = '';
 
 export async function fetchGeminiResponse(userMessage: string): Promise<string> {
   if (!GEMINI_API_KEY) {
