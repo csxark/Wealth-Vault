@@ -10,12 +10,13 @@ interface ProfileSetupProps {
 export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmail }) => {
   const [step, setStep] = useState(1);
   const [profile, setProfile] = useState<UserProfile>({
-    full_name: '',
-    phone: '',
-    date_of_birth: '',
+    firstName: '',
+    lastName: '',
+    phoneNumber: '',
+    dateOfBirth: '',
     occupation: '',
-    monthly_income: 0,
-    financial_goals: ''
+    monthlyIncome: 0,
+    financialGoals: ''
   });
 
   const handleNext = () => {
@@ -35,11 +36,11 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
   const isStepValid = () => {
     switch (step) {
       case 1:
-        return profile.full_name.trim() && profile.phone.trim() && profile.date_of_birth;
+        return profile.firstName.trim() && profile.lastName.trim() && profile.phoneNumber?.trim() && profile.dateOfBirth;
       case 2:
-        return profile.occupation.trim() && profile.monthly_income > 0;
+        return profile.occupation?.trim() && profile.monthlyIncome > 0;
       case 3:
-        return profile.financial_goals.trim();
+        return profile.financialGoals?.trim();
       default:
         return false;
     }
@@ -74,14 +75,28 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                   <User className="inline h-4 w-4 mr-1" />
-                  Full Name
+                  First Name
                 </label>
                 <input
                   type="text"
-                  value={profile.full_name}
-                  onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
+                  value={profile.firstName}
+                  onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
                   className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
-                  placeholder="Enter your full name"
+                  placeholder="Enter your first name"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  <User className="inline h-4 w-4 mr-1" />
+                  Last Name
+                </label>
+                <input
+                  type="text"
+                  value={profile.lastName}
+                  onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                  className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  placeholder="Enter your last name"
                   required
                 />
               </div>
@@ -93,8 +108,8 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
                 </label>
                 <input
                   type="tel"
-                  value={profile.phone}
-                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                  value={profile.phoneNumber}
+                  onChange={(e) => setProfile({ ...profile, phoneNumber: e.target.value })}
                   className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
                   placeholder="+91 98765 43210"
                   required
@@ -108,8 +123,8 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
                 </label>
                 <input
                   type="date"
-                  value={profile.date_of_birth}
-                  onChange={(e) => setProfile({ ...profile, date_of_birth: e.target.value })}
+                  value={profile.dateOfBirth}
+                  onChange={(e) => setProfile({ ...profile, dateOfBirth: e.target.value })}
                   className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
                   required
                 />
@@ -147,8 +162,8 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
                 <input
                   type="number"
                   min="0"
-                  value={profile.monthly_income || ''}
-                  onChange={(e) => setProfile({ ...profile, monthly_income: parseFloat(e.target.value) || 0 })}
+                  value={profile.monthlyIncome || ''}
+                  onChange={(e) => setProfile({ ...profile, monthlyIncome: parseFloat(e.target.value) || 0 })}
                   className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
                   placeholder="50000"
                   required
@@ -170,8 +185,8 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
                   Primary Financial Goals
                 </label>
                 <textarea
-                  value={profile.financial_goals}
-                  onChange={(e) => setProfile({ ...profile, financial_goals: e.target.value })}
+                  value={profile.financialGoals}
+                  onChange={(e) => setProfile({ ...profile, financialGoals: e.target.value })}
                   className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
                   placeholder="e.g., Build emergency fund, save for house down payment, reduce impulsive spending..."
                   rows={4}
@@ -182,10 +197,10 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
               <div className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg p-4">
                 <h3 className="font-medium text-cyan-900 dark:text-cyan-100 mb-2">Profile Summary</h3>
                 <div className="text-sm text-cyan-800 dark:text-cyan-200 space-y-1">
-                  <p><strong>Name:</strong> {profile.full_name}</p>
+                  <p><strong>Name:</strong> {profile.firstName} {profile.lastName}</p>
                   <p><strong>Email:</strong> {userEmail}</p>
                   <p><strong>Occupation:</strong> {profile.occupation}</p>
-                  <p><strong>Monthly Income:</strong> ₹{profile.monthly_income?.toLocaleString()}</p>
+                  <p><strong>Monthly Income:</strong> ₹{profile.monthlyIncome?.toLocaleString()}</p>
                 </div>
               </div>
             </div>

@@ -1,39 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { User, Phone, Calendar, Briefcase, IndianRupee, Target, Edit3, Save, X } from 'lucide-react';
+import { User as UserIcon, Phone, Calendar, Briefcase, IndianRupee, Target, Edit3, Save, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import type { UserProfile } from '../../types';
+import { authAPI } from '../../services/api';
+import type { User } from '../../types';
 
 export const Profile: React.FC = () => {
   const { user } = useAuth();
-  const [profile, setProfile] = useState<UserProfile>({
-    full_name: '',
-    phone: '',
-    date_of_birth: '',
-    occupation: '',
-    monthly_income: 0,
-    financial_goals: ''
-  });
+  const [profile, setProfile] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedProfile, setEditedProfile] = useState<UserProfile>(profile);
+  const [editedProfile, setEditedProfile] = useState<Partial<User>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    // Load profile from localStorage
-    const savedProfile = localStorage.getItem(`profile-${user?.id}`);
-    if (savedProfile) {
-      const profileData = JSON.parse(savedProfile);
-      setProfile(profileData);
-      setEditedProfile(profileData);
+    if (user) {
+      loadProfile();
     }
   }, [user]);
 
-  const handleSave = () => {
-    localStorage.setItem(`profile-${user?.id}`, JSON.stringify(editedProfile));
-    setProfile(editedProfile);
-    setIsEditing(false);
+  const loadProfile = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const response = await authAPI.getProfile();
+      if (response.success) {
+        setProfile(response.data.user);
+        setEditedProfile(response.data.user);
+      } else {
+        console.error('Error loading profile');
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+
+    setSaving(true);
+    try {
+      const response = await authAPI.updateProfile(editedProfile);
+
+      if (response.success) {
+        setProfile(response.data.user);
+        setIsEditing(false);
+      } else {
+        console.error('Error saving profile');
+      }
+    } catch (error) {
+      console.error('Error saving profile:', error);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
-    setEditedProfile(profile);
+    if (profile) {
+      setEditedProfile(profile);
+    }
     setIsEditing(false);
   };
 
@@ -51,180 +78,177 @@ export const Profile: React.FC = () => {
 
   const profileFields = [
     {
-      key: 'full_name' as keyof UserProfile,
-      label: 'Full Name',
-      icon: User,
+      key: 'firstName' as keyof User,
+      label: 'First Name',
+      icon: UserIcon,
       type: 'text',
-      placeholder: 'Enter your full name'
+      placeholder: 'Enter your first name'
     },
     {
-      key: 'phone' as keyof UserProfile,
+      key: 'lastName' as keyof User,
+      label: 'Last Name',
+      icon: UserIcon,
+      type: 'text',
+      placeholder: 'Enter your last name'
+    },
+    {
+      key: 'phoneNumber' as keyof User,
       label: 'Phone Number',
       icon: Phone,
       type: 'tel',
-      placeholder: '+91 98765 43210'
+      placeholder: 'Enter your phone number'
     },
     {
-      key: 'date_of_birth' as keyof UserProfile,
+      key: 'dateOfBirth' as keyof User,
       label: 'Date of Birth',
       icon: Calendar,
       type: 'date',
-      placeholder: ''
+      placeholder: 'Select your date of birth'
     },
     {
-      key: 'occupation' as keyof UserProfile,
-      label: 'Occupation',
-      icon: Briefcase,
-      type: 'text',
-      placeholder: 'Software Engineer, Teacher, etc.'
-    },
-    {
-      key: 'monthly_income' as keyof UserProfile,
+      key: 'monthlyIncome' as keyof User,
       label: 'Monthly Income',
       icon: IndianRupee,
       type: 'number',
-      placeholder: '50000'
+      placeholder: 'Enter your monthly income'
+    },
+    {
+      key: 'monthlyBudget' as keyof User,
+      label: 'Monthly Budget',
+      icon: Target,
+      type: 'number',
+      placeholder: 'Enter your monthly budget'
     }
   ];
 
-  return (
-    <div className="space-y-10 p-6 pt-16">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Profile</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">Manage your personal information and preferences</p>
-        </div>
-        
-        {!isEditing ? (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-900 to-cyan-600 text-white rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200"
-          >
-            <Edit3 className="h-4 w-4 mr-2" />
-            Edit Profile
-          </button>
-        ) : (
-          <div className="mt-4 sm:mt-0 flex space-x-2">
-            <button
-              onClick={handleCancel}
-              className="inline-flex items-center px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-900 to-cyan-600 text-white rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
-            </button>
-          </div>
-        )}
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-cyan-600 dark:border-cyan-400"></div>
       </div>
+    );
+  }
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Personal Information</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {profileFields.map((field) => {
-                const Icon = field.icon;
-                const value = isEditing ? editedProfile[field.key] : profile[field.key];
-                
-                return (
-                  <div key={field.key}>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      <Icon className="inline h-4 w-4 mr-1" />
-                      {field.label}
-                    </label>
-                    {isEditing ? (
-                      <input
-                        type={field.type}
-                        value={value || ''}
-                        onChange={(e) => setEditedProfile({
-                          ...editedProfile,
-                          [field.key]: field.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value
-                        })}
-                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
-                        placeholder={field.placeholder}
-                      />
-                    ) : (
-                      <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
-                        {field.key === 'monthly_income' && value 
-                          ? `₹${(value as number).toLocaleString()}`
-                          : value || 'Not provided'
-                        }
-                        {field.key === 'date_of_birth' && value && (
-                          <span className="text-slate-500 dark:text-slate-400 ml-2">
-                            (Age: {calculateAge(value as string)})
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 flex items-center justify-center">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-10 text-center max-w-md w-full border border-cyan-200 dark:border-cyan-700">
+          <UserIcon className="h-12 w-12 text-cyan-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Profile not found</h3>
+          <p className="text-gray-600 dark:text-gray-300">Unable to load your profile information.</p>
+        </div>
+      </div>
+    );
+  }
 
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                <Target className="inline h-4 w-4 mr-1" />
-                Financial Goals
-              </label>
-              {isEditing ? (
-                <textarea
-                  value={editedProfile.financial_goals}
-                  onChange={(e) => setEditedProfile({ ...editedProfile, financial_goals: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
-                  placeholder="Describe your financial goals..."
-                  rows={3}
-                />
-              ) : (
-                <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
-                  {profile.financial_goals || 'No goals specified'}
-                </div>
-              )}
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 lg:p-12 transition-colors mt-18">
+      <div className="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-cyan-200 dark:border-cyan-700">
+        {/* Header */}
+        <div className="px-6 py-8 sm:px-12 sm:py-10 border-b border-cyan-200 dark:border-cyan-700 flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+          <div className="flex items-center space-x-4">
+            <div className="w-16 h-16 bg-cyan-100 dark:bg-cyan-900 rounded-full flex items-center justify-center">
+              <UserIcon className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
             </div>
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                {profile.firstName} {profile.lastName}
+              </h2>
+              <p className="text-cyan-600 dark:text-cyan-400 font-medium">{profile.email}</p>
+            </div>
+          </div>
+
+          <div className="flex space-x-3">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center px-5 py-2 rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Save className="w-5 h-5 mr-2" />
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="flex items-center px-5 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700 transition"
+                >
+                  <X className="w-5 h-5 mr-2" />
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="flex items-center px-5 py-2 rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 transition"
+              >
+                <Edit3 className="w-5 h-5 mr-2" />
+                Edit Profile
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Account Details</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
-                <div className="text-slate-900 dark:text-white">{user?.email}</div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Member Since</label>
-                <div className="text-slate-900 dark:text-white">
-                  {user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Profile Fields */}
+        <div className="px-6 py-8 sm:px-12 sm:py-10 grid grid-cols-1 md:grid-cols-2 gap-8 text-gray-800 dark:text-gray-200">
+          {profileFields.map((field) => {
+            const Icon = field.icon;
+            const value = isEditing
+              ? (editedProfile[field.key] as string | number | undefined) ?? ''
+              : (profile[field.key] as string | number | undefined) ?? '';
 
-          <div className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-6">
-            <h3 className="text-lg font-semibold text-cyan-900 dark:text-cyan-100 mb-2">Financial Health Score</h3>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-cyan-600 dark:text-cyan-400 mb-2">85/100</div>
-              <div className="text-sm text-cyan-800 dark:text-cyan-200">Excellent financial habits!</div>
+            return (
+              <div key={field.key} className="flex flex-col space-y-2">
+                <label className="flex items-center text-sm font-medium text-cyan-700 dark:text-cyan-400">
+                  <Icon className="w-5 h-5 mr-2" />
+                  {field.label}
+                </label>
+                {isEditing ? (
+                  <input
+                    type={field.type}
+                    value={value}
+                    onChange={(e) =>
+                      setEditedProfile({
+                        ...editedProfile,
+                        [field.key]:
+                          field.type === 'number'
+                            ? e.target.value === ''
+                              ? ''
+                              : Number(e.target.value)
+                            : e.target.value,
+                      })
+                    }
+                    placeholder={field.placeholder}
+                    className="px-4 py-2 rounded-lg border border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-900 text-cyan-900 dark:text-cyan-200 focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition"
+                  />
+                ) : (
+                  <div className="px-4 py-2 bg-cyan-50 dark:bg-cyan-900 rounded-lg border border-cyan-200 dark:border-cyan-700 font-medium break-words">
+                    {(field.key === 'monthlyIncome' || field.key === 'monthlyBudget') && value !== ''
+                      ? `₹${Number(value).toLocaleString()}`
+                      : field.key === 'dateOfBirth' && value
+                      ? `${String(value)} (${calculateAge(String(value))} years old)`
+                      : String(value) || 'Not specified'}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Additional Account Info */}
+        <div className="border-t border-cyan-200 dark:border-cyan-700 px-6 py-8 sm:px-12 sm:py-10">
+          <h3 className="text-lg font-semibold text-cyan-700 dark:text-cyan-400 mb-6">Account Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-gray-800 dark:text-gray-200">
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium text-cyan-600 dark:text-cyan-400">Currency</label>
+              <div className="px-4 py-2 bg-cyan-50 dark:bg-cyan-900 rounded-lg border border-cyan-200 dark:border-cyan-700 font-semibold">
+                {profile.currency || 'USD'}
+              </div>
             </div>
-            <div className="mt-4 space-y-2 text-xs text-cyan-700 dark:text-cyan-300">
-              <div className="flex justify-between">
-                <span>Safe Spending</span>
-                <span className="font-medium">92%</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Goal Progress</span>
-                <span className="font-medium">78%</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Budget Adherence</span>
-                <span className="font-medium">85%</span>
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium text-cyan-600 dark:text-cyan-400">Member Since</label>
+              <div className="px-4 py-2 bg-cyan-50 dark:bg-cyan-900 rounded-lg border border-cyan-200 dark:border-cyan-700 font-semibold">
+                {new Date(profile.createdAt).toLocaleDateString()}
               </div>
             </div>
           </div>

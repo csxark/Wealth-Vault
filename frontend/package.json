@@ -7,13 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "setup": "node setup.js",
+    "verify": "node verify-db.js",
+    "test-db": "echo 'Use the Test DB panel in the app to test database operations'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.56.1",
     "@types/papaparse": "^5.3.16",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
+    "axios": "^1.11.0",
     "chart.js": "^4.5.0",
     "lucide-react": "^0.344.0",
     "papaparse": "^5.5.3",

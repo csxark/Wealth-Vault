@@ -1,15 +1,14 @@
 import React from 'react';
 import { Shield, TrendingUp, AlertTriangle } from 'lucide-react';
-import type { SpendingData } from '../../types';
 
 interface SafeSpendZoneProps {
-  data: SpendingData;
   monthlyBudget: number;
+  totalSpent: number;
+  safeSpending: number;
 }
 
-export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ data, monthlyBudget }) => {
-  const totalSpent = data.safe + data.impulsive + data.anxious;
-  const safeSpendPercentage = monthlyBudget > 0 ? (data.safe / monthlyBudget) * 100 : 0;
+export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, totalSpent, safeSpending }) => {
+  const safeSpendPercentage = monthlyBudget > 0 ? (safeSpending / monthlyBudget) * 100 : 0;
   const totalSpentPercentage = monthlyBudget > 0 ? (totalSpent / monthlyBudget) * 100 : 0;
   const remainingBudget = Math.max(0, monthlyBudget - totalSpent);
 
@@ -35,7 +34,7 @@ export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ data, monthlyBudge
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="text-center">
-          <div className="text-2xl font-bold text-green-600 dark:text-green-400">₹{data.safe.toLocaleString()}</div>
+          <div className="text-2xl font-bold text-green-600 dark:text-green-400">₹{safeSpending.toLocaleString()}</div>
           <div className="text-sm text-slate-600 dark:text-slate-400">Safe Spending</div>
         </div>
         <div className="text-center">
@@ -44,7 +43,7 @@ export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ data, monthlyBudge
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">{safeSpendPercentage.toFixed(1)}%</div>
-          <div className="text-sm text-slate-600 dark:text-slate-400">Safe Spend Ratio</div>
+          <div className="text-sm text-slate-600 dark:text-slate-400">Essential Ratio</div>
         </div>
       </div>
 
