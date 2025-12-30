@@ -15,7 +15,7 @@ Wealth Vault is a comprehensive financial wellness application built with the ME
 
 ### Technical Skills Required
 - **Frontend**: React, TypeScript, Tailwind CSS, Vite
-- **Backend**: Node.js, Express.js, MongoDB/Mongoose
+- **Backend**: Node.js, Express.js, Prisma
 - **Tools**: Git, npm/yarn, ESLint, Jest (for testing)
 - **APIs**: RESTful API design, JWT authentication
 - **Optional but helpful**: Supabase, Chart.js, QR code libraries
@@ -32,7 +32,7 @@ Wealth Vault is a comprehensive financial wellness application built with the ME
 2. Create a feature branch from `main`
 3. Make changes with proper tests
 4. Ensure all tests pass and linting is clean
-5. Submit a pull request with detailed description
+5. Submit a pull request with a detailed description
 6. Address review feedback
 
 ### Testing Requirements
@@ -45,13 +45,13 @@ Wealth Vault is a comprehensive financial wellness application built with the ME
 - All PRs require at least one approval
 - Reviews focus on code quality, security, and functionality
 - Maintainers will provide constructive feedback
-- No direct pushes to main branch
+- No direct pushes to the main branch
 
 ## Areas for Improvement
 
 ### Testing and Quality Assurance
 
-The project currently has minimal test coverage despite Jest being configured. Contributors are encouraged to implement comprehensive testing strategies including:
+The project currently has minimal test coverage despite Jest being configured. Contributors are encouraged to implement comprehensive testing strategies, including:
 
 - Unit tests for backend models, utilities, and business logic
 - Integration tests for API endpoints and database operations
@@ -107,8 +107,8 @@ The user interface is functional but could benefit from enhanced user experience
 - Comprehensive form validation with real-time feedback
 - Keyboard navigation support for accessibility
 - Enhanced mobile responsiveness and touch interactions
-- Persistent user preferences including dark mode settings
-- Progressive web app features for native-like experience
+- Persistent user preferences, including dark mode settings
+- Progressive web app features fora  native-like experience
 
 ### Feature Development
 
@@ -134,7 +134,7 @@ The application is currently English-only with basic accessibility support. Impr
 
 ### Database and Architecture
 
-The hybrid MongoDB/Supabase architecture provides flexibility but could be enhanced:
+The hybrid MongoDB/Supabase architecture provides flexibility, but could be enhanced:
 
 - Database migration system for schema evolution
 - Automated backup and disaster recovery procedures
@@ -171,13 +171,6 @@ The hybrid MongoDB/Supabase architecture provides flexibility but could be enhan
 - **Discussions**: Use GitHub Discussions for questions and ideas
 - **Pull Requests**: Follow the PR template and provide detailed descriptions
 - **Code Reviews**: Be constructive and respectful
-
-## Recognition
-
-Contributors will be recognized in:
-- GitHub repository contributors list
-- Changelog for significant contributions
-- Project documentation acknowledgments
 
 Thank you for contributing to Wealth Vault! Your efforts help users achieve better financial wellness.</content>
 
