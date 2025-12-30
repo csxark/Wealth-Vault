@@ -25,7 +25,6 @@ A comprehensive financial wellness application that helps users track spending p
 ## Prerequisites
 
 - Node.js 18+ and npm
-- MongoDB (running locally or accessible)
 - Git (for version control)
 
 ## Quick Setup
