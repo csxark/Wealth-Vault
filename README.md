@@ -69,7 +69,7 @@ cd Wealth-Vault
 
 The setup script will automatically create the necessary environment files:
 
-- **Backend** (`.env`): MongoDB connection, JWT configuration, CORS settings
+- **Backend** (`.env`): Supabase connection, JWT configuration, CORS settings
 - **Frontend** (`.env`): API URL, Supabase configuration (for future use)
 
 ### 3. Database Setup
@@ -83,8 +83,8 @@ The application uses MongoDB for data storage. Ensure MongoDB is running locally
 npm run dev
 
 # Or start individually
-npm run dev:backend  # Backend only (port 5000)
-npm run dev:frontend # Frontend only (port 3000)
+npm run dev: backend  # Backend only (port 5000)
+npm run dev: frontend # Frontend only (port 3000)
 ```
 
 ### 5. Access the Application
@@ -170,15 +170,8 @@ frontend/
 ### Vercel (Recommended)
 
 1. Connect your GitHub repository to Vercel
-2. Set environment variables in Vercel dashboard
+2. Set environment variables in the Vercel dashboard
 3. Deploy automatically on push to main branch
-
-### Netlify
-
-1. Connect your GitHub repository to Netlify
-2. Set environment variables in Netlify dashboard
-3. Build command: `npm run build`
-4. Publish directory: `dist`
 
 ## Troubleshooting
 
@@ -189,8 +182,8 @@ frontend/
    - Restart the development server after adding variables
 
 2. **Database Connection Errors**
-   - Verify Supabase URL and key are correct
-   - Check if database schema is properly set up
+   - Verify the Supabase URL and key are correct
+   - Check if the database schema is properly set up
    - Ensure RLS policies are configured
 
 3. **Authentication Issues**
