@@ -26,7 +26,6 @@ npm run dev
 
 - **Node.js** (v16 or higher)
 - **npm** (v8 or higher)
-- **MongoDB** (running locally or accessible)
 - **Git** (for version control)
 
 ## 🔧 Environment Configuration
@@ -38,9 +37,6 @@ The backend requires the following environment variables:
 # Server Configuration
 PORT=5000
 NODE_ENV=development
-
-# MongoDB Connection
-MONGODB_URI=mongodb://localhost:27017/wealth-vault
 
 # JWT Configuration
 JWT_SECRET=wealth-vault-super-secret-jwt-key-2024
@@ -72,7 +68,7 @@ Wealth-Vault/
 ├── backend/                 # Node.js/Express API
 │   ├── config/             # Database configuration
 │   ├── middleware/         # Authentication & validation
-│   ├── models/            # MongoDB schemas
+│   ├── models/            # Database schemas
 │   ├── routes/            # API endpoints
 │   └── server.js          # Main server file
 ├── frontend/              # React/Vite application
@@ -94,7 +90,7 @@ Wealth-Vault/
 The frontend and backend are synchronized through matching data models:
 
 #### User Model
-- **Backend**: MongoDB schema with authentication
+- **Backend**: Supabase schema with authentication
 - **Frontend**: TypeScript interface with JWT token handling
 
 #### Expense Model
@@ -126,44 +122,28 @@ The frontend and backend are synchronized through matching data models:
 
 ## 🚨 Common Issues & Solutions
 
-### 1. MongoDB Connection Error
-**Error**: `MongoServerSelectionError: connect ECONNREFUSED`
-**Solution**: 
-```bash
-# Start MongoDB service
-# Windows: Start MongoDB service from Services
-# macOS/Linux: brew services start mongodb-community
-```
-
-### 2. Port Already in Use
+### 1. Port Already in Use
 **Error**: `EADDRINUSE: address already in use :::5000`
 **Solution**:
 ```bash
-# Find and kill process using port 5000
+# Find and kill the process using port 5000
 lsof -ti:5000 | xargs kill -9
 # Or change PORT in backend/.env
 ```
 
-### 3. CORS Error
+### 2. CORS Error
 **Error**: `Access to fetch at 'http://localhost:5000/api' from origin 'http://localhost:3000' has been blocked by CORS policy`
 **Solution**: Ensure CORS is properly configured in backend/server.js
 
-### 4. JWT Token Error
-**Error**: `JsonWebTokenError: invalid token`
-**Solution**: Check JWT_SECRET in backend/.env and ensure token is properly stored in localStorage
+### 3. JWT Token Error
+**Error**: `JsonWebTokenError: invalid token.`
+**Solution**: Check JWT_SECRET in backend/.env and ensurethe  token is properly stored in localStorage
 
-### 5. Environment Variables Not Loading
-**Error**: `process.env.VITE_API_URL is undefined`
+### 4. Environment Variables Not Loading
+**Error**: `process.env.VITE_API_URL is undefined.
 **Solution**: Restart the development server after updating .env files
 
-## 🧪 Testing
-
-### Test API Connection
-```bash
-npm run test-api
-```
-
-### Manual API Testing
+## Manual API Testing
 ```bash
 # Health check
 curl http://localhost:5000/api/health
@@ -171,7 +151,7 @@ curl http://localhost:5000/api/health
 # Register user
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"password123","firstName":"John","lastName":"Doe"}'
+  -d '{"email": "test@example.com", "password": "password123", "firstName": "John", "lastName": "Doe"}'
 ```
 
 ## 🔍 Debugging
@@ -183,7 +163,7 @@ Set `VITE_DEBUG=true` in frontend/.env to enable detailed logging.
 The backend uses Morgan for HTTP request logging and console.log for debugging.
 
 ### Frontend Logging
-Check browser console for API request/response logs and error messages.
+Check the browser console for API request/response logs and error messages.
 
 ## 📦 Available Scripts
 
@@ -193,8 +173,8 @@ Check browser console for API request/response logs and error messages.
 | `npm run sync` | Full synchronization setup |
 | `npm run install-all` | Install all dependencies |
 | `npm run dev` | Start both frontend and backend |
-| `npm run dev:backend` | Start backend only |
-| `npm run dev:frontend` | Start frontend only |
+| `npm run dev: backend` | Start backend only |
+| `npm run dev: frontend` | Start frontend only |
 | `npm run test-api` | Test API connectivity |
 | `npm run build` | Build frontend for production |
 | `npm start` | Start production backend |
