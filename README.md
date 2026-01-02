@@ -72,9 +72,10 @@ The setup script will automatically create the necessary environment files:
 - **Backend** (`.env`): Supabase connection, JWT configuration, CORS settings
 - **Frontend** (`.env`): API URL, Supabase configuration (for future use)
 
-### 3. Database Setup
+###3. Database Setup
+The application uses Supabase (PostgreSQL) for data storage.
 
-The application uses MongoDB for data storage. Ensure MongoDB is running locally or update the connection string in `backend/.env`.
+Ensure your Supabase project is set up correctly and the required environment variables are configured in the `.env` file.
 
 ### 4. Run the Application
 
@@ -97,14 +98,14 @@ npm run dev: frontend # Frontend only (port 3000)
 
 The frontend and backend are fully synchronized with matching data models:
 
-- **User Management**: JWT authentication with MongoDB
+- **User Management**: Authentication handled via Supabase Auth
 - **Expense Tracking**: Real-time expense management with categories
 - **Goal Management**: Financial goals with progress tracking
 - **Category Management**: Hierarchical categories with budgets
 
 ## Database Schema
 
-The app uses three main tables:
+The app uses Supabase (PostgreSQL) with the following main tables:
 
 - **profiles**: User profile information
 - **transactions**: Financial transactions with spending categories
