@@ -21,8 +21,8 @@ export const AuthForm: React.FC<{}> = (): JSX.Element => {
   const [error, setError] = useState('');
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState('');
-  
-  const { user, signUp, signIn } = useAuth();
+
+  const { user, signUp, signIn, loading } = useAuth();
   const navigate = useNavigate();
 
   // Redirect to dashboard if already authenticated
@@ -93,25 +93,23 @@ export const AuthForm: React.FC<{}> = (): JSX.Element => {
     try {
       if (isSignUp) {
         // Check if email exists before proceeding with registration
-        const checkEmailResponse = await fetch('http://localhost:5001/api/auth/check-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ email }),
-        });
-          
-        const checkResult = await checkEmailResponse.json();
-        if (!checkResult.exists) {
-          // Email doesn't exist, proceed with registration
-          setNewUserEmail(email);
-          setShowProfileSetup(true);
-        } else {
-          setError('This email is already registered. Please use a different email or sign in.');
-          return;
-        }
-      } else {
-            setError('An account with this email already exists. Please sign in or use a different email.');
+        try {
+          const checkEmailResponse = await fetch('http://localhost:5001/api/auth/check-email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email }),
+          });
+
+          const checkResult = await checkEmailResponse.json();
+          if (!checkResult.exists) {
+            // Email doesn't exist, proceed with registration
+            setNewUserEmail(email);
+            setShowProfileSetup(true);
+          } else {
+            setError('This email is already registered. Please use a different email or sign in.');
+            return;
           }
         } catch (err) {
           // If server error or network error, assume email is available
