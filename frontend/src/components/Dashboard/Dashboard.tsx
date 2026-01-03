@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 import '../../chartjs-setup';
 import React, { useState, useEffect } from 'react';
 import { expensesAPI } from '../../services/api';
@@ -7,14 +6,8 @@ import {
   PieChart,
   IndianRupee,
   TrendingUp,
-  Activity,
-  Sun,
-  Moon
+  Activity
 } from 'lucide-react';
-=======
-`import React, { useState, useEffect } from 'react';
-import { BarChart, PieChart, Calendar, IndianRupee, TrendingUp, Activity } from 'lucide-react';
->>>>>>> Stashed changes
 import SpendingChart from './SpendingChart';
 import { Line, Pie } from 'react-chartjs-2';
 import { SafeSpendZone } from './SafeSpendZone';
@@ -126,7 +119,6 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     ],
   };
 
-<<<<<<< Updated upstream
   // 2. Top 5 expenses overall
   const top5Expenses = [...expenses]
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
@@ -188,20 +180,12 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
 
   // Handle new expense (responsive update)
   const handleExpenseAdd = (expense: {
-=======
-  const totalSpending = spendingData.safe + spendingData.impulsive + spendingData.anxious;
-  const remainingBudget = monthlyBudget - totalSpending;
-  const spendingPercentage = (totalSpending / monthlyBudget) * 100;
-
-  const handleExpenseAdd = async (expense: {
->>>>>>> Stashed changes
     amount: number;
     category: string;
     description?: string;
     merchantName?: string;
     upiId?: string;
   }) => {
-<<<<<<< Updated upstream
     const transaction: Expense = {
       _id: Math.random().toString(36).substr(2, 9),
       user: 'local',
@@ -220,6 +204,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     const transactions: Expense[] = savedTransactions ? JSON.parse(savedTransactions) : [];
     transactions.push(transaction);
     localStorage.setItem('transactions', JSON.stringify(transactions));
+    setExpenses([...transactions]);
     setSpendingData(prev => ({
       ...prev,
       [transaction.category]: prev[transaction.category] + Math.abs(transaction.amount)
@@ -246,58 +231,11 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       })
     );
   };
-
-=======
-    if (!user) return;
-
-    try {
-      // Map the expense category to our spending categories
-      let mappedCategory: SpendingCategory = 'safe';
-      
-      // Simple mapping logic - you can customize this based on your needs
-      if (['Food', 'Transport', 'Bills'].includes(expense.category)) {
-        mappedCategory = 'safe';
-      } else if (['Shopping', 'Entertainment'].includes(expense.category)) {
-        mappedCategory = 'impulsive';
-      } else {
-        mappedCategory = 'anxious';
-      }
-
-      // Create the expense through the API
-      const response = await expensesAPI.create({
-        amount: Math.abs(expense.amount),
-        category: expense.category,
-        description: expense.description || expense.category,
-        merchantName: expense.merchantName,
-        upiId: expense.upiId
-      });
-
-      if (!response.success) {
-        console.error('Error adding expense:', response.error);
-        return;
-      }
-
-      // Reload spending data
-      await loadSpendingData();
-    } catch (error) {
-      console.error('Error adding expense:', error);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
->>>>>>> Stashed changes
   return (
-    <div className="space-y-8 px-2 sm:px-6 md:px-12 lg:px-24 py-8 
+    <div className="space-y-8 px-2 sm:px-6 md:px-12 lg:px-24 py-8
       bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 min-h-screen transition-colors mt-8">
       {/* Responsive Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6
         bg-white dark:bg-slate-900 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-800">
         <div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-cyan-700 dark:text-cyan-400 tracking-tight">Dashboard</h1>
@@ -319,6 +257,25 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
           </select>
         </div>
       </div>
+
+      {/* Empty State - Show when no expenses */}
+      {expenses.length === 0 ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-12 text-center max-w-md">
+            <div className="text-6xl mb-4">💸</div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">No expenses yet</h2>
+            <p className="text-slate-600 dark:text-slate-400 mb-6">
+              Start tracking your spending to get personalized insights and reach your financial goals
+            </p>
+            <AddExpenseButton
+              label="Add your first expense"
+              className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2"
+              onExpenseAdd={handleExpenseAdd}
+            />
+          </div>
+        </div>
+      ) : (
+        <>
       {/* Responsive Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-6">
         {stats.map((stat, index) => {
@@ -418,6 +375,8 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
           ))}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };
