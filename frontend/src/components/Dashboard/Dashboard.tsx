@@ -1,26 +1,12 @@
-<<<<<<< Updated upstream
-import '../../chartjs-setup';
 import React, { useState, useEffect } from 'react';
-import { expensesAPI } from '../../services/api';
-import {
-  BarChart,
-  PieChart,
-  IndianRupee,
-  TrendingUp,
-  Activity,
-  Sun,
-  Moon
-} from 'lucide-react';
-=======
-`import React, { useState, useEffect } from 'react';
 import { BarChart, PieChart, Calendar, IndianRupee, TrendingUp, Activity } from 'lucide-react';
->>>>>>> Stashed changes
 import SpendingChart from './SpendingChart';
 import { Line, Pie } from 'react-chartjs-2';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
 import AddExpenseButton from './AddExpenseButton';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
+import { expensesAPI } from '../../services/api';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -32,7 +18,7 @@ export interface SpendingChartProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   // Theme state for dark/light
-  const [theme, setTheme] = useState<'light' | 'dark'>(
+  const [theme] = useState<'light' | 'dark'>(
     localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
   );
   useEffect(() => {
@@ -41,7 +27,6 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   }, [theme]);
 
   // State hooks
-  const [chartType, setChartType] = useState<'doughnut' | 'bar'>('doughnut');
   const [timeRange, setTimeRange] = useState('month');
   const [spendingData, setSpendingData] = useState<SpendingData>({
     safe: 24500,
@@ -51,13 +36,6 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const [categoryDetails, setCategoryDetails] = useState<CategoryDetailsType[]>([]);
   const [monthlyBudget] = useState(40000);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-
-  // Responsive spending chart data
-  const spendingChartData = [
-    { label: 'Safe', value: spendingData.safe },
-    { label: 'Impulsive', value: spendingData.impulsive },
-    { label: 'Anxious', value: spendingData.anxious }
-  ];
 
   // Fetch expenses from backend and update dashboard state
   useEffect(() => {
@@ -126,7 +104,6 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     ],
   };
 
-<<<<<<< Updated upstream
   // 2. Top 5 expenses overall
   const top5Expenses = [...expenses]
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
@@ -187,82 +164,15 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   ];
 
   // Handle new expense (responsive update)
-  const handleExpenseAdd = (expense: {
-=======
-  const totalSpending = spendingData.safe + spendingData.impulsive + spendingData.anxious;
-  const remainingBudget = monthlyBudget - totalSpending;
-  const spendingPercentage = (totalSpending / monthlyBudget) * 100;
-
   const handleExpenseAdd = async (expense: {
->>>>>>> Stashed changes
     amount: number;
     category: string;
     description?: string;
     merchantName?: string;
     upiId?: string;
   }) => {
-<<<<<<< Updated upstream
-    const transaction: Expense = {
-      _id: Math.random().toString(36).substr(2, 9),
-      user: 'local',
-      amount: -expense.amount,
-      currency: 'INR',
-      description: expense.description || (expense.merchantName ? `Paid to ${expense.merchantName}` : ''),
-      category: expense.category.toLowerCase() as 'safe' | 'impulsive' | 'anxious',
-      date: new Date().toISOString().slice(0, 10),
-      paymentMethod: 'other',
-      isRecurring: false,
-      status: 'completed',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const savedTransactions = localStorage.getItem('transactions');
-    const transactions: Expense[] = savedTransactions ? JSON.parse(savedTransactions) : [];
-    transactions.push(transaction);
-    localStorage.setItem('transactions', JSON.stringify(transactions));
-    setSpendingData(prev => ({
-      ...prev,
-      [transaction.category]: prev[transaction.category] + Math.abs(transaction.amount)
-    }));
-    setCategoryDetails(prev =>
-      prev.map(cat => {
-        if (cat.category === transaction.category) {
-          const newExpenses = [...cat.expenses, transaction];
-          return {
-            ...cat,
-            amount: cat.amount + Math.abs(transaction.amount),
-            expenses: newExpenses,
-            topExpenses: newExpenses
-              .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-              .slice(0, 5)
-              .map(t => ({
-                description: t.description,
-                amount: Math.abs(t.amount),
-                date: t.date
-              }))
-          };
-        }
-        return cat;
-      })
-    );
-  };
-
-=======
-    if (!user) return;
-
     try {
-      // Map the expense category to our spending categories
-      let mappedCategory: SpendingCategory = 'safe';
-      
-      // Simple mapping logic - you can customize this based on your needs
-      if (['Food', 'Transport', 'Bills'].includes(expense.category)) {
-        mappedCategory = 'safe';
-      } else if (['Shopping', 'Entertainment'].includes(expense.category)) {
-        mappedCategory = 'impulsive';
-      } else {
-        mappedCategory = 'anxious';
-      }
-
+    
       // Create the expense through the API
       const response = await expensesAPI.create({
         amount: Math.abs(expense.amount),
@@ -273,26 +183,16 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       });
 
       if (!response.success) {
-        console.error('Error adding expense:', response.error);
+        console.error('Error adding expense:');
         return;
       }
 
-      // Reload spending data
-      await loadSpendingData();
+      setExpenses(prev => [...prev]);
     } catch (error) {
       console.error('Error adding expense:', error);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
->>>>>>> Stashed changes
   return (
     <div className="space-y-8 px-2 sm:px-6 md:px-12 lg:px-24 py-8 
       bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 min-h-screen transition-colors mt-8">
