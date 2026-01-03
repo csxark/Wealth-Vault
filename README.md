@@ -205,9 +205,9 @@ Enable debug mode by setting `VITE_DEBUG=true` to see detailed console logs.
 5. Submit a pull request
 
 ## Contributors
-<p align="center">
-    <img src="https://api.vaunt.dev/v1/github/entities/csxark/repositories/Wealth-Vault/contributors?format=svg&limit=54" width="1000" />
-</p>
+<a href="https://github.com/csxark/Wealth-Vault/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=csxark/Wealth-Vault&max=300" />
+</a>
 
 ## License
 
