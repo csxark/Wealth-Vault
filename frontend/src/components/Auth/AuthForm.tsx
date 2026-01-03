@@ -5,14 +5,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { ProfileSetup } from './ProfileSetup';
 import type { UserProfile } from '../../types';
 
-type AuthError = {
-  message: string;
-};
-
-type EmailCheckResponse = {
-  exists: boolean;
-};
-
 export const AuthForm: React.FC<{}> = (): JSX.Element => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');

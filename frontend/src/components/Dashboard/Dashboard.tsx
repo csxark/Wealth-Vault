@@ -1,19 +1,17 @@
 import '../../chartjs-setup';
 import React, { useState, useEffect } from 'react';
-import { expensesAPI } from '../../services/api';
 import {
-  BarChart,
   PieChart,
   IndianRupee,
   TrendingUp,
   Activity
 } from 'lucide-react';
-import SpendingChart from './SpendingChart';
 import { Line, Pie } from 'react-chartjs-2';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
 import AddExpenseButton from './AddExpenseButton';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
+import { expensesAPI } from '../../services/api';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -25,7 +23,7 @@ export interface SpendingChartProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   // Theme state for dark/light
-  const [theme, setTheme] = useState<'light' | 'dark'>(
+  const [theme] = useState<'light' | 'dark'>(
     localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
   );
   useEffect(() => {
@@ -34,7 +32,6 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   }, [theme]);
 
   // State hooks
-  const [chartType, setChartType] = useState<'doughnut' | 'bar'>('doughnut');
   const [timeRange, setTimeRange] = useState('month');
   const [spendingData, setSpendingData] = useState<SpendingData>({
     safe: 24500,
@@ -44,13 +41,6 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const [categoryDetails, setCategoryDetails] = useState<CategoryDetailsType[]>([]);
   const [monthlyBudget] = useState(40000);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-
-  // Responsive spending chart data
-  const spendingChartData = [
-    { label: 'Safe', value: spendingData.safe },
-    { label: 'Impulsive', value: spendingData.impulsive },
-    { label: 'Anxious', value: spendingData.anxious }
-  ];
 
   // Fetch expenses from backend and update dashboard state
   useEffect(() => {
