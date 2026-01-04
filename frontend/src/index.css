@@ -1,3 +1,99 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Modern 2025-26 Design System Enhancements */
+
+@layer base {
+  /* Improved font rendering */
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Better focus indicators for accessibility */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900;
+  }
+
+  /* Smooth transitions globally */
+  * {
+    @apply transition-colors duration-200;
+  }
+
+  /* Root font settings with fluid typography */
+  html {
+    @apply scroll-smooth;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  /* Modern elevated card component */
+  .card-elevated {
+    @apply bg-white dark:bg-slate-800 rounded-2xl shadow-soft hover:shadow-soft-lg transition-all duration-300;
+  }
+
+  /* Modern input field */
+  .input-modern {
+    @apply w-full px-4 py-3.5 bg-neutral-50 dark:bg-slate-700/50 border border-neutral-200 dark:border-slate-600 
+           rounded-xl text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-slate-500
+           focus:bg-white dark:focus:bg-slate-700 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20
+           transition-all duration-200;
+  }
+
+  /* Modern button primary */
+  .btn-primary {
+    @apply px-6 py-3.5 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 
+           rounded-xl font-medium tracking-tight
+           hover:bg-neutral-800 dark:hover:bg-neutral-100 
+           active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-200 shadow-sm hover:shadow-md;
+  }
+
+  /* Modern button secondary */
+  .btn-secondary {
+    @apply px-6 py-3.5 bg-neutral-100 dark:bg-slate-700 text-neutral-900 dark:text-white 
+           rounded-xl font-medium tracking-tight
+           hover:bg-neutral-200 dark:hover:bg-slate-600
+           active:scale-[0.98] transition-all duration-200;
+  }
+
+  /* Glassmorphism effect */
+  .glass {
+    @apply bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl border border-white/20 dark:border-slate-700/50;
+  }
+
+  /* Modern gradient text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-primary-400;
+  }
+}
+
+@layer utilities {
+  /* Text balance for better readability */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Improved scrollbar styling */
+  .scrollbar-modern::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  
+  .scrollbar-modern::-webkit-scrollbar-track {
+    @apply bg-neutral-100 dark:bg-slate-800;
+  }
+  
+  .scrollbar-modern::-webkit-scrollbar-thumb {
+    @apply bg-neutral-300 dark:bg-slate-600 rounded-full;
+  }
+  
+  .scrollbar-modern::-webkit-scrollbar-thumb:hover {
+    @apply bg-neutral-400 dark:bg-slate-500;
+  }
+}
