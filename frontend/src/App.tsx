@@ -20,7 +20,7 @@ function AppLayout() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <div className="min-h-screen bg-neutral-50 dark:bg-slate-900">
         <Header onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
         
         <div className="flex">
@@ -34,7 +34,7 @@ function AppLayout() {
           
           {sidebarOpen && (
             <div 
-              className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden transition-all"
               onClick={() => setSidebarOpen(false)}
             />
           )}
