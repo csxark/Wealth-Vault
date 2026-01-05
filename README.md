@@ -2,6 +2,8 @@
 
 A comprehensive financial wellness application that helps users track spending patterns, set financial goals, and make informed financial decisions using AI-powered insights.
 
+> 💡 Take control of your finances with intelligent tracking and personalized guidance.
+
 ## Features
 
 - **Smart Spending Tracking**: Categorize expenses into Safe, Impulsive, and Anxious spending patterns
