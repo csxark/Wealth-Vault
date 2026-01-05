@@ -11,7 +11,7 @@ A comprehensive financial wellness application that helps users track spending p
 - **Data Import**: Import financial data from CSV files
 - **Responsive Dashboard**: Beautiful charts and analytics for spending insights
 - **User Profiles**: Manage personal information and financial preferences
-
+* **User-Friendly Interface**: Designed for a seamless financial tracking experience.
 ## Tech Stack
 
 - **Frontend**: React 18 + TypeScript + Vite
