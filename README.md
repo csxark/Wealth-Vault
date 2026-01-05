@@ -67,10 +67,11 @@ cd Wealth-Vault
 
 ### 2. Environment Configuration
 
-The setup script will automatically create the necessary environment files:
+This project uses environment variables for Supabase and app configuration.
 
-- **Backend** (`.env`): Supabase connection, JWT configuration, CORS settings
-- **Frontend** (`.env`): API URL, Supabase configuration (for future use)
+1. Copy the example environment file:
+```bash
+cp .env.example .env
 
 ###3. Database Setup
 The application uses Supabase (PostgreSQL) for data storage.
