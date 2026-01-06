@@ -1,11 +1,28 @@
+
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
-import User from '../models/User.js';
-import Category from '../models/Category.js';
+import bcrypt from 'bcryptjs';
+import { eq } from 'drizzle-orm';
+import db from '../config/db.js';
+import { users, categories } from '../db/schema.js';
 import { protect } from '../middleware/auth.js';
+import { getDefaultCategories } from '../utils/defaults.js';
 
 const router = express.Router();
+
+// Helper to sanitize user object
+const getPublicProfile = (user) => {
+  const { password, ...publicUser } = user;
+  return publicUser;
+};
+
+// Generate JWT Token
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRE || '30d'
+  });
+};
 
 // @route   POST /api/auth/check-email
 // @desc    Check if email already exists
@@ -17,7 +34,6 @@ router.post('/check-email', [
     .normalizeEmail(),
 ], async (req, res) => {
   try {
-    // Validate request
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -35,8 +51,8 @@ router.post('/check-email', [
       });
     }
 
-    const existingUser = await User.findOne({ email });
-    
+    const [existingUser] = await db.select().from(users).where(eq(users.email, email));
+
     return res.json({
       success: true,
       exists: !!existingUser
@@ -49,13 +65,6 @@ router.post('/check-email', [
     });
   }
 });
-
-// Generate JWT Token
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '30d'
-  });
-};
 
 // @route   POST /api/auth/register
 // @desc    Register a new user
@@ -78,7 +87,6 @@ router.post('/register', [
     .withMessage('Last name is required and must be less than 50 characters')
 ], async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -90,9 +98,7 @@ router.post('/register', [
 
     const { email, password, firstName, lastName, currency, monthlyIncome, monthlyBudget } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    console.log(existingUser);
+    const [existingUser] = await db.select().from(users).where(eq(users.email, email));
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -100,35 +106,44 @@ router.post('/register', [
       });
     }
 
-    // Create new user
-    const user = new User({
+    // Hash password
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create user
+    const [newUser] = await db.insert(users).values({
       email,
-      password,
+      password: hashedPassword,
       firstName,
       lastName,
-      currency: currency || 'INR',
-      monthlyIncome: monthlyIncome || 0,
-      monthlyBudget: monthlyBudget || 0
-    });
+      currency: currency || 'USD',
+      monthlyIncome: monthlyIncome || '0',
+      monthlyBudget: monthlyBudget || '0'
+    }).returning();
 
-    await user.save();
-
-    // Create default categories for the user
-    const defaultCategories = Category.getDefaultCategories().map(cat => ({
-      ...cat,
-      user: user._id
+    // Create default categories
+    const defaultCategoriesData = getDefaultCategories().map(cat => ({
+      userId: newUser.id,
+      name: cat.name,
+      description: cat.description,
+      color: cat.color,
+      icon: cat.icon,
+      type: cat.type,
+      isDefault: cat.isDefault,
+      priority: cat.priority,
+      budget: { monthly: 0, yearly: 0 },
+      spendingLimit: '0'
     }));
 
-    await Category.insertMany(defaultCategories);
+    await db.insert(categories).values(defaultCategoriesData);
 
-    // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(newUser.id);
 
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
       data: {
-        user: user.getPublicProfile(),
+        user: getPublicProfile(newUser),
         token
       }
     });
@@ -154,7 +169,6 @@ router.post('/login', [
     .withMessage('Password is required')
 ], async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -166,8 +180,7 @@ router.post('/login', [
 
     const { email, password } = req.body;
 
-    // Check if user exists
-    const user = await User.findOne({ email });
+    const [user] = await db.select().from(users).where(eq(users.email, email));
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -175,7 +188,6 @@ router.post('/login', [
       });
     }
 
-    // Check if user is active
     if (!user.isActive) {
       return res.status(401).json({
         success: false,
@@ -183,8 +195,7 @@ router.post('/login', [
       });
     }
 
-    // Check password
-    const isMatch = await user.comparePassword(password);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -193,17 +204,17 @@ router.post('/login', [
     }
 
     // Update last login
-    user.lastLogin = new Date();
-    await user.save();
+    await db.update(users)
+      .set({ lastLogin: new Date() })
+      .where(eq(users.id, user.id));
 
-    // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user.id);
 
     res.json({
       success: true,
       message: 'Login successful',
       data: {
-        user: user.getPublicProfile(),
+        user: getPublicProfile(user),
         token
       }
     });
@@ -221,18 +232,16 @@ router.post('/login', [
 // @access  Private
 router.get('/me', protect, async (req, res) => {
   try {
-    // Check if user exists in the request
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not authenticated'
-      });
-    }
+    const userId = req.user.id;
 
-    const user = await User.findById(req.user._id)
-      .select('-password')
-      .populate('categories', 'name color icon')
-      .lean(); // Convert to plain JavaScript object
+    // Fetch user with categories using relational query if possible, or separate queries
+    // Drizzle relations allows db.query.users.findFirst
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      with: {
+        categories: true
+      }
+    });
 
     if (!user) {
       return res.status(404).json({
@@ -241,13 +250,10 @@ router.get('/me', protect, async (req, res) => {
       });
     }
 
-    // Remove sensitive fields
-    const { password, __v, ...publicUser } = user;
-
     res.json({
       success: true,
       data: {
-        user: publicUser
+        user: getPublicProfile(user)
       }
     });
   } catch (error) {
@@ -263,50 +269,21 @@ router.get('/me', protect, async (req, res) => {
 // @desc    Update user profile
 // @access  Private
 router.put('/profile', protect, [
-  body('firstName')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 50 })
-    .withMessage('First name must be less than 50 characters'),
-  body('lastName')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 50 })
-    .withMessage('Last name must be less than 50 characters'),
-  body('currency')
-    .optional()
-    .isIn(['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'CNY', 'INR'])
-    .withMessage('Invalid currency'),
-  body('monthlyIncome')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Monthly income must be a positive number'),
-  body('monthlyBudget')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Monthly budget must be a positive number'),
-  body('emergencyFund')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Emergency fund must be a positive number')
+  body('firstName').optional().trim().isLength({ min: 1, max: 50 }),
+  body('lastName').optional().trim().isLength({ min: 1, max: 50 }),
+  body('currency').optional().isIn(['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'CNY', 'INR']),
+  body('monthlyIncome').optional().isFloat({ min: 0 }),
+  body('monthlyBudget').optional().isFloat({ min: 0 }),
+  body('emergencyFund').optional().isFloat({ min: 0 })
 ], async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
+      return res.status(400).json({ success: false, errors: errors.array() });
     }
 
     const updateFields = {};
-    const allowedFields = [
-      'firstName', 'lastName', 'profilePicture', 'dateOfBirth', 
-      'phoneNumber', 'currency', 'monthlyIncome', 'monthlyBudget', 
-      'emergencyFund', 'preferences'
-    ];
+    const allowedFields = ['firstName', 'lastName', 'profilePicture', 'dateOfBirth', 'phoneNumber', 'currency', 'monthlyIncome', 'monthlyBudget', 'emergencyFund', 'preferences'];
 
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
@@ -314,25 +291,23 @@ router.put('/profile', protect, [
       }
     });
 
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      updateFields,
-      { new: true, runValidators: true }
-    ).select('-password');
+    updateFields.updatedAt = new Date();
+
+    const [updatedUser] = await db.update(users)
+      .set(updateFields)
+      .where(eq(users.id, req.user.id))
+      .returning();
 
     res.json({
       success: true,
       message: 'Profile updated successfully',
       data: {
-        user: user.getPublicProfile()
+        user: getPublicProfile(updatedUser)
       }
     });
   } catch (error) {
     console.error('Profile update error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while updating profile'
-    });
+    res.status(500).json({ success: false, message: 'Server error while updating profile' });
   }
 });
 
@@ -340,41 +315,29 @@ router.put('/profile', protect, [
 // @desc    Change user password
 // @access  Private
 router.put('/change-password', protect, [
-  body('currentPassword')
-    .notEmpty()
-    .withMessage('Current password is required'),
-  body('newPassword')
-    .isLength({ min: 6 })
-    .withMessage('New password must be at least 6 characters long')
+  body('currentPassword').notEmpty(),
+  body('newPassword').isLength({ min: 6 })
 ], async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
+      return res.status(400).json({ success: false, errors: errors.array() });
     }
 
     const { currentPassword, newPassword } = req.body;
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
 
-    // Get user with password
-    const user = await User.findById(req.user._id);
-    
-    // Check current password
-    const isMatch = await user.comparePassword(currentPassword);
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
-      return res.status(400).json({
-        success: false,
-        message: 'Current password is incorrect'
-      });
+      return res.status(400).json({ success: false, message: 'Current password is incorrect' });
     }
 
-    // Update password
-    user.password = newPassword;
-    await user.save();
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    await db.update(users)
+      .set({ password: hashedPassword, updatedAt: new Date() })
+      .where(eq(users.id, user.id));
 
     res.json({
       success: true,
@@ -382,10 +345,7 @@ router.put('/change-password', protect, [
     });
   } catch (error) {
     console.error('Password change error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while changing password'
-    });
+    res.status(500).json({ success: false, message: 'Server error while changing password' });
   }
 });
 
@@ -394,53 +354,31 @@ router.put('/change-password', protect, [
 // @access  Private
 router.post('/refresh', protect, async (req, res) => {
   try {
-    // Generate new token
-    const token = generateToken(req.user._id);
-
+    const token = generateToken(req.user.id);
     res.json({
       success: true,
       message: 'Token refreshed successfully',
-      data: {
-        token
-      }
+      data: { token }
     });
   } catch (error) {
     console.error('Token refresh error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while refreshing token'
-    });
+    res.status(500).json({ success: false, message: 'Server error while refreshing token' });
   }
 });
 
 // @route   POST /api/auth/logout
-// @desc    Logout user (client-side token removal)
+// @desc    Logout user
 // @access  Private
 router.post('/logout', protect, async (req, res) => {
-  try {
-    // In a more advanced setup, you might want to blacklist the token
-    // For now, we'll just return success and let the client remove the token
-    
-    res.json({
-      success: true,
-      message: 'Logged out successfully'
-    });
-  } catch (error) {
-    console.error('Logout error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during logout'
-    });
-  }
+  res.json({ success: true, message: 'Logged out successfully' });
 });
 
-// Test endpoint for connectivity testing
+// Test endpoint
 router.get('/test', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'Auth endpoint is accessible',
-    timestamp: new Date().toISOString(),
-    endpoint: '/api/auth/test'
+    timestamp: new Date().toISOString()
   });
 });
 

@@ -12,8 +12,12 @@ const backendEnvContent = `# Server Configuration
 PORT=5000
 NODE_ENV=development
 
-# MongoDB Connection
-MONGODB_URI=mongodb://localhost:27017/wealth-vault
+# Database Configuration (Supabase/PostgreSQL)
+# Format: postgres://[user]:[password]@[host]:[port]/[db_name]
+DATABASE_URL=postgres://postgres.xxxx:password@aws-0-region.pooler.supabase.com:6543/postgres
+
+# Direct connection URL (for migrations)
+DIRECT_URL=postgres://postgres.xxxx:password@aws-0-region.supabase.com:5432/postgres
 
 # JWT Configuration
 JWT_SECRET=wealth-vault-super-secret-jwt-key-2024

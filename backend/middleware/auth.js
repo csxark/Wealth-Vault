@@ -1,5 +1,19 @@
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
+import { eq } from 'drizzle-orm';
+import db from '../config/db.js';
+import { users } from '../db/schema.js';
+import * as schema from '../db/schema.js';
+
+// Helper to map model names to schema tables
+const getTable = (modelName) => {
+  const map = {
+    'User': schema.users,
+    'Expense': schema.expenses,
+    'Category': schema.categories,
+    'Goal': schema.goals
+  };
+  return map[modelName];
+};
 
 // Middleware to protect routes
 export const protect = async (req, res, next) => {
@@ -30,7 +44,7 @@ export const protect = async (req, res, next) => {
     try {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
+
       if (!decoded || !decoded.id) {
         return res.status(401).json({
           success: false,
@@ -39,10 +53,9 @@ export const protect = async (req, res, next) => {
       }
 
       // Get user from token
-      const user = await User.findById(decoded.id)
-        .select('-password -__v')
-        .lean();
-      
+      // Note: We select all fields except password by excluding it essentially
+      const [user] = await db.select().from(users).where(eq(users.id, decoded.id));
+
       if (!user) {
         return res.status(401).json({
           success: false,
@@ -57,19 +70,22 @@ export const protect = async (req, res, next) => {
         });
       }
 
+      // Remove password from user object
+      delete user.password;
+
       // Add user to request object
       req.user = user;
       next();
     } catch (error) {
       console.error('Token verification error:', error);
-      
+
       if (error.name === 'JsonWebTokenError') {
         return res.status(401).json({
           success: false,
           message: 'Invalid token.'
         });
       }
-      
+
       if (error.name === 'TokenExpiredError') {
         return res.status(401).json({
           success: false,
@@ -96,11 +112,15 @@ export const checkOwnership = (modelName) => {
   return async (req, res, next) => {
     try {
       const resourceId = req.params.id;
-      const userId = req.user._id;
+      const userId = req.user.id; // Drizzle user object has 'id', not '_id'
 
-      // Get the model dynamically
-      const Model = await import(`../models/${modelName}.js`);
-      const resource = await Model.default.findById(resourceId);
+      const table = getTable(modelName);
+      if (!table) {
+        throw new Error(`Unknown model name: ${modelName}`);
+      }
+
+      // Find resource
+      const [resource] = await db.select().from(table).where(eq(table.id, resourceId));
 
       if (!resource) {
         return res.status(404).json({
@@ -110,7 +130,7 @@ export const checkOwnership = (modelName) => {
       }
 
       // Check if user owns the resource
-      if (resource.user.toString() !== userId.toString()) {
+      if (resource.userId !== userId) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. You can only access your own resources.'
@@ -145,7 +165,7 @@ export const requireRole = (roles) => {
   };
 };
 
-// Optional authentication middleware (for public routes that can show different content for logged-in users)
+// Optional authentication middleware
 export const optionalAuth = async (req, res, next) => {
   try {
     let token;
@@ -157,9 +177,10 @@ export const optionalAuth = async (req, res, next) => {
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.id).select('-password');
-        
+        const [user] = await db.select().from(users).where(eq(users.id, decoded.id));
+
         if (user && user.isActive) {
+          delete user.password;
           req.user = user;
         }
       } catch (error) {
@@ -191,7 +212,7 @@ export const rateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
     }
 
     const userRequests = requests.get(ip) || [];
-    
+
     if (userRequests.length >= maxRequests) {
       return res.status(429).json({
         success: false,
