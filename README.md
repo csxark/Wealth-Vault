@@ -1,41 +1,74 @@
-# Wealth Vault - Financial Wellness App
+# 💰 Wealth Vault — Financial Wellness App
 
-A comprehensive financial wellness application that helps users track spending patterns, set financial goals, and make informed financial decisions using AI-powered insights.
+> **Take control of your money. Build healthier financial habits.**  
+> Wealth Vault is a modern financial wellness platform that helps users understand spending behavior, set meaningful goals, and make smarter financial decisions using **AI-powered insights**.
 
 > 💡 Take control of your finances with intelligent tracking and personalized guidance.
 
 ## Features
 
-- **Smart Spending Tracking**: Categorize expenses into Safe, Impulsive, and Anxious spending patterns
-- **Financial Goals Management**: Set, track, and visualize progress towards financial objectives
-- **AI Financial Coach**: Get personalized financial advice and insights
-- **QR Code Expense Entry**: Quick expense logging using QR codes and UPI
-- **Data Import**: Import financial data from CSV files
-- **Responsive Dashboard**: Beautiful charts and analytics for spending insights
-- **User Profiles**: Manage personal information and financial preferences
-* **User-Friendly Interface**: Designed for a seamless financial tracking experience.
-## Tech Stack
+---
 
-- **Frontend**: React 18 + TypeScript + Vite
-- **Styling**: Tailwind CSS
-- **Database**: Supabase (PostgreSQL)
-- **Authentication**: Supabase Auth
-- **Charts**: Chart.js + React-Chartjs-2
-- **Icons**: Lucide React
-- **QR Scanning**: @zxing/browser
+## ✨ What Makes Wealth Vault Different?
 
-## Prerequisites
+Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware finance**, helping users understand *why* they spend — not just *what* they spend.
 
-- Node.js 18+ and npm
-- Git (for version control)
+### 🔑 Key Features
 
-## Quick Setup
+- 🧠 **Smart Spending Analysis**  
+  Categorizes expenses into **Safe**, **Impulsive**, and **Anxious** spending patterns
+
+- 🎯 **Financial Goals Management**  
+  Set, track, and visualize progress toward financial objectives
+
+- 🤖 **AI Financial Coach**  
+  Personalized insights and actionable recommendations
+
+- 📷 **QR Code Expense Entry**  
+  Log expenses instantly using QR codes and UPI
+
+- 📊 **Visual Analytics Dashboard**  
+  Interactive charts for clear spending insights
+
+- 📁 **CSV Data Import**  
+  Import historical financial data with ease
+
+- 👤 **User Profiles**  
+  Personalized financial preferences and income settings
+
+- 🎨 **User-Friendly Interface**  
+  Clean, responsive UI built for everyday use
+
+---
+
+## 🛠 Tech Stack
+
+| Layer | Technology |
+|------|------------|
+| Frontend | React 18, TypeScript, Vite |
+| Styling | Tailwind CSS |
+| Backend & DB | Supabase (PostgreSQL) |
+| Auth | Supabase Auth |
+| Charts | Chart.js, React-Chartjs-2 |
+| Icons | Lucide React |
+| QR Scanning | @zxing/browser |
+
+---
+
+## ✅ Prerequisites
+
+- Node.js **18+**
+- npm
+- Git
+
+---
+
+## ⚡ Quick Setup
 
 ### Option 1: Automated Setup (Recommended)
 ```bash
-# Run the automated sync script
 npm run sync
-```
+
 
 ### Option 2: Manual Setup
 ```bash
