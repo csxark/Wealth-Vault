@@ -1,10 +1,42 @@
+
 import express from 'express';
 import { body, validationResult } from 'express-validator';
+import { eq, and, gte, lte, asc, desc, sql, like } from 'drizzle-orm';
+import db from '../config/db.js';
+import { expenses, categories, users } from '../db/schema.js';
 import { protect, checkOwnership } from '../middleware/auth.js';
-import Expense from '../models/Expense.js';
-import Category from '../models/Category.js';
 
 const router = express.Router();
+
+// Helper to update category stats
+const updateCategoryStats = async (categoryId) => {
+  try {
+    const result = await db.select({
+      count: sql`count(*)`,
+      total: sql`sum(${expenses.amount})`
+    })
+      .from(expenses)
+      .where(eq(expenses.categoryId, categoryId));
+
+    const count = Number(result[0].count);
+    const total = Number(result[0].total) || 0;
+    const average = count > 0 ? total / count : 0;
+
+    // Use sql to update jsonb field properly if possible, or simple replace
+    // For simplicity, we replace the metadata object, as we know its structure
+    await db.update(categories)
+      .set({
+        metadata: {
+          usageCount: count,
+          averageAmount: average,
+          lastUsed: new Date().toISOString()
+        }
+      })
+      .where(eq(categories.id, categoryId));
+  } catch (err) {
+    console.error('Failed to update category stats:', err);
+  }
+};
 
 // @route   GET /api/expenses
 // @desc    Get all expenses for authenticated user
@@ -24,46 +56,51 @@ router.get('/', protect, async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
-    // Build filter object
-    const filter = { user: req.user._id };
-    
-    if (category) filter.category = category;
-    if (startDate || endDate) {
-      filter.date = {};
-      if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) filter.date.$lte = new Date(endDate);
-    }
-    if (minAmount || maxAmount) {
-      filter.amount = {};
-      if (minAmount) filter.amount.$gte = parseFloat(minAmount);
-      if (maxAmount) filter.amount.$lte = parseFloat(maxAmount);
-    }
-    if (paymentMethod) filter.paymentMethod = paymentMethod;
+    const conditions = [eq(expenses.userId, req.user.id)];
 
-    // Build sort object
-    const sort = {};
-    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    if (category) conditions.push(eq(expenses.categoryId, category));
+    if (startDate) conditions.push(gte(expenses.date, new Date(startDate)));
+    if (endDate) conditions.push(lte(expenses.date, new Date(endDate)));
+    if (minAmount) conditions.push(gte(expenses.amount, minAmount.toString()));
+    if (maxAmount) conditions.push(lte(expenses.amount, maxAmount.toString()));
+    if (paymentMethod) conditions.push(eq(expenses.paymentMethod, paymentMethod));
 
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortFn = sortOrder === 'desc' ? desc : asc;
+    let orderByColumn = expenses.date;
+    if (sortBy === 'amount') orderByColumn = expenses.amount;
+    // Add other sort columns as needed
 
-    const expenses = await Expense.find(filter)
-      .populate('category', 'name color icon')
-      .sort(sort)
-      .skip(skip)
-      .limit(parseInt(limit));
+    const queryLimit = parseInt(limit);
+    const queryOffset = (parseInt(page) - 1) * queryLimit;
 
-    const total = await Expense.countDocuments(filter);
+    const [expensesList, countResult] = await Promise.all([
+      db.query.expenses.findMany({
+        where: and(...conditions),
+        orderBy: [sortFn(orderByColumn)],
+        limit: queryLimit,
+        offset: queryOffset,
+        with: {
+          category: {
+            columns: { name: true, color: true, icon: true }
+          }
+        }
+      }),
+      db.select({ count: sql`count(*)` })
+        .from(expenses)
+        .where(and(...conditions))
+    ]);
+
+    const total = Number(countResult[0]?.count || 0);
 
     res.json({
       success: true,
       data: {
-        expenses,
+        expenses: expensesList,
         pagination: {
           currentPage: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
+          totalPages: Math.ceil(total / queryLimit),
           totalItems: total,
-          itemsPerPage: parseInt(limit)
+          itemsPerPage: queryLimit
         }
       }
     });
@@ -81,21 +118,26 @@ router.get('/', protect, async (req, res) => {
 // @access  Private
 router.get('/:id', protect, checkOwnership('Expense'), async (req, res) => {
   try {
-    const expense = await Expense.findById(req.params.id)
-      .populate('category', 'name color icon');
+    // req.resource is already the simple object from middleware, 
+    // but checkOwnership middleware might not populate category relations
+    // We should fetch afresh with relation if needed or rely on checkOwnership to be simple
+    // Since we want relation, let's fetch it fully
+    const expense = await db.query.expenses.findFirst({
+      where: eq(expenses.id, req.params.id),
+      with: {
+        category: {
+          columns: { name: true, color: true, icon: true }
+        }
+      }
+    });
 
     res.json({
       success: true,
-      data: {
-        expense
-      }
+      data: { expense }
     });
   } catch (error) {
     console.error('Get expense error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching expense'
-    });
+    res.status(500).json({ success: false, message: 'Server error while fetching expense' });
   }
 });
 
@@ -103,48 +145,14 @@ router.get('/:id', protect, checkOwnership('Expense'), async (req, res) => {
 // @desc    Create new expense
 // @access  Private
 router.post('/', protect, [
-  body('amount')
-    .isFloat({ min: 0.01 })
-    .withMessage('Amount must be a positive number'),
-  body('description')
-    .trim()
-    .isLength({ min: 1, max: 200 })
-    .withMessage('Description is required and must be less than 200 characters'),
-  body('category')
-    .isMongoId()
-    .withMessage('Valid category ID is required'),
-  body('date')
-    .optional()
-    .isISO8601()
-    .withMessage('Date must be a valid ISO date'),
-  body('paymentMethod')
-    .optional()
-    .isIn(['cash', 'credit_card', 'debit_card', 'bank_transfer', 'digital_wallet', 'check', 'other'])
-    .withMessage('Invalid payment method'),
-  body('location.name')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Location name must be less than 100 characters'),
-  body('tags')
-    .optional()
-    .isArray()
-    .withMessage('Tags must be an array'),
-  body('isRecurring')
-    .optional()
-    .isBoolean()
-    .withMessage('isRecurring must be a boolean')
+  body('amount').isFloat({ min: 0.01 }),
+  body('description').trim().isLength({ min: 1, max: 200 }),
+  body('category').notEmpty(), // Assuming validation checks ID format if strictly needed
+  body('date').optional().isISO8601()
 ], async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
     const {
       amount,
@@ -160,22 +168,20 @@ router.post('/', protect, [
       subcategory
     } = req.body;
 
-    // Verify category exists and belongs to user
-    const categoryDoc = await Category.findOne({ _id: category, user: req.user._id });
+    // Verify category
+    const [categoryDoc] = await db.select().from(categories)
+      .where(and(eq(categories.id, category), eq(categories.userId, req.user.id)));
+
     if (!categoryDoc) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid category'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid category' });
     }
 
-    // Create expense
-    const expense = new Expense({
-      user: req.user._id,
-      amount,
+    const [newExpense] = await db.insert(expenses).values({
+      userId: req.user.id,
+      amount: amount.toString(),
       description,
-      category,
-      date: date || new Date(),
+      categoryId: category,
+      date: date ? new Date(date) : new Date(),
       paymentMethod: paymentMethod || 'other',
       location,
       tags: tags || [],
@@ -183,147 +189,83 @@ router.post('/', protect, [
       recurringPattern,
       notes,
       subcategory
+    }).returning();
+
+    // Update category stats (async, don't block response necessarily, but good to wait)
+    await updateCategoryStats(category);
+
+    const expenseWithCategory = await db.query.expenses.findFirst({
+      where: eq(expenses.id, newExpense.id),
+      with: { category: { columns: { name: true, color: true, icon: true } } }
     });
-
-    await expense.save();
-
-    // Update category usage stats
-    await categoryDoc.updateUsageStats(amount);
-
-    // Populate category info for response
-    await expense.populate('category', 'name color icon');
 
     res.status(201).json({
       success: true,
       message: 'Expense created successfully',
-      data: {
-        expense
-      }
+      data: { expense: expenseWithCategory }
     });
   } catch (error) {
     console.error('Create expense error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while creating expense'
-    });
+    res.status(500).json({ success: false, message: 'Server error while creating expense' });
   }
 });
 
 // @route   PUT /api/expenses/:id
 // @desc    Update expense
 // @access  Private
-router.put('/:id', protect, checkOwnership('Expense'), [
-  body('amount')
-    .optional()
-    .isFloat({ min: 0.01 })
-    .withMessage('Amount must be a positive number'),
-  body('description')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 200 })
-    .withMessage('Description must be less than 200 characters'),
-  body('category')
-    .optional()
-    .isMongoId()
-    .withMessage('Valid category ID is required'),
-  body('date')
-    .optional()
-    .isISO8601()
-    .withMessage('Date must be a valid ISO date'),
-  body('paymentMethod')
-    .optional()
-    .isIn(['cash', 'credit_card', 'debit_card', 'bank_transfer', 'digital_wallet', 'check', 'other'])
-    .withMessage('Invalid payment method')
-], async (req, res) => {
+router.put('/:id', protect, checkOwnership('Expense'), async (req, res) => {
   try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
+    const oldExpense = req.resource;
+    const { amount, description, category, date, paymentMethod, location, tags, isRecurring, recurringPattern, notes, subcategory, status } = req.body;
+
+    const updateData = {};
+    if (amount !== undefined) updateData.amount = amount.toString();
+    if (description !== undefined) updateData.description = description;
+    if (category !== undefined) {
+      // Verify new category
+      const [cat] = await db.select().from(categories).where(and(eq(categories.id, category), eq(categories.userId, req.user.id)));
+      if (!cat) return res.status(400).json({ success: false, message: 'Invalid category' });
+      updateData.categoryId = category;
+    }
+    if (date !== undefined) updateData.date = new Date(date);
+    // ... map other fields
+    if (paymentMethod) updateData.paymentMethod = paymentMethod;
+    if (location) updateData.location = location;
+    if (tags) updateData.tags = tags;
+    if (isRecurring !== undefined) updateData.isRecurring = isRecurring;
+    if (recurringPattern) updateData.recurringPattern = recurringPattern;
+    if (notes) updateData.notes = notes;
+    if (subcategory) updateData.subcategory = subcategory;
+    if (status) updateData.status = status;
+
+    updateData.updatedAt = new Date();
+
+    const [updatedExpense] = await db.update(expenses)
+      .set(updateData)
+      .where(eq(expenses.id, req.params.id))
+      .returning();
+
+    // Update stats if amount or category changed
+    if (updateData.amount || updateData.categoryId) {
+      if (oldExpense.categoryId) await updateCategoryStats(oldExpense.categoryId);
+      if (updateData.categoryId && updateData.categoryId !== oldExpense.categoryId) {
+        await updateCategoryStats(updateData.categoryId);
+      }
     }
 
-    const expense = req.resource;
-    const oldAmount = expense.amount;
-    const oldCategory = expense.category;
-
-    // Update fields
-    const updateFields = {};
-    const allowedFields = [
-      'amount', 'description', 'category', 'date', 'paymentMethod',
-      'location', 'tags', 'isRecurring', 'recurringPattern', 'notes',
-      'subcategory', 'status'
-    ];
-
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updateFields[field] = req.body[field];
-      }
+    const result = await db.query.expenses.findFirst({
+      where: eq(expenses.id, updatedExpense.id),
+      with: { category: { columns: { name: true, color: true, icon: true } } }
     });
-
-    // If category is being changed, verify it belongs to user
-    if (updateFields.category && updateFields.category !== oldCategory.toString()) {
-      const newCategory = await Category.findOne({ _id: updateFields.category, user: req.user._id });
-      if (!newCategory) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid category'
-        });
-      }
-    }
-
-    // Update expense
-    const updatedExpense = await Expense.findByIdAndUpdate(
-      req.params.id,
-      updateFields,
-      { new: true, runValidators: true }
-    ).populate('category', 'name color icon');
-
-    // Update category usage stats if amount or category changed
-    if (updateFields.amount !== undefined || updateFields.category !== undefined) {
-      const newAmount = updateFields.amount !== undefined ? updateFields.amount : oldAmount;
-      const newCategoryId = updateFields.category || oldCategory;
-
-      // Update old category stats
-      if (oldCategory) {
-        const oldCategoryDoc = await Category.findById(oldCategory);
-        if (oldCategoryDoc) {
-          // Recalculate stats without this expense
-          const oldCategoryExpenses = await Expense.find({ 
-            user: req.user._id, 
-            category: oldCategory,
-            _id: { $ne: expense._id }
-          });
-          const oldTotal = oldCategoryExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-          oldCategoryDoc.metadata.averageAmount = oldCategoryExpenses.length > 0 ? oldTotal / oldCategoryExpenses.length : 0;
-          oldCategoryDoc.metadata.usageCount = oldCategoryExpenses.length;
-          await oldCategoryDoc.save();
-        }
-      }
-
-      // Update new category stats
-      const newCategoryDoc = await Category.findById(newCategoryId);
-      if (newCategoryDoc) {
-        await newCategoryDoc.updateUsageStats(newAmount);
-      }
-    }
 
     res.json({
       success: true,
       message: 'Expense updated successfully',
-      data: {
-        expense: updatedExpense
-      }
+      data: { expense: result }
     });
   } catch (error) {
     console.error('Update expense error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while updating expense'
-    });
+    res.status(500).json({ success: false, message: 'Server error while updating expense' });
   }
 });
 
@@ -333,36 +275,16 @@ router.put('/:id', protect, checkOwnership('Expense'), [
 router.delete('/:id', protect, checkOwnership('Expense'), async (req, res) => {
   try {
     const expense = req.resource;
+    await db.delete(expenses).where(eq(expenses.id, req.params.id));
 
-    // Update category usage stats
-    if (expense.category) {
-      const categoryDoc = await Category.findById(expense.category);
-      if (categoryDoc) {
-        // Recalculate stats without this expense
-        const categoryExpenses = await Expense.find({ 
-          user: req.user._id, 
-          category: expense.category,
-          _id: { $ne: expense._id }
-        });
-        const total = categoryExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-        categoryDoc.metadata.averageAmount = categoryExpenses.length > 0 ? total / categoryExpenses.length : 0;
-        categoryDoc.metadata.usageCount = categoryExpenses.length;
-        await categoryDoc.save();
-      }
+    if (expense.categoryId) {
+      await updateCategoryStats(expense.categoryId);
     }
 
-    await Expense.findByIdAndDelete(req.params.id);
-
-    res.json({
-      success: true,
-      message: 'Expense deleted successfully'
-    });
+    res.json({ success: true, message: 'Expense deleted successfully' });
   } catch (error) {
     console.error('Delete expense error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while deleting expense'
-    });
+    res.status(500).json({ success: false, message: 'Server error while deleting expense' });
   }
 });
 
@@ -372,37 +294,58 @@ router.delete('/:id', protect, checkOwnership('Expense'), async (req, res) => {
 router.get('/stats/summary', protect, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    
-    const filter = { user: req.user._id };
-    if (startDate || endDate) {
-      filter.date = {};
-      if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) filter.date.$lte = new Date(endDate);
-    }
 
-    const totalExpenses = await Expense.getTotalByDateRange(req.user._id, 
-      startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1),
-      endDate ? new Date(endDate) : new Date()
-    );
+    // Default dates if not provided
+    const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1);
+    const end = endDate ? new Date(endDate) : new Date();
 
-    const expensesByCategory = await Expense.getByCategory(req.user._id,
-      startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1),
-      endDate ? new Date(endDate) : new Date()
-    );
+    const conditions = [
+      eq(expenses.userId, req.user.id),
+      eq(expenses.status, 'completed'),
+      gte(expenses.date, start),
+      lte(expenses.date, end)
+    ];
+
+    // Total expenses
+    const [totalResult] = await db.select({
+      total: sql`sum(${expenses.amount})`,
+      count: sql`count(*)`
+    })
+      .from(expenses)
+      .where(and(...conditions));
+
+    // By Category
+    const byCategory = await db.select({
+      categoryId: expenses.categoryId,
+      categoryName: categories.name,
+      categoryColor: categories.color,
+      total: sql`sum(${expenses.amount})`,
+      count: sql`count(*)`
+    })
+      .from(expenses)
+      .leftJoin(categories, eq(expenses.categoryId, categories.id))
+      .where(and(...conditions))
+      .groupBy(expenses.categoryId, categories.name, categories.color) // Ensure grouping correctness
+      .orderBy(desc(sql`sum(${expenses.amount})`)); // Sort by total amount
 
     res.json({
       success: true,
       data: {
-        summary: totalExpenses,
-        byCategory: expensesByCategory
+        summary: {
+          total: Number(totalResult?.total || 0),
+          count: Number(totalResult?.count || 0)
+        },
+        byCategory: byCategory.map(item => ({
+          categoryName: item.categoryName,
+          categoryColor: item.categoryColor,
+          total: Number(item.total),
+          count: Number(item.count)
+        }))
       }
     });
   } catch (error) {
     console.error('Get expense stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching expense statistics'
-    });
+    res.status(500).json({ success: false, message: 'Server error while fetching expense statistics' });
   }
 });
 

@@ -1,31 +1,35 @@
+
 import express from 'express';
+import { eq } from 'drizzle-orm';
+import db from '../config/db.js';
+import { users } from '../db/schema.js';
 import { protect, checkOwnership } from '../middleware/auth.js';
-import User from '../models/User.js';
 
 const router = express.Router();
+
+// Helper to sanitize user object
+const getPublicProfile = (user) => {
+  const { password, ...publicUser } = user;
+  return publicUser;
+};
 
 // @route   GET /api/users
 // @desc    Get all users (admin only - for future use)
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    // For now, only return current user
-    // In the future, this could be expanded for admin functionality
-    const users = await User.find({ _id: req.user._id })
-      .select('-password')
-      .sort({ createdAt: -1 });
+    // Only return current user for now
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    delete user.password;
 
     res.json({
       success: true,
-      count: users.length,
-      data: users
+      count: 1,
+      data: [user]
     });
   } catch (error) {
     console.error('Get users error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching users'
-    });
+    res.status(500).json({ success: false, message: 'Server error while fetching users' });
   }
 });
 
@@ -34,18 +38,14 @@ router.get('/', protect, async (req, res) => {
 // @access  Private
 router.get('/:id', protect, checkOwnership('User'), async (req, res) => {
   try {
+    const user = req.resource;
     res.json({
       success: true,
-      data: {
-        user: req.resource.getPublicProfile()
-      }
+      data: { user: getPublicProfile(user) }
     });
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching user'
-    });
+    res.status(500).json({ success: false, message: 'Server error while fetching user' });
   }
 });
 
@@ -54,23 +54,14 @@ router.get('/:id', protect, checkOwnership('User'), async (req, res) => {
 // @access  Private
 router.delete('/:id', protect, checkOwnership('User'), async (req, res) => {
   try {
-    // Soft delete - mark as inactive instead of removing
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { isActive: false },
-      { new: true }
-    );
+    await db.update(users)
+      .set({ isActive: false })
+      .where(eq(users.id, req.user.id));
 
-    res.json({
-      success: true,
-      message: 'Account deactivated successfully'
-    });
+    res.json({ success: true, message: 'Account deactivated successfully' });
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while deleting user'
-    });
+    res.status(500).json({ success: false, message: 'Server error while deleting user' });
   }
 });
 
@@ -79,10 +70,8 @@ router.delete('/:id', protect, checkOwnership('User'), async (req, res) => {
 // @access  Private
 router.get('/:id/stats', protect, checkOwnership('User'), async (req, res) => {
   try {
-    // This would typically aggregate data from expenses, goals, etc.
-    // For now, return basic user stats
     const user = req.resource;
-    
+
     const stats = {
       monthlyIncome: user.monthlyIncome,
       monthlyBudget: user.monthlyBudget,
@@ -92,18 +81,10 @@ router.get('/:id/stats', protect, checkOwnership('User'), async (req, res) => {
       lastLogin: user.lastLogin
     };
 
-    res.json({
-      success: true,
-      data: {
-        stats
-      }
-    });
+    res.json({ success: true, data: { stats } });
   } catch (error) {
     console.error('Get user stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching user statistics'
-    });
+    res.status(500).json({ success: false, message: 'Server error while fetching user statistics' });
   }
 });
 

@@ -1,7 +1,10 @@
+
 import express from 'express';
 import { body, validationResult } from 'express-validator';
+import { eq, and, sql, not } from 'drizzle-orm';
+import db from '../config/db.js';
+import { categories, expenses } from '../db/schema.js';
 import { protect, checkOwnership } from '../middleware/auth.js';
-import Category from '../models/Category.js';
 
 const router = express.Router();
 
@@ -11,27 +14,24 @@ const router = express.Router();
 router.get('/', protect, async (req, res) => {
   try {
     const { type, isActive } = req.query;
-    
-    const filter = { user: req.user._id };
-    if (type) filter.type = type;
-    if (isActive !== undefined) filter.isActive = isActive === 'true';
 
-    const categories = await Category.find(filter)
-      .sort({ priority: 1, name: 1 });
+    const conditions = [eq(categories.userId, req.user.id)];
+    if (type) conditions.push(eq(categories.type, type));
+    if (isActive !== undefined) conditions.push(eq(categories.isActive, isActive === 'true'));
+
+    const cats = await db.query.categories.findMany({
+      where: conditions.length > 0 ? and(...conditions) : undefined,
+      orderBy: (categories, { asc }) => [asc(categories.priority), asc(categories.name)]
+    });
 
     res.json({
       success: true,
-      count: categories.length,
-      data: {
-        categories
-      }
+      count: cats.length,
+      data: { categories: cats }
     });
   } catch (error) {
     console.error('Get categories error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching categories'
-    });
+    res.status(500).json({ success: false, message: 'Server error while fetching categories' });
   }
 });
 
@@ -39,257 +39,111 @@ router.get('/', protect, async (req, res) => {
 // @desc    Get category by ID
 // @access  Private
 router.get('/:id', protect, checkOwnership('Category'), async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      data: {
-        category: req.resource
-      }
-    });
-  } catch (error) {
-    console.error('Get category error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching category'
-    });
-  }
+  res.json({
+    success: true,
+    data: { category: req.resource }
+  });
 });
 
 // @route   POST /api/categories
 // @desc    Create new category
 // @access  Private
 router.post('/', protect, [
-  body('name')
-    .trim()
-    .isLength({ min: 1, max: 50 })
-    .withMessage('Category name is required and must be less than 50 characters'),
-  body('description')
-    .optional()
-    .trim()
-    .isLength({ max: 200 })
-    .withMessage('Description must be less than 200 characters'),
-  body('color')
-    .matches(/^#[0-9A-F]{6}$/i)
-    .withMessage('Color must be a valid hex color'),
-  body('icon')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Icon name must be less than 50 characters'),
-  body('type')
-    .optional()
-    .isIn(['expense', 'income', 'both'])
-    .withMessage('Invalid category type'),
-  body('budget.monthly')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Monthly budget must be a positive number'),
-  body('budget.yearly')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Yearly budget must be a positive number'),
-  body('spendingLimit')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Spending limit must be a positive number'),
-  body('priority')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('Priority must be a non-negative integer')
+  body('name').trim().isLength({ min: 1, max: 50 }),
+  body('color').matches(/^#[0-9A-F]{6}$/i)
 ], async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
+    const { name, description, color, icon, type, budget, spendingLimit, priority, parentCategory } = req.body;
+
+    // Check duplicate name
+    // ILIKE/sql lower() is needed for case-insensitive check
+    const [existing] = await db.select().from(categories)
+      .where(and(
+        eq(categories.userId, req.user.id),
+        sql`lower(${categories.name}) = lower(${name})`
+      ));
+
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Category with this name already exists' });
     }
 
-    const {
-      name,
-      description,
-      color,
-      icon,
-      type,
-      budget,
-      spendingLimit,
-      priority,
-      parentCategory
-    } = req.body;
-
-    // Check if category name already exists for this user
-    const existingCategory = await Category.findOne({ 
-      user: req.user._id, 
-      name: { $regex: new RegExp(`^${name}$`, 'i') }
-    });
-
-    if (existingCategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category with this name already exists'
-      });
-    }
-
-    // Verify parent category if provided
-    if (parentCategory) {
-      const parent = await Category.findOne({ _id: parentCategory, user: req.user._id });
-      if (!parent) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid parent category'
-        });
-      }
-    }
-
-    // Create category
-    const category = new Category({
-      user: req.user._id,
+    const [newCategory] = await db.insert(categories).values({
+      userId: req.user.id,
       name,
       description,
       color,
       icon: icon || 'tag',
       type: type || 'expense',
       budget: budget || { monthly: 0, yearly: 0 },
-      spendingLimit: spendingLimit || 0,
+      spendingLimit: spendingLimit || '0',
       priority: priority || 0,
-      parentCategory
-    });
-
-    await category.save();
+      parentCategoryId: parentCategory
+    }).returning();
 
     res.status(201).json({
       success: true,
       message: 'Category created successfully',
-      data: {
-        category
-      }
+      data: { category: newCategory }
     });
   } catch (error) {
     console.error('Create category error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while creating category'
-    });
+    res.status(500).json({ success: false, message: 'Server error while creating category' });
   }
 });
 
 // @route   PUT /api/categories/:id
 // @desc    Update category
 // @access  Private
-router.put('/:id', protect, checkOwnership('Category'), [
-  body('name')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 50 })
-    .withMessage('Category name must be less than 50 characters'),
-  body('description')
-    .optional()
-    .trim()
-    .isLength({ max: 200 })
-    .withMessage('Description must be less than 200 characters'),
-  body('color')
-    .optional()
-    .matches(/^#[0-9A-F]{6}$/i)
-    .withMessage('Color must be a valid hex color'),
-  body('icon')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Icon name must be less than 50 characters'),
-  body('type')
-    .optional()
-    .isIn(['expense', 'income', 'both'])
-    .withMessage('Invalid category type'),
-  body('budget.monthly')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Monthly budget must be a positive number'),
-  body('budget.yearly')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Yearly budget must be a positive number'),
-  body('spendingLimit')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Spending limit must be a positive number'),
-  body('priority')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('Priority must be a non-negative integer')
-], async (req, res) => {
+router.put('/:id', protect, checkOwnership('Category'), async (req, res) => {
   try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
     const category = req.resource;
+    const { name } = req.body;
 
-    // Check if trying to update a default category
-    if (category.isDefault && req.body.name) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot rename default categories'
-      });
+    if (category.isDefault && name) {
+      return res.status(400).json({ success: false, message: 'Cannot rename default categories' });
     }
 
-    // Check if name is being changed and if it conflicts with existing categories
-    if (req.body.name && req.body.name !== category.name) {
-      const existingCategory = await Category.findOne({ 
-        user: req.user._id, 
-        name: { $regex: new RegExp(`^${req.body.name}$`, 'i') },
-        _id: { $ne: category._id }
-      });
+    if (name && name.toLowerCase() !== category.name.toLowerCase()) {
+      const [existing] = await db.select().from(categories)
+        .where(and(
+          eq(categories.userId, req.user.id),
+          sql`lower(${categories.name}) = lower(${name})`,
+          not(eq(categories.id, category.id))
+        ));
 
-      if (existingCategory) {
-        return res.status(400).json({
-          success: false,
-          message: 'Category with this name already exists'
-        });
-      }
+      if (existing) return res.status(400).json({ success: false, message: 'Category name already exists' });
     }
 
-    // Update fields
-    const updateFields = {};
-    const allowedFields = [
-      'name', 'description', 'color', 'icon', 'type', 'budget', 
-      'spendingLimit', 'priority', 'isActive'
-    ];
+    const { description, color, icon, type, budget, spendingLimit, priority, isActive } = req.body;
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (color) updateData.color = color;
+    if (icon) updateData.icon = icon;
+    if (type) updateData.type = type;
+    if (budget) updateData.budget = budget;
+    if (spendingLimit) updateData.spendingLimit = spendingLimit;
+    if (priority !== undefined) updateData.priority = priority;
+    if (isActive !== undefined) updateData.isActive = isActive;
 
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updateFields[field] = req.body[field];
-      }
-    });
+    updateData.updatedAt = new Date();
 
-    // Update category
-    const updatedCategory = await Category.findByIdAndUpdate(
-      req.params.id,
-      updateFields,
-      { new: true, runValidators: true }
-    );
+    const [updatedCategory] = await db.update(categories)
+      .set(updateData)
+      .where(eq(categories.id, req.params.id))
+      .returning();
 
     res.json({
       success: true,
       message: 'Category updated successfully',
-      data: {
-        category: updatedCategory
-      }
+      data: { category: updatedCategory }
     });
   } catch (error) {
     console.error('Update category error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while updating category'
-    });
+    res.status(500).json({ success: false, message: 'Server error while updating category' });
   }
 });
 
@@ -300,26 +154,25 @@ router.delete('/:id', protect, checkOwnership('Category'), async (req, res) => {
   try {
     const category = req.resource;
 
-    // Check if category can be deleted
-    if (!category.canDelete()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete default categories or categories with existing expenses'
-      });
+    if (category.isDefault) {
+      return res.status(400).json({ success: false, message: 'Cannot delete default categories' });
     }
 
-    await Category.findByIdAndDelete(req.params.id);
+    // Check usage - query expenses count
+    const [usage] = await db.select({ count: sql`count(*)` })
+      .from(expenses)
+      .where(eq(expenses.categoryId, category.id));
 
-    res.json({
-      success: true,
-      message: 'Category deleted successfully'
-    });
+    if (Number(usage.count) > 0) {
+      return res.status(400).json({ success: false, message: 'Cannot delete categories with existing expenses' });
+    }
+
+    await db.delete(categories).where(eq(categories.id, category.id));
+
+    res.json({ success: true, message: 'Category deleted successfully' });
   } catch (error) {
     console.error('Delete category error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while deleting category'
-    });
+    res.status(500).json({ success: false, message: 'Server error while deleting category' });
   }
 });
 
@@ -328,35 +181,36 @@ router.delete('/:id', protect, checkOwnership('Category'), async (req, res) => {
 // @access  Private
 router.get('/stats/usage', protect, async (req, res) => {
   try {
-    const categories = await Category.find({ user: req.user._id, isActive: true })
-      .sort({ priority: 1, name: 1 });
+    const cats = await db.query.categories.findMany({
+      where: and(eq(categories.userId, req.user.id), eq(categories.isActive, true)),
+      orderBy: (categories, { asc }) => [asc(categories.priority), asc(categories.name)]
+    });
 
-    const categoriesWithStats = categories.map(cat => ({
-      _id: cat._id,
+    // Transform to match old API if necessary, but Drizzle object is already clean JSON
+    // We just ensure metadata access is safe
+    const categoriesWithStats = cats.map(cat => ({
+      _id: cat.id, // For frontend compatibility if it expects _id
+      id: cat.id,
       name: cat.name,
       color: cat.color,
       icon: cat.icon,
       type: cat.type,
       budget: cat.budget,
       spendingLimit: cat.spendingLimit,
-      usageCount: cat.metadata.usageCount,
-      averageAmount: cat.metadata.averageAmount,
-      lastUsed: cat.metadata.lastUsed,
-      isOverBudget: cat.isOverBudget
+      usageCount: cat.metadata?.usageCount || 0,
+      averageAmount: cat.metadata?.averageAmount || 0,
+      lastUsed: cat.metadata?.lastUsed,
+      // Recalculate isOverBudget dynamically if needed, or rely on frontend
+      isOverBudget: cat.spendingLimit > 0 && (cat.metadata?.averageAmount || 0) > cat.spendingLimit
     }));
 
     res.json({
       success: true,
-      data: {
-        categories: categoriesWithStats
-      }
+      data: { categories: categoriesWithStats }
     });
   } catch (error) {
     console.error('Get category stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching category statistics'
-    });
+    res.status(500).json({ success: false, message: 'Server error while fetching statistics' });
   }
 });
 

@@ -1,5 +1,5 @@
 import express from 'express';
-import mongoose from 'mongoose';
+
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -31,7 +31,7 @@ app.use(helmet({
 
 // Configure CORS
 app.use(cors({
-  origin: function(origin, callback) {
+  origin: function (origin, callback) {
     const allowedOrigins = [
       'http://localhost:3001',
       'http://127.0.0.1:3001',
@@ -81,7 +81,7 @@ app.use((req, res, next) => {
     'Access-Control-Allow-Methods',
     'GET, POST, PUT, DELETE, OPTIONS, PATCH'
   );
-  
+
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
     res.sendStatus(204);
@@ -91,10 +91,9 @@ app.use((req, res, next) => {
 });
 
 // Import database configuration
-import connectDB from './config/database.js';
-
-// Connect to database
-connectDB();
+// Database configuration is handled via Drizzle in individual modules
+// import connectDB from './config/db.js'; 
+console.log('📦 Database initialized via Drizzle');
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -105,8 +104,8 @@ app.use('/api/categories', categoryRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     message: 'Wealth Vault API is running',
     timestamp: new Date().toISOString()
   });
@@ -115,7 +114,7 @@ app.get('/api/health', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
