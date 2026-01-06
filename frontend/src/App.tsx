@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { useTheme } from './hooks/useTheme';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
 import { routes } from './routes';
-import CurrencyConverter from './components/CurrencyConverter';
+import CurrencyConverter from './components/CurrencyConverter.jsx';
 
 function AppLayout() {
   const { isDark } = useTheme();
@@ -26,7 +26,7 @@ function AppLayout() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <div className="min-h-screen bg-neutral-50 dark:bg-slate-900">
         <Header onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
 
         <div className="flex">
@@ -37,8 +37,8 @@ function AppLayout() {
           />
 
           {sidebarOpen && (
-            <div
-              className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+            <div 
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden transition-all"
               onClick={() => setSidebarOpen(false)}
             />
           )}

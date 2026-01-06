@@ -126,97 +126,154 @@ export const AuthForm: React.FC<{}> = (): JSX.Element => {
   if (showProfileSetup) {
     return <ProfileSetup onComplete={handleProfileComplete} userEmail={newUserEmail} />;
   }
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-cyan-600 to-cyan-300 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-900 to-cyan-600 px-8 py-6 text-center">
-          <div className="bg-white/20 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-            <Vault className="h-8 w-8 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">Wealth-Vault</h1>
-          <p className="text-cyan-100 text-sm mt-1">Financial Wellbeing Platform</p>
-        </div>
 
-        <div className="p-8">
-          <div className="text-center mb-6">
-            <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              {isSignUp ? 'Create Account' : 'Welcome Back'}
-            </h2>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">
-              {isSignUp ? 'Start your financial wellness journey' : 'Sign in to your account'}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-neutral-50 via-neutral-50 to-neutral-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Subtle background pattern/orbs - Modern minimalist */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-primary-500/5 dark:bg-primary-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-primary-600/5 dark:bg-primary-600/10 rounded-full blur-3xl"></div>
+      </div>
+
+      {/* Main auth card with modern minimalist design */}
+      <div className="relative w-full max-w-[480px] animate-scale-in">
+        <div className="card-elevated overflow-hidden border border-neutral-200/60 dark:border-slate-700/60">
+          {/* Simplified minimal header */}
+          <div className="px-8 py-10 text-center border-b border-neutral-100 dark:border-slate-700/50">
+            <div className="inline-flex items-center justify-center w-14 h-14 mb-5 rounded-2xl bg-neutral-900 dark:bg-white">
+              <Vault className="h-7 w-7 text-white dark:text-neutral-900" />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-white mb-1.5">
+              Wealth Vault
+            </h1>
+            <p className="text-sm text-neutral-500 dark:text-slate-400 font-medium">
+              Smart financial wellness, simplified
             </p>
           </div>
 
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg mb-4 text-sm">
-              {error}
+          {/* Form content area */}
+          <div className="px-8 py-8">
+            {/* Dynamic heading with smooth transition */}
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-white mb-2">
+                {isSignUp ? 'Get Started' : 'Welcome Back'}
+              </h2>
+              <p className="text-sm text-neutral-500 dark:text-slate-400">
+                {isSignUp 
+                  ? 'Create your account to track spending patterns and reach your financial goals' 
+                  : 'Sign in to continue your financial wellness journey'}
+              </p>
             </div>
-          )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 dark:text-slate-500" />
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
-                  placeholder="Enter your email"
-                  required
-                />
+            {/* Modern error alert */}
+            {error && (
+              <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 animate-slide-down">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-5 h-5 rounded-full bg-red-100 dark:bg-red-900/50 flex items-center justify-center mt-0.5">
+                    <span className="text-red-600 dark:text-red-400 text-xs font-bold">!</span>
+                  </div>
+                  <p className="text-sm text-red-700 dark:text-red-300 flex-1 leading-relaxed">
+                    {error}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 dark:text-slate-500" />
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-12 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
-                  placeholder="Enter your password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
+            {/* Modern form */}
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  Email
+                </label>
+                <div className="relative group">
+                  <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-neutral-400 dark:text-slate-500 group-focus-within:text-primary-500 transition-colors" />
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="input-modern pl-12"
+                    placeholder="you@example.com"
+                    required
+                    autoComplete="email"
+                  />
+                </div>
               </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  Password
+                </label>
+                <div className="relative group">
+                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-neutral-400 dark:text-slate-500 group-focus-within:text-primary-500 transition-colors" />
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="input-modern pl-12 pr-12"
+                    placeholder={isSignUp ? 'Create a strong password' : 'Enter your password'}
+                    required
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-neutral-400 dark:text-slate-500 hover:text-neutral-600 dark:hover:text-slate-300 transition-colors"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+                {isSignUp && password && (
+                  <p className="mt-2 text-xs text-neutral-500 dark:text-slate-400">
+                    {password.length < 6 ? 'Password must be at least 6 characters' : '✓ Password strength: Good'}
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full mt-6 h-12 text-[15px] font-semibold"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    Processing...
+                  </span>
+                ) : (
+                  isSignUp ? 'Create Account' : 'Sign In'
+                )}
+              </button>
+            </form>
+
+            {/* Toggle auth mode with modern styling */}
+            <div className="mt-8 pt-6 border-t border-neutral-100 dark:border-slate-700/50 text-center">
+              <p className="text-sm text-neutral-600 dark:text-slate-400 mb-2">
+                {isSignUp ? 'Already have an account?' : "Don't have an account?"}
+              </p>
+              <button
+                onClick={() => {
+                  setIsSignUp(!isSignUp);
+                  setError('');
+                  setEmail('');
+                  setPassword('');
+                }}
+                className="text-sm font-semibold text-neutral-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+              >
+                {isSignUp ? 'Sign in instead' : 'Create free account'}
+              </button>
             </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-blue-900 to-cyan-600 text-white py-3 px-4 rounded-lg font-medium hover:from-blue-800 hover:to-cyan-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
-            >
-              {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => {
-                setIsSignUp(!isSignUp);
-                setError('');
-              }}
-              className="text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 font-medium transition-colors"
-            >
-              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-            </button>
           </div>
+        </div>
+
+        {/* Trust indicator - Modern minimalist */}
+        <div className="mt-8 text-center">
+          <p className="text-xs text-neutral-400 dark:text-slate-500 flex items-center justify-center gap-2">
+            <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            Secure & encrypted • Your data is protected
+          </p>
         </div>
       </div>
     </div>

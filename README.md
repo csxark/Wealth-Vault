@@ -3,9 +3,9 @@
 > **Take control of your money. Build healthier financial habits.**  
 > Wealth Vault is a modern financial wellness platform that helps users understand spending behavior, set meaningful goals, and make smarter financial decisions using **AI-powered insights**.
 
-![Status](https://img.shields.io/badge/Status-Active-success)
-![License](https://img.shields.io/badge/License-MIT-yellow)
-![Contributions](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
+> 💡 Take control of your finances with intelligent tracking and personalized guidance.
+
+## Features
 
 ---
 
