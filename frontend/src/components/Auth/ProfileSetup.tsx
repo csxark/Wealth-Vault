@@ -47,17 +47,23 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-cyan-600 to-cyan-300 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-900 to-cyan-600 px-8 py-6 text-center">
-          <h1 className="text-2xl font-bold text-white">Complete Your Profile</h1>
-          <p className="text-cyan-100 text-sm mt-1">Step {step} of 3</p>
-          <div className="mt-4 flex space-x-2">
+    <div className="min-h-screen bg-gradient-to-br from-neutral-50 via-neutral-50 to-neutral-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Subtle background orbs */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-primary-500/5 dark:bg-primary-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-primary-600/5 dark:bg-primary-600/10 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="relative card-elevated w-full max-w-lg border border-neutral-200/60 dark:border-slate-700/60 animate-scale-in">
+        <div className="px-8 py-8 text-center border-b border-neutral-100 dark:border-slate-700/50">
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-white mb-2">Complete Your Profile</h1>
+          <p className="text-sm text-neutral-500 dark:text-slate-400 font-medium mb-6">Step {step} of 3</p>
+          <div className="flex gap-2">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className={`flex-1 h-2 rounded-full ${
-                  i <= step ? 'bg-white' : 'bg-white/30'
+                className={`flex-1 h-1.5 rounded-full transition-all duration-300 ${
+                  i <= step ? 'bg-neutral-900 dark:bg-white' : 'bg-neutral-200 dark:bg-slate-700'
                 }`}
               />
             ))}
@@ -66,66 +72,66 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
 
         <div className="p-8">
           {step === 1 && (
-            <div className="space-y-4">
-              <div className="text-center mb-6">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Personal Information</h2>
-                <p className="text-slate-600 dark:text-slate-300 mt-1">Tell us about yourself</p>
+            <div className="space-y-5">
+              <div className="text-center mb-8">
+                <h2 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-white mb-2">Personal Information</h2>
+                <p className="text-sm text-neutral-500 dark:text-slate-400">Tell us about yourself</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  <User className="inline h-4 w-4 mr-1" />
+                <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  <User className="inline h-4 w-4 mr-1.5" />
                   First Name
                 </label>
                 <input
                   type="text"
                   value={profile.firstName}
                   onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                  className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  className="input-modern"
                   placeholder="Enter your first name"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  <User className="inline h-4 w-4 mr-1" />
+                <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  <User className="inline h-4 w-4 mr-1.5" />
                   Last Name
                 </label>
                 <input
                   type="text"
                   value={profile.lastName}
                   onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                  className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  className="input-modern"
                   placeholder="Enter your last name"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  <Phone className="inline h-4 w-4 mr-1" />
+                <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  <Phone className="inline h-4 w-4 mr-1.5" />
                   Phone Number
                 </label>
                 <input
                   type="tel"
                   value={profile.phoneNumber}
                   onChange={(e) => setProfile({ ...profile, phoneNumber: e.target.value })}
-                  className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  className="input-modern"
                   placeholder="+91 98765 43210"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  <Calendar className="inline h-4 w-4 mr-1" />
+                <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  <Calendar className="inline h-4 w-4 mr-1.5" />
                   Date of Birth
                 </label>
                 <input
                   type="date"
                   value={profile.dateOfBirth}
                   onChange={(e) => setProfile({ ...profile, dateOfBirth: e.target.value })}
-                  className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  className="input-modern"
                   required
                 />
               </div>
@@ -133,30 +139,30 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
           )}
 
           {step === 2 && (
-            <div className="space-y-4">
-              <div className="text-center mb-6">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Professional Details</h2>
-                <p className="text-slate-600 dark:text-slate-300 mt-1">Help us understand your financial situation</p>
+            <div className="space-y-5">
+              <div className="text-center mb-8">
+                <h2 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-white mb-2">Professional Details</h2>
+                <p className="text-sm text-neutral-500 dark:text-slate-400">Help us understand your financial situation</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  <Briefcase className="inline h-4 w-4 mr-1" />
+                <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  <Briefcase className="inline h-4 w-4 mr-1.5" />
                   Occupation
                 </label>
                 <input
                   type="text"
                   value={profile.occupation}
                   onChange={(e) => setProfile({ ...profile, occupation: e.target.value })}
-                  className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  className="input-modern"
                   placeholder="Software Engineer, Teacher, etc."
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  <IndianRupee className="inline h-4 w-4 mr-1" />
+                <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  <IndianRupee className="inline h-4 w-4 mr-1.5" />
                   Monthly Income
                 </label>
                 <input
@@ -164,7 +170,7 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
                   min="0"
                   value={profile.monthlyIncome || ''}
                   onChange={(e) => setProfile({ ...profile, monthlyIncome: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  className="input-modern"
                   placeholder="50000"
                   required
                 />
@@ -173,45 +179,45 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
           )}
 
           {step === 3 && (
-            <div className="space-y-4">
-              <div className="text-center mb-6">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Financial Goals</h2>
-                <p className="text-slate-600 dark:text-slate-300 mt-1">What do you want to achieve?</p>
+            <div className="space-y-5">
+              <div className="text-center mb-8">
+                <h2 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-white mb-2">Financial Goals</h2>
+                <p className="text-sm text-neutral-500 dark:text-slate-400">What do you want to achieve?</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  <Target className="inline h-4 w-4 mr-1" />
+                <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
+                  <Target className="inline h-4 w-4 mr-1.5" />
                   Primary Financial Goals
                 </label>
                 <textarea
                   value={profile.financialGoals}
                   onChange={(e) => setProfile({ ...profile, financialGoals: e.target.value })}
-                  className="w-full px-3 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  className="input-modern min-h-[120px] resize-none"
                   placeholder="e.g., Build emergency fund, save for house down payment, reduce impulsive spending..."
                   rows={4}
                   required
                 />
               </div>
 
-              <div className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg p-4">
-                <h3 className="font-medium text-cyan-900 dark:text-cyan-100 mb-2">Profile Summary</h3>
-                <div className="text-sm text-cyan-800 dark:text-cyan-200 space-y-1">
-                  <p><strong>Name:</strong> {profile.firstName} {profile.lastName}</p>
-                  <p><strong>Email:</strong> {userEmail}</p>
-                  <p><strong>Occupation:</strong> {profile.occupation}</p>
-                  <p><strong>Monthly Income:</strong> ₹{profile.monthlyIncome?.toLocaleString()}</p>
+              <div className="bg-neutral-100 dark:bg-slate-700/50 border border-neutral-200 dark:border-slate-600 rounded-xl p-5">
+                <h3 className="font-semibold text-neutral-900 dark:text-white mb-3 text-sm tracking-tight">Profile Summary</h3>
+                <div className="text-sm text-neutral-600 dark:text-slate-300 space-y-2">
+                  <p className="flex justify-between"><span className="text-neutral-500 dark:text-slate-400">Name:</span> <strong>{profile.firstName} {profile.lastName}</strong></p>
+                  <p className="flex justify-between"><span className="text-neutral-500 dark:text-slate-400">Email:</span> <strong className="truncate ml-2">{userEmail}</strong></p>
+                  <p className="flex justify-between"><span className="text-neutral-500 dark:text-slate-400">Occupation:</span> <strong>{profile.occupation}</strong></p>
+                  <p className="flex justify-between"><span className="text-neutral-500 dark:text-slate-400">Monthly Income:</span> <strong>₹{profile.monthlyIncome?.toLocaleString()}</strong></p>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="flex space-x-3 pt-6">
+          <div className="flex gap-3 pt-6 border-t border-neutral-100 dark:border-slate-700/50 mt-8">
             {step > 1 && (
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex-1 px-4 py-3 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                className="btn-secondary flex-1 h-12"
               >
                 Back
               </button>
@@ -219,10 +225,10 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
             <button
               onClick={handleNext}
               disabled={!isStepValid()}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-900 to-cyan-600 text-white rounded-lg hover:from-blue-800 hover:to-cyan-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              className="btn-primary flex-1 h-12 flex items-center justify-center gap-2"
             >
               {step === 3 ? 'Complete Setup' : 'Next'}
-              <ArrowRight className="h-4 w-4 ml-2" />
+              <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>
