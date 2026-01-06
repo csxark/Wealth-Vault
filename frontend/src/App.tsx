@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { useTheme } from './hooks/useTheme';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
 import { routes } from './routes';
-import CurrencyConverter from './components/CurrencyConverter';
+import CurrencyConverter from './components/CurrencyConverter.jsx';
 
 function AppLayout() {
   const { isDark } = useTheme();
