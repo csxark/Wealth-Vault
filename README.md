@@ -73,7 +73,7 @@ npm run sync
 ### Option 2: Manual Setup
 ```bash
 # 1. Install all dependencies
-npm run install-all
+npm install
 
 # 2. Set up environment files
 npm run setup
