@@ -4,8 +4,11 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Ensure lucide-react is pre-bundled to avoid runtime requests to individual icon modules
   optimizeDeps: {
-    exclude: ['lucide-react'],
+    // Pre-bundle lucide-react to ensure icons are bundled into vendor build
+    // This prevents per-icon ESM requests (which can be blocked by ad-blockers)
+    include: ['lucide-react'],
   },
   server: {
     port: 3001,

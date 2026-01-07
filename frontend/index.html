@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <link rel="manifest" href="/manifest.json" />
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -15,10 +14,20 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
+    <script type="module">
+      // Development helper: ensure any previously registered service workers are removed
+      if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
+        // Clear caches used by service worker
+        if (window.caches && caches.keys) {
+          caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
+        }
+      }
+
+      // Register service worker only when NOT in dev mode to avoid caching/messaging issues while developing
+      if ('serviceWorker' in navigator && !import.meta.env.DEV) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js');
+          navigator.serviceWorker.register('/service-worker.js').catch(() => {});
         });
       }
     </script>

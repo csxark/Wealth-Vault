@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { convertCurrency } from '@/utils/currency';
+import { convertCurrency } from '../utils/currency';
 
 const currencies = ['USD', 'EUR', 'INR', 'GBP', 'JPY'];
 
