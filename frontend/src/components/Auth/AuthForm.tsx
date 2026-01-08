@@ -45,9 +45,16 @@ export const AuthForm: React.FC<{ mode?: 'login' | 'register' }> = ({ mode = 'lo
   const [error, setError] = useState('');
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState('');
+  const [username, setUsername] = useState('');
+
 
   const { user, signUp, signIn, loading } = useAuth();
   const navigate = useNavigate();
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{9,}$/;
+  const usernameRegex = /^[A-Za-z\s]{5,}$/;
+
 
   useEffect(() => {
     if (user) {
@@ -76,11 +83,32 @@ export const AuthForm: React.FC<{ mode?: 'login' | 'register' }> = ({ mode = 'lo
     e.preventDefault();
     setError('');
 
-    if (!email || !password) {
+    if (!email || !password || (isSignUp && !username)) {
       setError('Please fill in all fields.');
       return;
     }
-    
+
+    if (!emailRegex.test(email)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (isSignUp) {
+      if (!usernameRegex.test(username)) {
+        setError(
+          'Username must be at least 5 characters and should not contain numbers.'
+        );
+        return;
+      }
+    }
+
+    if (!passwordRegex.test(password)) {
+      setError(
+        'Password must be at least 9 characters and include uppercase, lowercase, number, and special character.'
+      );
+      return;
+    }
+
     if (isSignUp) {
       setNewUserEmail(email);
       setShowProfileSetup(true);
@@ -143,7 +171,7 @@ export const AuthForm: React.FC<{ mode?: 'login' | 'register' }> = ({ mode = 'lo
                             <div className="space-y-1">
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="name">Full Name</label>
                                 <div className="relative">
-                                    <input className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-white placeholder-gray-400" id="name" placeholder="John Doe" type="text" disabled/>
+                                <input value={username} onChange={(e) => setUsername(e.target.value)} className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900 dark:text-white placeholder-gray-400" id="name" placeholder="John Doe" type="text" required />
                                     <User className="absolute right-3 top-3 text-gray-400 dark:text-gray-500 text-xl pointer-events-none" />
                                 </div>
                             </div>
