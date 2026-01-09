@@ -43,11 +43,24 @@ export const AuthForm: React.FC<{ mode?: 'login' | 'register' }> = ({ mode = 'lo
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    password?: string;
+    username?: string;
+  }>({});
+
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState('');
+  const [username, setUsername] = useState('');
 
+  
   const { user, signUp, signIn, loading } = useAuth();
   const navigate = useNavigate();
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{9,}$/;
+  const usernameRegex = /^[A-Za-z\s]{5,}$/;
+
 
   useEffect(() => {
     if (user) {
@@ -72,27 +85,52 @@ export const AuthForm: React.FC<{ mode?: 'login' | 'register' }> = ({ mode = 'lo
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setFieldErrors({});
 
-    if (!email || !password) {
-      setError('Please fill in all fields.');
+    const errors: typeof fieldErrors = {};
+
+    if (!email) {
+      errors.email = 'Email is required';
+    } else if (!emailRegex.test(email)) {
+      errors.email = 'Enter a valid email address';
+    }
+
+    if (isSignUp) {
+      if (!username) {
+        errors.username = 'Full name is required';
+      } else if (!usernameRegex.test(username)) {
+        errors.username = 'Minimum 5 letters, no numbers';
+      }
+    }
+
+    if (!password) {
+      errors.password = 'Password is required';
+    } else if (!passwordRegex.test(password)) {
+      errors.password =
+        'Must include uppercase, lowercase, number & special character';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
-    
+
+    // Continue auth
     if (isSignUp) {
       setNewUserEmail(email);
       setShowProfileSetup(true);
     } else {
       const result = await signIn(email, password);
       if (!result.success) {
-        setError(result.error || 'Login failed.');
+        setFieldErrors({ email: 'Invalid email or password' });
       } else {
         navigate('/dashboard');
       }
     }
   };
+
 
   if (showProfileSetup) {
     return <ProfileSetup onComplete={handleProfileComplete} userEmail={newUserEmail} />;
@@ -132,19 +170,14 @@ export const AuthForm: React.FC<{ mode?: 'login' | 'register' }> = ({ mode = 'lo
                         </p>
                     </div>
 
-                    {error && (
-                      <div className="mb-4 p-3 text-center rounded-xl bg-red-500/10 text-red-500 border border-red-500/20">
-                          <p className="text-sm font-medium">{error}</p>
-                      </div>
-                    )}
-
                     <form onSubmit={handleSubmit} className="space-y-5">
                         {isSignUp && (
                             <div className="space-y-1">
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="name">Full Name</label>
                                 <div className="relative">
-                                    <input className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-white placeholder-gray-400" id="name" placeholder="John Doe" type="text" disabled/>
+                                <input value={username} onChange={(e) => setUsername(e.target.value)} className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900 dark:text-white placeholder-gray-400" id="name" placeholder="John Doe" type="text" required />
                                     <User className="absolute right-3 top-3 text-gray-400 dark:text-gray-500 text-xl pointer-events-none" />
+                                <p className="min-h-[16px] text-xs text-red-500">{fieldErrors.username} </p>
                                 </div>
                             </div>
                         )}
@@ -153,6 +186,7 @@ export const AuthForm: React.FC<{ mode?: 'login' | 'register' }> = ({ mode = 'lo
                             <div className="relative">
                                 <input value={email} onChange={(e) => setEmail(e.target.value)} className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900 dark:text-white placeholder-gray-400" id="email" placeholder="name@example.com" type="email" required/>
                                 <Mail className="absolute right-3 top-3 text-gray-400 dark:text-gray-500 text-xl pointer-events-none" />
+                                <p className="min-h-[16px] text-xs text-red-500">{fieldErrors.email} </p>
                             </div>
                         </div>
                         <div className="space-y-1">
@@ -162,6 +196,7 @@ export const AuthForm: React.FC<{ mode?: 'login' | 'register' }> = ({ mode = 'lo
                                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400 dark:text-gray-500">
                                     {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                                 </button>
+                                <p className="min-h-[16px] text-xs text-red-500"> {fieldErrors.password} </p>
                             </div>
                         </div>
                         

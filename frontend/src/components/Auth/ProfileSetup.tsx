@@ -7,6 +7,17 @@ interface ProfileSetupProps {
   userEmail: string;
 }
 
+const COUNTRY_CODES = [
+  { code: '+91', country: 'India', digits: 10 },
+  { code: '+1', country: 'USA', digits: 10 },
+  { code: '+44', country: 'UK', digits: 10 },
+  { code: '+61', country: 'Australia', digits: 9 },
+  { code: '+971', country: 'UAE', digits: 9 },
+  { code: '+81', country: 'Japan', digits: 10 },
+  { code: '+49', country: 'Germany', digits: 11 },
+];
+
+
 export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmail }) => {
   const [step, setStep] = useState(1);
   const [profile, setProfile] = useState<UserProfile>({
@@ -18,6 +29,24 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
     monthlyIncome: 0,
     financialGoals: ''
   });
+  const [countryCode, setCountryCode] = useState(COUNTRY_CODES[0]);
+
+  const nameRegex = /^[A-Za-z\s]+$/;
+  const phoneRegex = /^[0-9]+$/;
+
+  const isAdult = (dob: string) => {
+    if (!dob) return false;
+    const birthDate = new Date(dob);
+    const today = new Date();
+    const age =
+      today.getFullYear() -
+      birthDate.getFullYear() -
+      (today < new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate()) ? 1 : 0);
+    return age >= 18;
+  };
+
+const isOccupationValid = (occupation: string) =>
+  occupation.trim().split(/\s+/).length >= 2;
 
   const handleNext = () => {
     if (step < 3) {
@@ -33,14 +62,26 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
     }
   };
 
-  const isStepValid = () => {
+  const isStepValid = (): boolean => {
     switch (step) {
       case 1:
-        return profile.firstName.trim() && profile.lastName.trim() && profile.phoneNumber?.trim() && profile.dateOfBirth;
+        return (
+          (profile.firstName ?? '').trim().length > 0 &&
+          (profile.lastName ?? '').trim().length > 0 &&
+          phoneRegex.test(profile.phoneNumber ?? '') &&
+          (profile.phoneNumber?.length ?? 0) === countryCode.digits &&
+          isAdult(profile.dateOfBirth ?? '')
+        );
+
       case 2:
-        return profile.occupation?.trim() && profile.monthlyIncome > 0;
+        return (
+          isOccupationValid(profile.occupation ?? '') &&
+          (profile.monthlyIncome ?? 0) > 0
+        );
+
       case 3:
-        return profile.financialGoals?.trim();
+        return (profile.financialGoals ?? '').trim().length > 0;
+
       default:
         return false;
     }
@@ -86,7 +127,11 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
                 <input
                   type="text"
                   value={profile.firstName}
-                  onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                  onChange={(e) => {
+                    if (nameRegex.test(e.target.value) || e.target.value === '') {
+                      setProfile({ ...profile, firstName: e.target.value });
+                    }
+                  }}
                   className="input-modern"
                   placeholder="Enter your first name"
                   required
@@ -112,28 +157,53 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
                   <Phone className="inline h-4 w-4 mr-1.5" />
                   Phone Number
                 </label>
-                <input
-                  type="tel"
-                  value={profile.phoneNumber}
-                  onChange={(e) => setProfile({ ...profile, phoneNumber: e.target.value })}
-                  className="input-modern"
-                  placeholder="+91 98765 43210"
-                  required
-                />
+
+                <div className="flex gap-2">
+                  {/* Country Code */}
+                  <select
+                    value={countryCode.code}
+                    onChange={(e) =>
+                      setCountryCode(
+                        COUNTRY_CODES.find(c => c.code === e.target.value)!
+                      )
+                    }
+                    className="input-modern w-28"
+                  >
+                    {COUNTRY_CODES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.country} ({c.code})
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Phone Number */}
+                  <input
+                    type="tel"
+                    value={profile.phoneNumber}
+                    onChange={(e) => {
+                      if (phoneRegex.test(e.target.value) || e.target.value === '') {
+                        setProfile({ ...profile, phoneNumber: e.target.value });
+                      }
+                    }}
+                    className="input-modern flex-1"
+                    placeholder={`Enter ${countryCode.digits} digit number`}
+                    maxLength={countryCode.digits}
+                    required
+                  />
+                </div>
+
+                <p className="text-xs text-neutral-500 mt-1">
+                  Must be exactly {countryCode.digits} digits
+                </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-2.5">
-                  <Calendar className="inline h-4 w-4 mr-1.5" />
-                  Date of Birth
-                </label>
-                <input
-                  type="date"
-                  value={profile.dateOfBirth}
-                  onChange={(e) => setProfile({ ...profile, dateOfBirth: e.target.value })}
-                  className="input-modern"
-                  required
-                />
+                <input type="date" value={profile.dateOfBirth} onChange={(e) => setProfile({ ...profile, dateOfBirth: e.target.value })} className="input-modern" required />
+                {profile.dateOfBirth && !isAdult(profile.dateOfBirth) && (
+                  <p className="text-xs text-red-500 mt-1">
+                    You must be at least 18 years old
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -155,7 +225,7 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, userEmai
                   value={profile.occupation}
                   onChange={(e) => setProfile({ ...profile, occupation: e.target.value })}
                   className="input-modern"
-                  placeholder="Software Engineer, Teacher, etc."
+                  placeholder="Must contain at least 2 words (Software Engineer, Teacher, etc...)."
                   required
                 />
               </div>
