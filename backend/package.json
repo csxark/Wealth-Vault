@@ -14,16 +14,18 @@
     "db:migrate": "node -e 'import(\"./config/migrate.js\").then(m => m.migrate())'"
   },
   "dependencies": {
+    "@google/genai": "^1.35.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
+    "dotenv": "^16.6.1",
     "drizzle-orm": "^0.45.1",
     "express": "^4.18.2",
     "express-validator": "^7.0.1",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "openai": "^6.15.0",
     "postgres": "^3.4.7"
   },
   "devDependencies": {
