@@ -23,7 +23,7 @@ export const Coach: React.FC = () => {
     } else {
       // Welcome message
       const welcomeMessage: ChatMessage = {
-    _id: '1',
+        _id: '1',
         content: "Hi! I'm your financial wellness coach. I'm here to help you build healthier spending habits and achieve your financial goals. How can I support you today?",
         isUser: false,
         timestamp: new Date().toISOString()
@@ -43,11 +43,16 @@ export const Coach: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-
   // Async Gemini response
   const generateGeminiResponse = async (userMessage: string): Promise<string> => {
-    // Optionally, you can add prompt engineering here
-    return await fetchGeminiResponse(userMessage);
+    const prompt = `
+You are an AI Financial Coach.
+Answer in a friendly, concise way.
+Give practical tips about budgeting, saving, and financial wellness.
+User: ${userMessage}
+Coach:
+    `;
+    return await fetchGeminiResponse(prompt);
   };
 
   const handleSendMessage = async (content: string) => {
@@ -64,16 +69,27 @@ export const Coach: React.FC = () => {
     setInputValue('');
     setIsTyping(true);
 
-    // Get Gemini response
-    const geminiReply = await generateGeminiResponse(content);
-    const botResponse: ChatMessage = {
-      _id: (Date.now() + 1).toString(),
-      content: geminiReply,
-      isUser: false,
-      timestamp: new Date().toISOString()
-    };
-    setMessages(prev => [...prev, botResponse]);
-    setIsTyping(false);
+    try {
+      const geminiReply = await generateGeminiResponse(content);
+      const botResponse: ChatMessage = {
+        _id: (Date.now() + 1).toString(),
+        content: geminiReply,
+        isUser: false,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, botResponse]);
+    } catch (error) {
+      const errorResponse: ChatMessage = {
+        _id: (Date.now() + 2).toString(),
+        content: "Oops! Something went wrong while processing your request.",
+        isUser: false,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorResponse]);
+      console.error('Error fetching Gemini response:', error);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handleQuickReply = (reply: string) => {

@@ -14,6 +14,7 @@ import userRoutes from './routes/users.js';
 import expenseRoutes from './routes/expenses.js';
 import goalRoutes from './routes/goals.js';
 import categoryRoutes from './routes/categories.js';
+import geminiRouter from './routes/gemini.js';
 
 // Load environment variables
 dotenv.config();
@@ -101,6 +102,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/goals', goalRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use("/api/gemini", geminiRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
