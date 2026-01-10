@@ -13,7 +13,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
   const handleSignOut = async () => {
     await signOut();
-    window.location.href = '/auth';
+    window.location.href = '/';
   };
 
   return (
