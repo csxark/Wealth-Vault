@@ -24,6 +24,7 @@ const Home: React.FC = () => {
   );
   const [colorTheme, setColorTheme] = useState<"blue" | "green">("blue");
   const [open, setOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.className = theme === "dark" ? "dark" : "";
@@ -48,63 +49,136 @@ const Home: React.FC = () => {
       >
         {/* Navbar */}
         <nav
-          className={`fixed top-0 left-0 w-full z-50 px-8 py-4 flex items-center justify-between backdrop-blur-md border-b ${
+        className={`fixed top-0 left-0 w-full z-50 px-6 md:px-8 py-4 flex items-center justify-between backdrop-blur-md border-b ${
             theme === "dark"
-              ? "bg-slate-900/80 border-slate-800 text-white"
-              : "bg-white/80 border-slate-200 text-slate-900"
-          }`}
+            ? "bg-slate-900/80 border-slate-800 text-white"
+            : "bg-white/80 border-slate-200 text-slate-900"
+        }`}
         >
-          <div className="flex items-center gap-3">
+        {/* Left Logo */}
+        <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-[color:var(--accent)]">
-              <Vault className="h-5 w-5 text-white" />
+            <Vault className="h-5 w-5 text-white" />
             </div>
             <h1 className="text-lg font-semibold tracking-tight">Wealth Vault</h1>
-          </div>
+        </div>
 
-          <div className="flex items-center gap-4 relative">
+        {/* Mobile Menu Button */}
+        <div className="flex md:hidden items-center gap-2">
             <button
-              onClick={() => setOpen(!open)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            onClick={() => setOpen(!open)}
+            className="p-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
             >
-              🎨 Theme <ChevronDown className="h-4 w-4" />
+            <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+            >
+                {open ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+            </svg>
+            </button>
+        </div>
+
+        {/* Menu Items */}
+        <div
+        className={`flex flex-col md:flex-row md:items-center gap-4 absolute md:static top-full left-0 md:top-auto md:left-auto w-full md:w-auto bg-white dark:bg-slate-900 md:bg-transparent border-t md:border-none border-slate-200 dark:border-slate-800 transition-all overflow-hidden ${
+            open ? "max-h-[500px] py-4 md:py-0" : "max-h-0 md:max-h-full md:overflow-visible"
+        }`}
+        >
+        {/* Desktop Theme / Accent Dropdown */}
+        <div className="relative hidden md:block">
+            <button
+            onClick={() => setThemeOpen(!themeOpen)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            >
+            🎨 Theme <ChevronDown className="h-4 w-4" />
             </button>
 
-            {open && (
-              <div className="absolute right-0 top-12 w-56 rounded-xl shadow-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2">
-                <div className="text-xs uppercase text-slate-500 dark:text-slate-400 px-2 py-1">
-                  Mode
-                </div>
-                <button onClick={() => setTheme("light")} className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800">
-                  🌞 Light
+            {themeOpen && (
+            <div className="absolute right-0 mt-2 w-56 rounded-xl shadow-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2 z-50">
+                <div className="text-xs uppercase text-slate-500 dark:text-slate-400 px-2 py-1">Mode</div>
+                <button
+                onClick={() => setTheme("light")}
+                className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                🌞 Light
                 </button>
-                <button onClick={() => setTheme("dark")} className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800">
-                  🌙 Dark
+                <button
+                onClick={() => setTheme("dark")}
+                className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                🌙 Dark
                 </button>
 
-                <div className="text-xs uppercase text-slate-500 dark:text-slate-400 px-2 py-2">
-                  Accent
-                </div>
-                {(["blue", "green"] as const).map(c => (
-                  <button
+                <div className="text-xs uppercase text-slate-500 dark:text-slate-400 px-2 py-2">Accent</div>
+                {(["blue", "green"] as const).map((c) => (
+                <button
                     key={c}
                     onClick={() => setColorTheme(c)}
                     className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 capitalize"
-                  >
+                >
                     🎨 {c}
-                  </button>
+                </button>
                 ))}
-              </div>
+            </div>
             )}
+        </div>
 
-            <a
-              href="/auth"
-              className="px-5 py-2 rounded-lg text-white font-semibold shadow hover:scale-105 transition bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-soft)]"
-            >
-              Get Started
-            </a>
-          </div>
+        {/* Mobile Theme & Accent Toggles */}
+        <div className="flex flex-col gap-2 md:hidden px-4">
+            <div className="flex items-center justify-between">
+            <span>Mode</span>
+            <div className="flex gap-2">
+                <button
+                onClick={() => setTheme("light")}
+                className={`px-3 py-1 rounded ${theme === "light" ? "bg-slate-300 dark:bg-slate-700" : "bg-transparent"}`}
+                >
+                🌞 Light
+                </button>
+                <button
+                onClick={() => setTheme("dark")}
+                className={`px-3 py-1 rounded ${theme === "dark" ? "bg-slate-300 dark:bg-slate-700" : "bg-transparent"}`}
+                >
+                🌙 Dark
+                </button>
+            </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+            <span>Accent</span>
+            <div className="flex gap-2">
+                <button
+                onClick={() => setColorTheme("blue")}
+                className={`px-3 py-1 rounded ${colorTheme === "blue" ? "bg-slate-300 dark:bg-slate-700" : "bg-transparent"}`}
+                >
+                Blue
+                </button>
+                <button
+                onClick={() => setColorTheme("green")}
+                className={`px-3 py-1 rounded ${colorTheme === "green" ? "bg-slate-300 dark:bg-slate-700" : "bg-transparent"}`}
+                >
+                Green
+                </button>
+            </div>
+            </div>
+        </div>
+
+        {/* Get Started Button */}
+        <a
+            href="/auth"
+            className="px-5 py-2 rounded-lg text-white font-semibold shadow hover:scale-105 transition bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-soft)] text-center md:text-left"
+        >
+            Get Started
+        </a>
+        </div>
         </nav>
-
+        
         {/* Hero */}
         <section className="w-full min-h-screen flex items-center justify-center pt-32 px-6 text-white">
           <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
