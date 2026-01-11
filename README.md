@@ -11,7 +11,7 @@
 
 ## ✨ What Makes Wealth Vault Different?
 
-Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware finance**, helping users understand *why* they spend — not just *what* they spend.
+Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware finance**, helping users understand _why_ they spend — not just _what_ they spend.
 
 ### 🔑 Key Features
 
@@ -43,15 +43,15 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 
 ## 🛠 Tech Stack
 
-| Layer | Technology |
-|------|------------|
-| Frontend | React 18, TypeScript, Vite |
-| Styling | Tailwind CSS |
-| Backend & DB | Supabase (PostgreSQL) |
-| Auth | Supabase Auth |
-| Charts | Chart.js, React-Chartjs-2 |
-| Icons | Lucide React |
-| QR Scanning | @zxing/browser |
+| Layer        | Technology                 |
+| ------------ | -------------------------- |
+| Frontend     | React 18, TypeScript, Vite |
+| Styling      | Tailwind CSS               |
+| Backend & DB | Supabase (PostgreSQL)      |
+| Auth         | Supabase Auth              |
+| Charts       | Chart.js, React-Chartjs-2  |
+| Icons        | Lucide React               |
+| QR Scanning  | @zxing/browser             |
 
 ---
 
@@ -66,7 +66,8 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 ## ⚡ Quick Setup
 
 ### Option 1: Automated Setup (Recommended)
-```bash
+
+````bash
 npm run sync
 
 
@@ -80,12 +81,14 @@ npm run setup
 
 # 3. Start both applications
 npm run dev
-```
+````
 
 ### Windows Users
+
 Double-click `run-setup.bat` for automated setup.
 
 ### Unix/Mac Users
+
 ```bash
 chmod +x run-setup.sh
 ./run-setup.sh
@@ -105,7 +108,8 @@ cd Wealth-Vault
 This project uses environment variables for Supabase and app configuration.
 
 1. Copy the example environment file:
-```bash
+
+````bash
 cp .env.example .env
 
 ###3. Database Setup
@@ -122,13 +126,47 @@ npm run dev
 # Or start individually
 npm run dev: backend  # Backend only (port 5000)
 npm run dev: frontend # Frontend only (port 3000)
-```
+````
 
 ### 5. Access the Application
 
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:5000/api
 - **API Health Check**: http://localhost:5000/api/health
+- **API Documentation**: http://localhost:5000/api-docs
+
+---
+
+## 🔒 Security Features
+
+### Rate Limiting
+
+The API implements rate limiting to prevent abuse:
+
+- **General API**: 100 requests per 15 minutes
+- **Authentication routes**: 5 requests per 15 minutes (prevents brute force)
+- **AI/Gemini routes**: 20 requests per 15 minutes
+
+### Password Security
+
+- Strong password requirements enforced during registration
+- Real-time password strength meter with visual feedback
+- Requirements: 9+ characters, uppercase, lowercase, number, special character
+
+---
+
+## 📚 API Documentation
+
+Interactive API documentation is available via Swagger UI at `/api-docs` when the backend is running.
+
+The documentation includes:
+
+- All available endpoints
+- Request/response schemas
+- Authentication requirements
+- Try-it-out functionality
+
+---
 
 ## API Synchronization
 
@@ -152,32 +190,36 @@ All tables have Row Level Security (RLS) enabled to ensure users can only access
 ## Key Components
 
 ### Dashboard
+
 - Spending overview with charts
 - Category breakdown (Safe, Impulsive, Anxious)
 - Budget tracking and safe spend zone
 
 ### Goals Management
+
 - Create and track financial goals
 - Visual progress indicators
 - Goal completion tracking
 
 ### Profile Management
+
 - Personal information
 - Financial preferences
 - Income and goal settings
 
 ### Expense Tracking
+
 - QR code scanning for quick entry
 - Manual expense logging
 - Category classification
 
 ## Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `VITE_SUPABASE_URL` | Your Supabase project URL | Yes |
-| `VITE_SUPABASE_ANON_KEY` | Your Supabase anon/public key | Yes |
-| `VITE_DEBUG` | Enable debug mode | No |
+| Variable                 | Description                   | Required |
+| ------------------------ | ----------------------------- | -------- |
+| `VITE_SUPABASE_URL`      | Your Supabase project URL     | Yes      |
+| `VITE_SUPABASE_ANON_KEY` | Your Supabase anon/public key | Yes      |
+| `VITE_DEBUG`             | Enable debug mode             | No       |
 
 ## Development
 
@@ -215,10 +257,12 @@ frontend/
 ### Common Issues
 
 1. **Environment Variables Not Loading**
+
    - Ensure `.env` file is in the `frontend` directory
    - Restart the development server after adding variables
 
 2. **Database Connection Errors**
+
    - Verify the Supabase URL and key are correct
    - Check if the database schema is properly set up
    - Ensure RLS policies are configured
@@ -241,6 +285,7 @@ Enable debug mode by setting `VITE_DEBUG=true` to see detailed console logs.
 5. Submit a pull request
 
 ## Contributors
+
 <a href="https://github.com/csxark/Wealth-Vault/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=csxark/Wealth-Vault&max=300" />
 </a>
@@ -252,7 +297,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 For support and questions:
+
 - Create an issue in the GitHub repository
 - Check the troubleshooting section above
 - Review Supabase documentation for database-related issues
-
