@@ -12,6 +12,7 @@ function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const isAuthPage = location.pathname === '/auth';
+  const isHomePage = location.pathname === '/';
 
   if (isAuthPage) {
     return (
@@ -24,17 +25,28 @@ function AppLayout() {
     );
   }
 
+  if (isHomePage) {
+    return (
+      <Routes>
+        <Route
+          path="/"
+          element={routes.find(r => r.path === '/')?.element}
+        />
+      </Routes>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-neutral-50 dark:bg-slate-900">
         <Header onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
 
         <div className="flex">
-          <Sidebar
-            activeTab={location.pathname.slice(1) || 'dashboard'}
-            onTabChange={() => setSidebarOpen(false)}
-            isOpen={sidebarOpen}
-          />
+            <Sidebar
+              activeTab={location.pathname.slice(1) || 'dashboard'}
+              onTabChange={() => setSidebarOpen(false)}
+              isOpen={sidebarOpen}
+            />
 
           {sidebarOpen && (
             <div 
@@ -48,7 +60,7 @@ function AppLayout() {
               <Routes>
                 {routes.map((route) => {
                   // ✅ Inject Currency Converter ONLY on dashboard
-                  if (route.path === '/' || route.path === '/dashboard') {
+                  if (route.path === '/dashboard') {
                     return (
                       <Route
                         key={route.path}
@@ -74,6 +86,8 @@ function AppLayout() {
                     />
                   );
                 })}
+                {/* Redirect unknown routes to home */}
+                <Route path="*" element={routes.find(r => r.path === '/')?.element} />
               </Routes>
             </div>
           </main>
