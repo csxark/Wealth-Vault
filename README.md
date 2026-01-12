@@ -1,11 +1,38 @@
+Absolutely! I can create a **full professional README** with modern, SaaS-style formatting, embedded placeholders for **Home Page** and **Dashboard images**, and styled using Markdown tricks to make it visually appealing on GitHub.
+
+Here’s a polished, fully styled README:
+
+---
+
+````markdown
 # 💰 Wealth Vault — Financial Wellness App
 
 > **Take control of your money. Build healthier financial habits.**  
 > Wealth Vault is a modern financial wellness platform that helps users understand spending behavior, set meaningful goals, and make smarter financial decisions using **AI-powered insights**.
 
-> 💡 Take control of your finances with intelligent tracking and personalized guidance.
+---
 
-## Features
+## 🌐 Website Flow
+
+Wealth Vault guides users through a **simple three-step flow**:
+
+1. **Landing Page**  
+   Introduces Wealth Vault, highlights features, and encourages users to sign up.  
+   <div align="center">
+     <img src="./assets/Home.png" alt="Home Page" width="80%" style="border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);" />
+   </div>
+
+2. **Authentication (Sign Up / Login)**  
+   Secure user registration and login powered by **Supabase Auth**.
+   <div align="center">
+     <img src="./assets/Auth.png" alt="Dashboard" width="80%" style="border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);" />
+   </div>
+
+3. **Dashboard**  
+   Personalized financial insights, expense tracking, goal management, and visual analytics.  
+   <div align="center">
+     <img src="./assets/Dashboard.png" alt="Dashboard" width="80%" style="border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);" />
+   </div>
 
 ---
 
@@ -15,51 +42,28 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 
 ### 🔑 Key Features
 
-- 🧠 **Smart Spending Analysis**  
-  Categorizes expenses into **Safe**, **Impulsive**, and **Anxious** spending patterns
-
-- 🎯 **Financial Goals Management**  
-  Set, track, and visualize progress toward financial objectives
-
-- 🤖 **AI Financial Coach**  
-  Personalized insights and actionable recommendations
-
-- 📷 **QR Code Expense Entry**  
-  Log expenses instantly using QR codes and UPI
-
-- 📊 **Visual Analytics Dashboard**  
-  Interactive charts for clear spending insights
-
-- 📁 **CSV Data Import**  
-  Import historical financial data with ease
-
-- 👤 **User Profiles**  
-  Personalized financial preferences and income settings
-
-- 🎨 **User-Friendly Interface**  
-  Clean, responsive UI built for everyday use
+- 🧠 **Smart Spending Analysis** — Categorizes expenses into **Safe**, **Impulsive**, and **Anxious** patterns  
+- 🎯 **Financial Goals Management** — Set, track, and visualize progress toward financial objectives  
+- 🤖 **AI Financial Coach** — Personalized insights and actionable recommendations  
+- 📷 **QR Code Expense Entry** — Log expenses instantly using QR codes and UPI  
+- 📊 **Visual Analytics Dashboard** — Interactive charts for clear spending insights  
+- 📁 **CSV Data Import** — Import historical financial data easily  
+- 👤 **User Profiles** — Personalized financial preferences and income settings  
+- 🎨 **User-Friendly Interface** — Clean, responsive UI built for everyday use  
 
 ---
 
 ## 🛠 Tech Stack
 
-| Layer        | Technology                 |
-| ------------ | -------------------------- |
-| Frontend     | React 18, TypeScript, Vite |
-| Styling      | Tailwind CSS               |
-| Backend & DB | Supabase (PostgreSQL)      |
-| Auth         | Supabase Auth              |
-| Charts       | Chart.js, React-Chartjs-2  |
-| Icons        | Lucide React               |
-| QR Scanning  | @zxing/browser             |
-
----
-
-## ✅ Prerequisites
-
-- Node.js **18+**
-- npm
-- Git
+| Layer        | Technology                  |
+| ------------ | --------------------------- |
+| Frontend     | React 18, TypeScript, Vite  |
+| Styling      | Tailwind CSS                |
+| Backend & DB | Supabase (PostgreSQL)       |
+| Auth         | Supabase Auth               |
+| Charts       | Chart.js, React-Chartjs-2   |
+| Icons        | Lucide React                |
+| QR Scanning  | @zxing/browser              |
 
 ---
 
@@ -67,21 +71,22 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 
 ### Option 1: Automated Setup (Recommended)
 
-````bash
+```bash
 npm run sync
-
+````
 
 ### Option 2: Manual Setup
+
 ```bash
-# 1. Install all dependencies
+# Install dependencies
 npm install
 
-# 2. Set up environment files
+# Set up environment variables
 npm run setup
 
-# 3. Start both applications
+# Start both frontend and backend
 npm run dev
-````
+```
 
 ### Windows Users
 
@@ -94,189 +99,145 @@ chmod +x run-setup.sh
 ./run-setup.sh
 ```
 
-## Detailed Setup Instructions
+---
 
-### 1. Clone the Repository
+## 🔧 Detailed Setup Instructions
+
+### 1️⃣ Clone the Repository
 
 ```bash
 git clone <repository-url>
 cd Wealth-Vault
 ```
 
-### 2. Environment Configuration
+### 2️⃣ Environment Configuration
 
-This project uses environment variables for Supabase and app configuration.
-
-1. Copy the example environment file:
-
-````bash
+```bash
 cp .env.example .env
+```
 
-###3. Database Setup
-The application uses Supabase (PostgreSQL) for data storage.
+Fill in your **Supabase credentials** and other required variables.
 
-Ensure your Supabase project is set up correctly and the required environment variables are configured in the `.env` file.
+### 3️⃣ Database Setup
 
-### 4. Run the Application
+Ensure your Supabase project is correctly set up and **RLS policies** are enabled.
+
+### 4️⃣ Run the Application
 
 ```bash
 # Start both frontend and backend
 npm run dev
 
 # Or start individually
-npm run dev: backend  # Backend only (port 5000)
-npm run dev: frontend # Frontend only (port 3000)
-````
+npm run dev:backend   # Backend only (port 5000)
+npm run dev:frontend  # Frontend only (port 3000)
+```
 
-### 5. Access the Application
+### 5️⃣ Access the Application
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000/api
-- **API Health Check**: http://localhost:5000/api/health
-- **API Documentation**: http://localhost:5000/api-docs
+* **Frontend**: [http://localhost:3000](http://localhost:3000)
+* **Backend API**: [http://localhost:5000/api](http://localhost:5000/api)
+* **API Health Check**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
+* **API Documentation**: [http://localhost:5000/api-docs](http://localhost:5000/api-docs)
 
 ---
 
 ## 🔒 Security Features
 
-### Rate Limiting
+* **Rate Limiting**
 
-The API implements rate limiting to prevent abuse:
+  * General API: 100 requests / 15 min
+  * Authentication routes: 5 requests / 15 min
+  * AI/Gemini routes: 20 requests / 15 min
 
-- **General API**: 100 requests per 15 minutes
-- **Authentication routes**: 5 requests per 15 minutes (prevents brute force)
-- **AI/Gemini routes**: 20 requests per 15 minutes
+* **Password Security**
 
-### Password Security
-
-- Strong password requirements enforced during registration
-- Real-time password strength meter with visual feedback
-- Requirements: 9+ characters, uppercase, lowercase, number, special character
+  * Strong password enforcement
+  * Real-time password strength meter
+  * Requirements: ≥9 characters, uppercase, lowercase, number, special character
 
 ---
 
 ## 📚 API Documentation
 
-Interactive API documentation is available via Swagger UI at `/api-docs` when the backend is running.
+Interactive API documentation is available via **Swagger UI** at `/api-docs` when the backend is running.
 
-The documentation includes:
+Includes:
 
-- All available endpoints
-- Request/response schemas
-- Authentication requirements
-- Try-it-out functionality
+* All available endpoints
+* Request/response schemas
+* Authentication requirements
+* Try-it-out functionality
 
 ---
 
-## API Synchronization
-
-The frontend and backend are fully synchronized with matching data models:
-
-- **User Management**: Authentication handled via Supabase Auth
-- **Expense Tracking**: Real-time expense management with categories
-- **Goal Management**: Financial goals with progress tracking
-- **Category Management**: Hierarchical categories with budgets
-
-## Database Schema
-
-The app uses Supabase (PostgreSQL) with the following main tables:
-
-- **profiles**: User profile information
-- **transactions**: Financial transactions with spending categories
-- **goals**: Financial goals and progress tracking
-
-All tables have Row Level Security (RLS) enabled to ensure users can only access their own data.
-
-## Key Components
+## 📊 Dashboard & Key Components
 
 ### Dashboard
 
-- Spending overview with charts
-- Category breakdown (Safe, Impulsive, Anxious)
-- Budget tracking and safe spend zone
+* Spending overview with charts
+* Category breakdown: **Safe, Impulsive, Anxious**
+* Budget tracking and safe spend zone
 
 ### Goals Management
 
-- Create and track financial goals
-- Visual progress indicators
-- Goal completion tracking
+* Create and track financial goals
+* Visual progress indicators
+* Goal completion tracking
 
 ### Profile Management
 
-- Personal information
-- Financial preferences
-- Income and goal settings
+* Personal info & financial preferences
+* Income and goal settings
 
 ### Expense Tracking
 
-- QR code scanning for quick entry
-- Manual expense logging
-- Category classification
+* QR code scanning for quick entry
+* Manual expense logging
+* Category classification
 
-## Environment Variables
+---
 
-| Variable                 | Description                   | Required |
-| ------------------------ | ----------------------------- | -------- |
-| `VITE_SUPABASE_URL`      | Your Supabase project URL     | Yes      |
-| `VITE_SUPABASE_ANON_KEY` | Your Supabase anon/public key | Yes      |
-| `VITE_DEBUG`             | Enable debug mode             | No       |
-
-## Development
-
-### Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run lint` - Run ESLint
-
-### Project Structure
+## 🌱 Project Structure
 
 ```
 frontend/
 ├── src/
 │   ├── components/     # React components
-│   ├── hooks/         # Custom React hooks
-│   ├── lib/           # External library configurations
-│   ├── types/         # TypeScript type definitions
-│   └── utils/         # Utility functions
-├── public/            # Static assets
-└── package.json       # Dependencies and scripts
+│   ├── hooks/          # Custom React hooks
+│   ├── lib/            # External library configurations
+│   ├── types/          # TypeScript type definitions
+│   └── utils/          # Utility functions
+├── public/             # Static assets
+└── package.json        # Dependencies and scripts
 ```
 
-## Deployment
+---
+
+## 🚀 Deployment
 
 ### Vercel (Recommended)
 
 1. Connect your GitHub repository to Vercel
 2. Set environment variables in the Vercel dashboard
-3. Deploy automatically on push to main branch
+3. Deploy automatically on push to `main` branch
 
-## Troubleshooting
+---
 
-### Common Issues
+## ⚠️ Troubleshooting
 
-1. **Environment Variables Not Loading**
+* **Environment Variables Not Loading**
+  Ensure `.env` exists in `frontend` and restart the dev server
 
-   - Ensure `.env` file is in the `frontend` directory
-   - Restart the development server after adding variables
+* **Database Connection Errors**
+  Verify Supabase URL/key, check schema, confirm RLS policies
 
-2. **Database Connection Errors**
+* **Authentication Issues**
+  Ensure Supabase Auth is enabled, check site URL, clear browser cache
 
-   - Verify the Supabase URL and key are correct
-   - Check if the database schema is properly set up
-   - Ensure RLS policies are configured
+---
 
-3. **Authentication Issues**
-   - Verify Supabase Auth is enabled
-   - Check Site URL configuration in Supabase
-   - Clear browser cache and local storage
-
-### Debug Mode
-
-Enable debug mode by setting `VITE_DEBUG=true` to see detailed console logs.
-
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -284,20 +245,23 @@ Enable debug mode by setting `VITE_DEBUG=true` to see detailed console logs.
 4. Add tests if applicable
 5. Submit a pull request
 
-## Contributors
+---
+
+## 👥 Contributors
 
 <a href="https://github.com/csxark/Wealth-Vault/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=csxark/Wealth-Vault&max=300" />
 </a>
 
-## License
+---
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## 📄 License
 
-## Support
+MIT License — see [LICENSE](LICENSE) for details.
 
-For support and questions:
+---
 
-- Create an issue in the GitHub repository
-- Check the troubleshooting section above
-- Review Supabase documentation for database-related issues
+## 🛠 Support
+
+* Open an issue in the GitHub repository
+* Review [Supabase documentation](https://supabase.com/docs) for database issues
