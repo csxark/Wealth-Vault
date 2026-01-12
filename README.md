@@ -35,14 +35,29 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 
 ### 🔑 Key Features
 
-- 🧠 **Smart Spending Analysis** — Categorizes expenses into **Safe**, **Impulsive**, and **Anxious** patterns  
-- 🎯 **Financial Goals Management** — Set, track, and visualize progress toward financial objectives  
-- 🤖 **AI Financial Coach** — Personalized insights and actionable recommendations  
-- 📷 **QR Code Expense Entry** — Log expenses instantly using QR codes and UPI  
-- 📊 **Visual Analytics Dashboard** — Interactive charts for clear spending insights  
-- 📁 **CSV Data Import** — Import historical financial data easily  
-- 👤 **User Profiles** — Personalized financial preferences and income settings  
-- 🎨 **User-Friendly Interface** — Clean, responsive UI built for everyday use  
+- 🧠 **Smart Spending Analysis**  
+  Categorizes expenses into **Safe**, **Impulsive**, and **Anxious** spending patterns
+
+- 🎯 **Financial Goals Management**  
+  Set, track, and visualize progress toward financial objectives
+
+- 🤖 **AI Financial Coach**  
+  Personalized insights and actionable recommendations
+
+- 📷 **QR Code Expense Entry**  
+  Log expenses instantly using QR codes and UPI
+
+- 📊 **Visual Analytics Dashboard**  
+  Interactive charts for clear spending insights
+
+- 📁 **CSV Data Import**  
+  Import historical financial data with ease
+
+- 👤 **User Profiles**  
+  Personalized financial preferences and income settings
+
+- 🎨 **User-Friendly Interface**  
+  Clean, responsive UI built for everyday use
 
 ---
 
@@ -57,6 +72,14 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 | Charts       | Chart.js, React-Chartjs-2   |
 | Icons        | Lucide React                |
 | QR Scanning  | @zxing/browser              |
+
+---
+
+## ✅ Prerequisites
+
+- Node.js **18+**
+- npm
+- Git
 
 ---
 
@@ -164,6 +187,27 @@ Includes:
 
 ---
 
+## API Synchronization
+
+The frontend and backend are fully synchronized with matching data models:
+
+- **User Management**: Authentication handled via Supabase Auth
+- **Expense Tracking**: Real-time expense management with categories
+- **Goal Management**: Financial goals with progress tracking
+- **Category Management**: Hierarchical categories with budgets
+
+## Database Schema
+
+The app uses Supabase (PostgreSQL) with the following main tables:
+
+- **profiles**: User profile information
+- **transactions**: Financial transactions with spending categories
+- **goals**: Financial goals and progress tracking
+
+All tables have Row Level Security (RLS) enabled to ensure users can only access their own data.
+
+---
+
 ## 📊 Dashboard & Key Components
 
 ### Dashboard
@@ -188,6 +232,23 @@ Includes:
 * QR code scanning for quick entry
 * Manual expense logging
 * Category classification
+
+## Environment Variables
+
+| Variable                 | Description                   | Required |
+| ------------------------ | ----------------------------- | -------- |
+| `VITE_SUPABASE_URL`      | Your Supabase project URL     | Yes      |
+| `VITE_SUPABASE_ANON_KEY` | Your Supabase anon/public key | Yes      |
+| `VITE_DEBUG`             | Enable debug mode             | No       |
+
+## Development
+
+### Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
 
 ---
 
@@ -217,16 +278,29 @@ frontend/
 
 ---
 
-## ⚠️ Troubleshooting
+## Troubleshooting
 
-* **Environment Variables Not Loading**
-  Ensure `.env` exists in `frontend` and restart the dev server
+### Common Issues
 
-* **Database Connection Errors**
-  Verify Supabase URL/key, check schema, confirm RLS policies
+1. **Environment Variables Not Loading**
 
-* **Authentication Issues**
-  Ensure Supabase Auth is enabled, check site URL, clear browser cache
+   - Ensure `.env` file is in the `frontend` directory
+   - Restart the development server after adding variables
+
+2. **Database Connection Errors**
+
+   - Verify the Supabase URL and key are correct
+   - Check if the database schema is properly set up
+   - Ensure RLS policies are configured
+
+3. **Authentication Issues**
+   - Verify Supabase Auth is enabled
+   - Check Site URL configuration in Supabase
+   - Clear browser cache and local storage
+
+### Debug Mode
+
+Enable debug mode by setting `VITE_DEBUG=true` to see detailed console logs.
 
 ---
 
