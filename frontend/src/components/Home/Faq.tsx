@@ -2,34 +2,31 @@ import React from "react";
 
 const FAQSection: React.FC = () => {
   const faqs = [
-    {
-      q: "Is Wealth Vault free to use?",
-      a: "Yes! You can start with all core features for free. Premium plans unlock advanced analytics and AI insights.",
-    },
-    {
-      q: "Is my financial data secure?",
-      a: "Absolutely. We use industry-standard encryption and secure storage to protect all your data.",
-    },
-    {
-      q: "Can I track expenses in multiple currencies?",
-      a: "Yes. Wealth Vault supports multiple currencies with real-time conversion.",
-    },
-    {
-      q: "How does the AI advisor help me?",
-      a: "The AI analyzes your spending habits and suggests smarter ways to save, invest, and manage money.",
-    },
-    {
-      q: "Can I export my data?",
-      a: "Yes, you can export your expense data anytime in CSV format.",
-    },
-  ];
+  {
+    q: "Is Wealth Vault really free to use?",
+    a: "Yes. Wealth Vault offers a free plan with all essential features so you can track expenses, manage budgets, and view insights without any cost. You can upgrade anytime for advanced tools."
+  },
+  {
+    q: "How secure is my financial data?",
+    a: "Your data is protected with enterprise-grade encryption, secure authentication, and continuous monitoring. We follow industry best practices to keep your information private and safe."
+  },
+  {
+    q: "Does Wealth Vault support multiple currencies?",
+    a: "Absolutely. Wealth Vault supports multiple currencies with real-time exchange rates, making it perfect for travelers, freelancers, and global users."
+  },
+  {
+    q: "What does the AI Advisor actually do?",
+    a: "The AI Advisor analyzes your spending patterns and income trends to provide personalized tips, alerts, and recommendations to help you save more and make smarter financial decisions."
+  }
+]
+
 
   const [open, setOpen] = React.useState<number | null>(null);
 
   return (
-    <section className="w-full py-24 px-6 bg-white dark:bg-slate-900">
+    <section id="faq" className="py-24 px-6">
       <div className="max-w-4xl mx-auto">
-        <h3 className="text-4xl font-bold text-center mb-12 dark:text-slate-50">
+        <h3 data-aos="fade-up" className="text-4xl font-bold text-center mb-12">
           Frequently Asked Questions
         </h3>
 
@@ -37,33 +34,22 @@ const FAQSection: React.FC = () => {
           {faqs.map((item, i) => (
             <div
               key={i}
-              className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950  dark:text-white overflow-hidden transition"
+              data-aos="fade-up"
+              data-aos-delay={i * 100}
+              className="rounded-2xl border border-cyan-500/10 bg-white/70 dark:bg-slate-950/70 backdrop-blur"
             >
               <button
                 onClick={() => setOpen(open === i ? null : i)}
-                className="w-full flex items-center justify-between px-6 py-5 text-left font-semibold hover:bg-slate-100 dark:hover:bg-slate-900 transition"
+                className="w-full px-6 py-5 text-left font-semibold flex justify-between"
               >
-                <span>{item.q}</span>
-                <span
-                  className={`w-6 h-6 flex items-center justify-center rounded-full border transition ${
-                    open === i
-                      ? "rotate-45 bg-[color:var(--accent)] text-white border-[color:var(--accent)]"
-                      : "border-slate-300 dark:border-slate-700"
-                  }`}
-                >
-                  +
-                </span>
+                {item.q}
+                <span className={`${open === i ? "rotate-45 text-cyan-500" : ""}`}>+</span>
               </button>
-
-              <div
-                className={`grid transition-all duration-300 ease-in-out ${
-                  open === i ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-                }`}
-              >
-                <div className="overflow-hidden px-6 pb-5 text-slate-600 dark:text-slate-400">
+              {open === i && (
+                <div className="px-6 pb-5 text-slate-600 dark:text-slate-400">
                   {item.a}
                 </div>
-              </div>
+              )}
             </div>
           ))}
         </div>
