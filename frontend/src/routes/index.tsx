@@ -8,6 +8,7 @@ import { DataImport } from '../components/Import/DataImport';
 import { Profile } from '../components/Profile/Profile';
 import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
+import  Home  from '../components/Home/Home';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -34,7 +35,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   if (!user) {
-    return <Navigate to="/auth" state={{ from: location }} replace />;
+    return <Navigate to="/" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;
@@ -62,7 +63,10 @@ export const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
 export const routes = [
   {
     path: '/',
-    element: <Navigate to="/dashboard" replace />
+    element: 
+    <PublicRoute>
+        <Home />
+    </PublicRoute>
   },
   {
     path: '/auth',
@@ -122,6 +126,6 @@ export const routes = [
   },
   {
     path: '*',
-    element: <Navigate to="/dashboard" replace />
+    element: <Navigate to="/" replace />
   }
 ];
