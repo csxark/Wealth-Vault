@@ -1,0 +1,36 @@
+{
+  "name": "wealth-vault",
+  "version": "1.0.0",
+  "description": "A comprehensive financial wellness application for tracking spending, setting goals, and making informed financial decisions",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && npm start",
+    "setup": "node setup-env.js",
+    "sync": "node sync-app.js",
+    "test": "cd backend && npm test",
+    "lint": "cd frontend && npm run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "finance",
+    "budgeting",
+    "expense-tracker",
+    "financial-wellness",
+    "react",
+    "nodejs",
+    "express"
+  ],
+  "author": "Wealth Vault Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/csxark/Wealth-Vault.git"
+  }
+}
