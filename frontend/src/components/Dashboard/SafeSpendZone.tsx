@@ -5,9 +5,10 @@ interface SafeSpendZoneProps {
   monthlyBudget: number;
   totalSpent: number;
   safeSpending: number;
+  formatAmount: (amount: number) => string;
 }
 
-export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, totalSpent, safeSpending }) => {
+export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, totalSpent, safeSpending, formatAmount }) => {
   const safeSpendPercentage = monthlyBudget > 0 ? (safeSpending / monthlyBudget) * 100 : 0;
   const totalSpentPercentage = monthlyBudget > 0 ? (totalSpent / monthlyBudget) * 100 : 0;
   const remainingBudget = Math.max(0, monthlyBudget - totalSpent);
@@ -35,13 +36,13 @@ export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, tot
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="text-center">
           <div className="dashboard-value text-2xl text-green-600 dark:text-green-400">
-            ₹{safeSpending.toLocaleString()}
+            {formatAmount(safeSpending)}
           </div>
           <div className="dashboard-label">Safe Spending</div>
         </div>
         <div className="text-center">
           <div className="dashboard-value text-2xl text-slate-900 dark:text-white">
-            ₹{remainingBudget.toLocaleString()}
+            {formatAmount(remainingBudget)}
           </div>
           <div className="dashboard-label">Remaining Budget</div>
         </div>
@@ -57,7 +58,7 @@ export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, tot
         <div className="flex justify-between text-sm">
           <span className="dashboard-label">Budget Progress</span>
           <span className="dashboard-value text-slate-900 dark:text-white">
-            ₹{totalSpent.toLocaleString()} / ₹{monthlyBudget.toLocaleString()}
+            {formatAmount(totalSpent)} / {formatAmount(monthlyBudget)}
           </span>
         </div>
         <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3">

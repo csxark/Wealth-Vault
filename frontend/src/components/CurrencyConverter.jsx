@@ -3,16 +3,10 @@ import { convertCurrency } from '../utils/currency';
 
 const currencies = ['USD', 'EUR', 'INR', 'GBP', 'JPY'];
 
-const CurrencyConverter = () => {
+const CurrencyConverter = ({ onRateChange }) => {
   const [amount, setAmount] = useState(1);
-  const [from, setFrom] = useState(
-    localStorage.getItem('preferredFrom') || 'USD'
-  );
-  const [to, setTo] = useState(
-    localStorage.getItem('preferredTo') || 'INR'
-  );
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
+  const [from, setFrom] = useState(localStorage.getItem('preferredFrom') || 'INR');
+  const [to, setTo] = useState(localStorage.getItem('preferredTo') || 'USD');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -22,83 +16,35 @@ const CurrencyConverter = () => {
 
   const handleConvert = async () => {
     setLoading(true);
-    setError('');
     try {
-      const converted = await convertCurrency(amount, from, to);
-      setResult(converted);
-    } catch (err) {
-      setError('Unable to fetch exchange rates. Please try again later.');
+      const rate = await convertCurrency(1, from, to); // get 1-unit rate
+      onRateChange({ from, to, rate });
     } finally {
       setLoading(false);
     }
   };
 
-  const swapCurrencies = () => {
-    setFrom(to);
-    setTo(from);
-    setResult(null);
-  };
-
   return (
-    <div className="bg-white dark:bg-card p-6 rounded-xl shadow-md w-full max-w-md">
-      <h2 className="text-lg font-semibold mb-4">Currency Converter</h2>
+    <div className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow border w-64">
+      <div className="flex items-center gap-2">
+        <select value={from} onChange={(e) => setFrom(e.target.value)} className="flex-1 border rounded px-2 py-1 text-sm">
+          {currencies.map(c => <option key={c}>{c}</option>)}
+        </select>
 
-      <input
-        type="number"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        className="w-full border rounded px-3 py-2 mb-3"
-      />
+        <span className="text-sm">→</span>
 
-      <div className="flex gap-2 mb-3">
-        <select
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          className="flex-1 border rounded px-2 py-2"
-        >
-          {currencies.map((c) => (
-            <option key={c}>{c}</option>
-          ))}
+        <select value={to} onChange={(e) => setTo(e.target.value)} className="flex-1 border rounded px-2 py-1 text-sm">
+          {currencies.map(c => <option key={c}>{c}</option>)}
         </select>
 
         <button
-          onClick={swapCurrencies}
-          className="px-3 py-2 border rounded font-bold"
+          onClick={handleConvert}
+          className="px-2 py-1 text-sm bg-cyan-600 text-white rounded"
         >
-          ⇄
+          {loading ? '...' : 'Go'}
         </button>
-
-        <select
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          className="flex-1 border rounded px-2 py-2"
-        >
-          {currencies.map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
       </div>
-
-      <button
-        onClick={handleConvert}
-        className="w-full bg-blue-600 text-white py-2 rounded"
-      >
-        Convert
-      </button>
-
-      {loading && <p className="mt-2 text-sm">Converting...</p>}
-
-      {result && (
-        <p className="mt-3 font-medium">
-          {amount} {from} = {result.toFixed(2)} {to}
-        </p>
-      )}
-
-      {error && (
-        <p className="mt-3 text-sm text-red-500">{error}</p>
-      )}
     </div>
   );
 };
-
 export default CurrencyConverter;

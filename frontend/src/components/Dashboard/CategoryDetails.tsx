@@ -2,14 +2,17 @@ import React from 'react';
 import { TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
 import type { CategoryDetails as CategoryDetailsType } from '../../types';
 
-interface CategoryDetailsProps extends CategoryDetailsType {}
+interface CategoryDetailsProps extends CategoryDetailsType {
+  formatAmount: (amount: number) => string;
+}
 
 export const CategoryDetails: React.FC<CategoryDetailsProps> = ({ 
   category, 
   amount, 
   percentage, 
   expenses, 
-  topExpenses 
+  topExpenses ,
+  formatAmount 
 }) => {
   const getCategoryIcon = () => {
     switch (category) {
@@ -61,7 +64,7 @@ export const CategoryDetails: React.FC<CategoryDetailsProps> = ({
         </div>
         <div className="text-right">
           <div className={`text-2xl font-bold ${getCategoryColor()}`}>
-            ₹{amount.toLocaleString()}
+            {formatAmount(amount)}
           </div>
           <div className="text-sm text-slate-600 dark:text-slate-400">
             {percentage.toFixed(1)}%
@@ -86,7 +89,7 @@ export const CategoryDetails: React.FC<CategoryDetailsProps> = ({
                     {expense.description}
                   </span>
                   <span className="font-medium text-slate-900 dark:text-white">
-                    ₹{expense.amount.toLocaleString()}
+                    {formatAmount(expense.amount)}
                   </span>
                 </div>
               ))}
