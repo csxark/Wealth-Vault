@@ -12,6 +12,7 @@ import { CategoryDetails } from './CategoryDetails';
 import AddExpenseButton from './AddExpenseButton';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
+import CurrencyConverter from '../CurrencyConverter.jsx';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -83,6 +84,23 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     fetchExpenses();
   }, [paymentMade]);
 
+  const [currency, setCurrency] = useState({
+      from: 'INR',
+      to: 'INR',
+      rate: 1
+    });
+
+    const formatAmount = (value: number) => {
+      const converted = value * currency.rate;
+      const symbol = currency.to === 'USD' ? '$' :
+                    currency.to === 'EUR' ? '€' :
+                    currency.to === 'GBP' ? '£' :
+                    currency.to === 'JPY' ? '¥' : '₹';
+
+      return `${symbol}${converted.toFixed(0)}`;
+    };
+
+
   // --- Analytics ---
   // 1. Spending trend (by day for current month)
   const now = new Date();
@@ -150,19 +168,19 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const stats = [
     {
       name: 'Total Spent',
-      value: `₹${(spendingData.safe + spendingData.impulsive + spendingData.anxious).toLocaleString()}`,
+      value: formatAmount(spendingData.safe + spendingData.impulsive + spendingData.anxious),
       icon: IndianRupee,
       color: 'text-slate-600 dark:text-slate-400'
     },
     {
       name: 'Safe Spending',
-      value: `₹${spendingData.safe.toLocaleString()}`,
+      value: formatAmount(spendingData.safe),
       icon: TrendingUp,
       color: 'text-green-600 dark:text-green-400'
     },
     {
       name: 'Budget Remaining',
-      value: `₹${Math.max(0, monthlyBudget - (spendingData.safe + spendingData.impulsive + spendingData.anxious)).toLocaleString()}`,
+      value: formatAmount(Math.max(0, monthlyBudget - (spendingData.safe + spendingData.impulsive + spendingData.anxious))),
       icon: Activity,
       color: 'text-cyan-600 dark:text-cyan-400'
     }
@@ -250,6 +268,23 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             <option value="quarter">This Quarter</option>
           </select>
         </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6
+  bg-white dark:bg-slate-900 rounded-2xl shadow-lg p-6 border">
+
+  <div>
+    <h1 className="dashboard-heading text-cyan-700 dark:text-cyan-400">
+      Dashboard
+    </h1>
+    <p className="dashboard-label mt-2">
+      Track your spending patterns and financial wellbeing
+    </p>
+  </div>
+
+  <CurrencyConverter
+    onRateChange={(data) => setCurrency(data)}
+  />
+</div>
+
       </div>
 
       {/* Empty State - Show when no expenses */}
@@ -303,13 +338,13 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             <div className="bg-cyan-50 dark:bg-cyan-900/30 rounded-xl p-4">
               <div className="dashboard-label">Avg Daily Spend</div>
               <div className="dashboard-value text-lg text-cyan-700 dark:text-cyan-400">
-                ₹{avgDailySpend.toFixed(0)}
+                {formatAmount(avgDailySpend)}
               </div>
             </div>
             <div className="bg-cyan-50 dark:bg-cyan-900/30 rounded-xl p-4">
               <div className="dashboard-label">Highest Expense</div>
               <div className="dashboard-value text-lg text-rose-600 dark:text-rose-400">
-                ₹{highestExpense.toLocaleString()}
+                {formatAmount(highestExpense)}
               </div>
             </div>
             <div className="bg-cyan-50 dark:bg-cyan-900/30 rounded-xl p-4">
@@ -327,10 +362,11 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             </div>
           </div>
         </div>
-        <SafeSpendZone
+       <SafeSpendZone
           monthlyBudget={monthlyBudget}
           totalSpent={spendingData.safe + spendingData.impulsive + spendingData.anxious}
           safeSpending={spendingData.safe}
+          formatAmount={formatAmount} // pass function
         />
       </div>
 
@@ -344,7 +380,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             {top5Expenses.map((exp) => (
               <li key={exp._id} className="py-3 flex flex-col">
                 <span className="dashboard-value text-slate-900 dark:text-white">
-                  ₹{Math.abs(exp.amount).toLocaleString()}
+                  {formatAmount(Math.abs(exp.amount))}
                 </span>
                 <span className="dashboard-label mt-1">
                   {exp.description}
@@ -380,7 +416,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
                       {tx.description}
                     </td>
                     <td className="px-3 py-2 text-right dashboard-value text-slate-900 dark:text-white">
-                      ₹{Math.abs(tx.amount).toLocaleString()}
+                      {formatAmount(Math.abs(tx.amount))}
                     </td>
                     <td className="px-3 py-2 dashboard-label">
                       {tx.paymentMethod}
@@ -399,7 +435,11 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {categoryDetails.map((cat) => (
-            <CategoryDetails key={cat.category} {...cat} />
+            <CategoryDetails 
+              key={cat.category} 
+              {...cat} 
+              formatAmount={formatAmount} 
+            />
           ))}
         </div>
       </div>

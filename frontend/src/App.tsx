@@ -5,7 +5,6 @@ import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
 import { routes } from './routes';
-import CurrencyConverter from './components/CurrencyConverter.jsx';
 
 function AppLayout() {
   const { isDark } = useTheme();
@@ -65,14 +64,7 @@ function AppLayout() {
                       <Route
                         key={route.path}
                         path={route.path}
-                        element={
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="lg:col-span-2">
-                              {route.element}
-                            </div>
-                            <CurrencyConverter />
-                          </div>
-                        }
+                        element={route.element}
                       />
                     );
                   }
