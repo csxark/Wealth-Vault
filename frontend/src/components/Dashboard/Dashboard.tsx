@@ -228,18 +228,22 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6
         bg-white dark:bg-slate-900 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-800">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-cyan-700 dark:text-cyan-400 tracking-tight">Dashboard</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2 text-base">Track your spending patterns and financial wellbeing</p>
+          <h1 className="dashboard-heading text-cyan-700 dark:text-cyan-400 tracking-tight">
+            Dashboard
+          </h1>
+          <p className="dashboard-label mt-2">
+            Track your spending patterns and financial wellbeing
+          </p>
         </div>
         <div className="flex flex-row items-center justify-end gap-6">
           <AddExpenseButton
-            className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2"
+            className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2"
             onExpenseAdd={handleExpenseAdd}
           />
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
-            className="px-4 py-2 border border-cyan-200 dark:border-cyan-700 dark:bg-slate-800 dark:text-white rounded-xl text-base focus:ring-2 focus:ring-cyan-500 focus:border-transparent shadow-sm ml-2"
+            className="px-4 py-2 border border-cyan-200 dark:border-cyan-700 dark:bg-slate-800 dark:text-white rounded-xl text-sm font-medium focus:ring-2 focus:ring-cyan-500 focus:border-transparent shadow-sm ml-2"
           >
             <option value="week">This Week</option>
             <option value="month">This Month</option>
@@ -276,9 +280,13 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
               <div className="bg-cyan-100 dark:bg-cyan-900 p-4 rounded-xl flex items-center justify-center">
                 <Icon className={`h-8 w-8 ${stat.color}`} />
               </div>
-              <div>
-                <p className="text-base font-medium text-cyan-700 dark:text-cyan-400 mb-1">{stat.name}</p>
-                <p className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
+              <div className="flex-1">
+                <p className="dashboard-label text-cyan-700 dark:text-cyan-400 mb-1 font-medium">
+                  {stat.name}
+                </p>
+                <p className="dashboard-value text-2xl md:text-3xl text-slate-900 dark:text-white">
+                  {stat.value}
+                </p>
               </div>
             </div>
           );
@@ -287,23 +295,31 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       {/* Analytical Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
-          <h3 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 mb-6">Spending Trend (This Month)</h3>
+          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400 mb-6">
+            Spending Trend (This Month)
+          </h3>
           <Line data={trendData} options={{ plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Day' } }, y: { title: { display: true, text: 'Amount (₹)' } } } }} />
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-cyan-50 dark:bg-cyan-900/30 rounded-xl p-4">
-              <div className="text-xs text-slate-500 dark:text-slate-400">Avg Daily Spend</div>
-              <div className="text-lg font-bold text-cyan-700 dark:text-cyan-400">₹{avgDailySpend.toFixed(0)}</div>
+              <div className="dashboard-label">Avg Daily Spend</div>
+              <div className="dashboard-value text-lg text-cyan-700 dark:text-cyan-400">
+                ₹{avgDailySpend.toFixed(0)}
+              </div>
             </div>
             <div className="bg-cyan-50 dark:bg-cyan-900/30 rounded-xl p-4">
-              <div className="text-xs text-slate-500 dark:text-slate-400">Highest Expense</div>
-              <div className="text-lg font-bold text-rose-600 dark:text-rose-400">₹{highestExpense.toLocaleString()}</div>
+              <div className="dashboard-label">Highest Expense</div>
+              <div className="dashboard-value text-lg text-rose-600 dark:text-rose-400">
+                ₹{highestExpense.toLocaleString()}
+              </div>
             </div>
             <div className="bg-cyan-50 dark:bg-cyan-900/30 rounded-xl p-4">
-              <div className="text-xs text-slate-500 dark:text-slate-400">Savings Rate</div>
-              <div className="text-lg font-bold text-green-600 dark:text-green-400">{savingsRate.toFixed(1)}%</div>
+              <div className="dashboard-label">Savings Rate</div>
+              <div className="dashboard-value text-lg text-green-600 dark:text-green-400">
+                {savingsRate.toFixed(1)}%
+              </div>
             </div>
             <div className="bg-cyan-50 dark:bg-cyan-900/30 rounded-xl p-4">
-              <div className="text-xs text-slate-500 dark:text-slate-400">Payment Methods</div>
+              <div className="dashboard-label">Payment Methods</div>
               <div className="h-32 flex items-center">
                 <PieChart className="h-6 w-6 inline-block mr-2 text-cyan-600" />
                 <Pie data={paymentMethodData} options={{ plugins: { legend: { display: true } } }} />
@@ -321,44 +337,66 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       {/* Top 5 Expenses & Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
-          <h3 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 mb-6">Top 5 Expenses</h3>
+          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400 mb-6">
+            Top 5 Expenses
+          </h3>
           <ul className="divide-y divide-cyan-100 dark:divide-cyan-900">
             {top5Expenses.map((exp) => (
               <li key={exp._id} className="py-3 flex flex-col">
-                <span className="font-semibold text-slate-900 dark:text-white">₹{Math.abs(exp.amount).toLocaleString()}</span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">{exp.description}</span>
-                <span className="text-xs text-cyan-600 dark:text-cyan-400">{new Date(exp.date).toLocaleDateString()}</span>
+                <span className="dashboard-value text-slate-900 dark:text-white">
+                  ₹{Math.abs(exp.amount).toLocaleString()}
+                </span>
+                <span className="dashboard-label mt-1">
+                  {exp.description}
+                </span>
+                <span className="text-xs text-cyan-600 dark:text-cyan-400 mt-1">
+                  {new Date(exp.date).toLocaleDateString()}
+                </span>
               </li>
             ))}
           </ul>
         </div>
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
-          <h3 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 mb-6">Recent Transactions</h3>
-          <table className="min-w-full text-xs">
-            <thead>
-              <tr className="text-slate-500 dark:text-slate-400">
-                <th className="px-2 py-1 text-left">Date</th>
-                <th className="px-2 py-1 text-left">Description</th>
-                <th className="px-2 py-1 text-right">Amount</th>
-                <th className="px-2 py-1 text-left">Method</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentTransactions.map(tx => (
-                <tr key={tx._id} className="border-b border-cyan-50 dark:border-cyan-900">
-                  <td className="px-2 py-1">{new Date(tx.date).toLocaleDateString()}</td>
-                  <td className="px-2 py-1">{tx.description}</td>
-                  <td className="px-2 py-1 text-right">₹{Math.abs(tx.amount).toLocaleString()}</td>
-                  <td className="px-2 py-1">{tx.paymentMethod}</td>
+          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400 mb-6">
+            Recent Transactions
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="dashboard-label">
+                  <th className="px-3 py-2 text-left font-medium">Date</th>
+                  <th className="px-3 py-2 text-left font-medium">Description</th>
+                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-left font-medium">Method</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {recentTransactions.map(tx => (
+                  <tr key={tx._id} className="border-b border-cyan-50 dark:border-cyan-900">
+                    <td className="px-3 py-2 dashboard-label">
+                      {new Date(tx.date).toLocaleDateString()}
+                    </td>
+                    <td className="px-3 py-2 text-slate-900 dark:text-white">
+                      {tx.description}
+                    </td>
+                    <td className="px-3 py-2 text-right dashboard-value text-slate-900 dark:text-white">
+                      ₹{Math.abs(tx.amount).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 dashboard-label">
+                      {tx.paymentMethod}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
       {/* Responsive Category Breakdown */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
-        <h3 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 mb-6">Category Breakdown</h3>
+        <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400 mb-6">
+          Category Breakdown
+        </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {categoryDetails.map((cat) => (
             <CategoryDetails key={cat.category} {...cat} />
