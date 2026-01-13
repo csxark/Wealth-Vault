@@ -3,9 +3,29 @@
 > **Take control of your money. Build healthier financial habits.**  
 > Wealth Vault is a modern financial wellness platform that helps users understand spending behavior, set meaningful goals, and make smarter financial decisions using **AI-powered insights**.
 
-> 💡 Take control of your finances with intelligent tracking and personalized guidance.
+---
 
-## Features
+## 🌐 Website Flow
+
+Wealth Vault guides users through a **simple three-step flow**:
+
+1. **Landing Page**  
+   Introduces Wealth Vault, highlights features, and encourages users to sign up.  
+   <div align="center">
+     <img src="./assets/Home.png" alt="Home Page" width="80%" style="border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);" />
+   </div>
+
+2. **Authentication (Sign Up / Login)**  
+   Secure user registration and login powered by **Supabase Auth**.
+   <div align="center">
+     <img src="./assets/Auth.png" alt="Dashboard" width="80%" style="border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);" />
+   </div>
+
+3. **Dashboard**  
+   Personalized financial insights, expense tracking, goal management, and visual analytics.  
+   <div align="center">
+     <img src="./assets/Dashboard.png" alt="Dashboard" width="80%" style="border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);" />
+   </div>
 
 ---
 
@@ -43,15 +63,15 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 
 ## 🛠 Tech Stack
 
-| Layer        | Technology                 |
-| ------------ | -------------------------- |
-| Frontend     | React 18, TypeScript, Vite |
-| Styling      | Tailwind CSS               |
-| Backend & DB | Supabase (PostgreSQL)      |
-| Auth         | Supabase Auth              |
-| Charts       | Chart.js, React-Chartjs-2  |
-| Icons        | Lucide React               |
-| QR Scanning  | @zxing/browser             |
+| Layer        | Technology                  |
+| ------------ | --------------------------- |
+| Frontend     | React 18, TypeScript, Vite  |
+| Styling      | Tailwind CSS                |
+| Backend & DB | Supabase (PostgreSQL)       |
+| Auth         | Supabase Auth               |
+| Charts       | Chart.js, React-Chartjs-2   |
+| Icons        | Lucide React                |
+| QR Scanning  | @zxing/browser              |
 
 ---
 
@@ -182,43 +202,41 @@ cd frontend
 npm run dev
 ```
 
-### 5. Access the Application
+### 5️⃣ Access the Application
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000/api
-- **API Health Check**: http://localhost:5000/api/health
-- **API Documentation**: http://localhost:5000/api-docs
+* **Frontend**: [http://localhost:3000](http://localhost:3000)
+* **Backend API**: [http://localhost:5000/api](http://localhost:5000/api)
+* **API Health Check**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
+* **API Documentation**: [http://localhost:5000/api-docs](http://localhost:5000/api-docs)
 
 ---
 
 ## 🔒 Security Features
 
-### Rate Limiting
+* **Rate Limiting**
 
-The API implements rate limiting to prevent abuse:
+  * General API: 100 requests / 15 min
+  * Authentication routes: 5 requests / 15 min
+  * AI/Gemini routes: 20 requests / 15 min
 
-- **General API**: 100 requests per 15 minutes
-- **Authentication routes**: 5 requests per 15 minutes (prevents brute force)
-- **AI/Gemini routes**: 20 requests per 15 minutes
+* **Password Security**
 
-### Password Security
-
-- Strong password requirements enforced during registration
-- Real-time password strength meter with visual feedback
-- Requirements: 9+ characters, uppercase, lowercase, number, special character
+  * Strong password enforcement
+  * Real-time password strength meter
+  * Requirements: ≥9 characters, uppercase, lowercase, number, special character
 
 ---
 
 ## 📚 API Documentation
 
-Interactive API documentation is available via Swagger UI at `/api-docs` when the backend is running.
+Interactive API documentation is available via **Swagger UI** at `/api-docs` when the backend is running.
 
-The documentation includes:
+Includes:
 
-- All available endpoints
-- Request/response schemas
-- Authentication requirements
-- Try-it-out functionality
+* All available endpoints
+* Request/response schemas
+* Authentication requirements
+* Try-it-out functionality
 
 ---
 
@@ -241,31 +259,32 @@ The app uses Supabase (PostgreSQL) with the following main tables:
 
 All tables have Row Level Security (RLS) enabled to ensure users can only access their own data.
 
-## Key Components
+---
+
+## 📊 Dashboard & Key Components
 
 ### Dashboard
 
-- Spending overview with charts
-- Category breakdown (Safe, Impulsive, Anxious)
-- Budget tracking and safe spend zone
+* Spending overview with charts
+* Category breakdown: **Safe, Impulsive, Anxious**
+* Budget tracking and safe spend zone
 
 ### Goals Management
 
-- Create and track financial goals
-- Visual progress indicators
-- Goal completion tracking
+* Create and track financial goals
+* Visual progress indicators
+* Goal completion tracking
 
 ### Profile Management
 
-- Personal information
-- Financial preferences
-- Income and goal settings
+* Personal info & financial preferences
+* Income and goal settings
 
 ### Expense Tracking
 
-- QR code scanning for quick entry
-- Manual expense logging
-- Category classification
+* QR code scanning for quick entry
+* Manual expense logging
+* Category classification
 
 ## Environment Variables
 
@@ -284,27 +303,33 @@ All tables have Row Level Security (RLS) enabled to ensure users can only access
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
 
-### Project Structure
+---
+
+## 🌱 Project Structure
 
 ```
 frontend/
 ├── src/
 │   ├── components/     # React components
-│   ├── hooks/         # Custom React hooks
-│   ├── lib/           # External library configurations
-│   ├── types/         # TypeScript type definitions
-│   └── utils/         # Utility functions
-├── public/            # Static assets
-└── package.json       # Dependencies and scripts
+│   ├── hooks/          # Custom React hooks
+│   ├── lib/            # External library configurations
+│   ├── types/          # TypeScript type definitions
+│   └── utils/          # Utility functions
+├── public/             # Static assets
+└── package.json        # Dependencies and scripts
 ```
 
-## Deployment
+---
+
+## 🚀 Deployment
 
 ### Vercel (Recommended)
 
 1. Connect your GitHub repository to Vercel
 2. Set environment variables in the Vercel dashboard
-3. Deploy automatically on push to main branch
+3. Deploy automatically on push to `main` branch
+
+---
 
 ## Troubleshooting
 
@@ -330,7 +355,9 @@ frontend/
 
 Enable debug mode by setting `VITE_DEBUG=true` to see detailed console logs.
 
-## Contributing
+---
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -338,20 +365,23 @@ Enable debug mode by setting `VITE_DEBUG=true` to see detailed console logs.
 4. Add tests if applicable
 5. Submit a pull request
 
-## Contributors
+---
+
+## 👥 Contributors
 
 <a href="https://github.com/csxark/Wealth-Vault/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=csxark/Wealth-Vault&max=300" />
 </a>
 
-## License
+---
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## 📄 License
 
-## Support
+MIT License — see [LICENSE](LICENSE) for details.
 
-For support and questions:
+---
 
-- Create an issue in the GitHub repository
-- Check the troubleshooting section above
-- Review Supabase documentation for database-related issues
+## 🛠 Support
+
+* Open an issue in the GitHub repository
+* Review [Supabase documentation](https://supabase.com/docs) for database issues
