@@ -91,6 +91,11 @@ const updateCategoryStats = async (categoryId) => {
  *           enum: [asc, desc]
  *           default: desc
  *         description: Sort order
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search in description, amount, or payment method
  *     responses:
  *       200:
  *         description: List of expenses
@@ -126,6 +131,7 @@ router.get("/", protect, async (req, res) => {
       paymentMethod,
       sortBy = "date",
       sortOrder = "desc",
+      search,
     } = req.query;
 
     const conditions = [eq(expenses.userId, req.user.id)];
@@ -137,6 +143,16 @@ router.get("/", protect, async (req, res) => {
     if (maxAmount) conditions.push(lte(expenses.amount, maxAmount.toString()));
     if (paymentMethod)
       conditions.push(eq(expenses.paymentMethod, paymentMethod));
+    
+    // Add search functionality
+    if (search) {
+      const searchTerm = `%${search.toLowerCase()}%`;
+      conditions.push(
+        sql`(LOWER(${expenses.description}) LIKE ${searchTerm} OR 
+             CAST(${expenses.amount} AS TEXT) LIKE ${searchTerm} OR
+             LOWER(${expenses.paymentMethod}) LIKE ${searchTerm})`
+      );
+    }
 
     const sortFn = sortOrder === "desc" ? desc : asc;
     let orderByColumn = expenses.date;
