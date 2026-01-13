@@ -4,7 +4,8 @@ import {
   PieChart,
   IndianRupee,
   TrendingUp,
-  Activity
+  Activity,
+  Search
 } from 'lucide-react';
 import { Line, Pie } from 'react-chartjs-2';
 import { SafeSpendZone } from './SafeSpendZone';
@@ -41,6 +42,8 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const [categoryDetails, setCategoryDetails] = useState<CategoryDetailsType[]>([]);
   const [monthlyBudget] = useState(40000);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<Expense[]>([]);
 
   // Fetch expenses from backend and update dashboard state
   useEffect(() => {
@@ -82,6 +85,28 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     };
     fetchExpenses();
   }, [paymentMade]);
+
+  // Search functionality with backend API
+  useEffect(() => {
+    const searchExpenses = async () => {
+      if (searchTerm.trim() === '') {
+        setSearchResults([]);
+        return;
+      }
+      
+      try {
+        const res = await expensesAPI.getAll({ search: searchTerm, limit: 50 });
+        setSearchResults(res.data.expenses || []);
+      } catch (err) {
+        console.error('Search failed:', err);
+        setSearchResults([]);
+      }
+    };
+
+    // Debounce search to avoid too many API calls
+    const timeoutId = setTimeout(searchExpenses, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
 
   // --- Analytics ---
   // 1. Spending trend (by day for current month)
@@ -141,10 +166,11 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     ],
   };
 
-  // 7. Recent transactions (last 10)
-  const recentTransactions = [...expenses]
+  // 7. Recent transactions (last 10) - use search results if searching, otherwise regular expenses
+  const displayExpenses = searchTerm.trim() ? searchResults : expenses;
+  const recentTransactions = [...displayExpenses]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 10);
+    .slice(0, searchTerm.trim() ? 20 : 10); // Show more results when searching
 
   // Card stats array
   const stats = [
@@ -245,6 +271,30 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             <option value="month">This Month</option>
             <option value="quarter">This Quarter</option>
           </select>
+        </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-800 p-6">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <input
+            type="text"
+            className="block w-full pl-10 pr-3 py-3 border border-slate-200 dark:border-slate-700 rounded-xl leading-5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-base transition duration-150 ease-in-out"
+            placeholder="Search transactions by description, amount, or payment method..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          {searchTerm && (
+            <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+              {searchResults.length > 0 
+                ? `Found ${searchResults.length} matching transactions` 
+                : 'No transactions found'
+              }
+            </div>
+          )}
         </div>
       </div>
 
