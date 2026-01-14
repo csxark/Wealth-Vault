@@ -85,68 +85,121 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 
 ## ⚡ Quick Setup
 
-### Option 1: Automated Setup (Recommended)
+### 🚀 Automated Setup (Recommended)
+
+Run this single command to set up everything automatically:
 
 ```bash
 npm run sync
-````
-
-### Option 2: Manual Setup
-
-```bash
-# Install dependencies
-npm install
-
-# Set up environment variables
-npm run setup
-
-# Start both frontend and backend
-npm run dev
 ```
 
-### Windows Users
+This will:
 
-Double-click `run-setup.bat` for automated setup.
-
-### Unix/Mac Users
-
-```bash
-chmod +x run-setup.sh
-./run-setup.sh
-```
+- Install all dependencies (root, backend, and frontend)
+- Create environment configuration files
+- Set up the database connection
 
 ---
 
-## 🔧 Detailed Setup Instructions
+### 🔧 Manual Setup (Step by Step)
 
-### 1️⃣ Clone the Repository
+If you prefer manual control or the automated setup fails, follow these steps:
+
+#### Step 1: Install Dependencies
 
 ```bash
-git clone <repository-url>
-cd Wealth-Vault
+# Install root dependencies and all sub-projects
+npm install
 ```
 
-### 2️⃣ Environment Configuration
+**Or install individually:**
 
 ```bash
-cp .env.example .env
+# Root dependencies
+npm install
+
+# Backend dependencies
+cd .\backend\
+npm install
+cd ..
+
+# Frontend dependencies
+cd .\frontend\
+npm install
+cd ..
 ```
 
-Fill in your **Supabase credentials** and other required variables.
+#### Step 2: Configure Environment Variables
 
-### 3️⃣ Database Setup
-
-Ensure your Supabase project is correctly set up and **RLS policies** are enabled.
-
-### 4️⃣ Run the Application
+**Automatic method:**
 
 ```bash
-# Start both frontend and backend
+npm run setup
+```
+
+This creates `.env` files in both `backend/` and `frontend/` directories with template values.
+
+**Manual method (Windows):**
+
+1. **Backend environment:**
+
+   - Copy `backend\env.example` to `backend\.env`
+   - Edit `backend\.env` and update:
+     ```
+     DATABASE_URL=your_supabase_database_url
+     DIRECT_URL=your_supabase_direct_url
+     JWT_SECRET=your_secret_key_here
+     ```
+
+2. **Frontend environment:**
+   - Copy `frontend\env.example` to `frontend\.env`
+   - Edit `frontend\.env` and update:
+     ```
+     VITE_SUPABASE_URL=your_supabase_project_url
+     VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+     VITE_API_URL=http://localhost:5000/api
+     ```
+
+> **📝 Note:** Get your Supabase credentials from your [Supabase Dashboard](https://supabase.com/dashboard) → Project Settings → API
+
+#### Step 3: Set Up Database (if using Supabase)
+
+The application uses Supabase (PostgreSQL) for data storage. Make sure:
+
+- You have created a Supabase project
+- Your database URL and credentials are configured in `backend\.env`
+- Row Level Security (RLS) policies are set up (see project documentation)
+
+#### Step 4: Start the Application
+
+**Start both frontend and backend together:**
+
+```bash
+npm run dev
+```
+
+**Or start individually:**
+
+```bash
+#insatll this package first
+npm install concurrently --save-dev
+# Backend only (runs on port 5000)
+npm run dev:backend
+
+# Frontend only (runs on port 3000)
+npm run dev:frontend
+```
+
+**For separate terminals:**
+
+```powershell
+# Terminal 1 - Backend
+cd backend
 npm run dev
 
-# Or start individually
-npm run dev:backend   # Backend only (port 5000)
-npm run dev:frontend  # Frontend only (port 3000)
+# Terminal 2 - Frontend
+cd frontend
+npm run dev
 ```
 
 ### 5️⃣ Access the Application

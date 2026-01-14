@@ -5,9 +5,10 @@ interface SafeSpendZoneProps {
   monthlyBudget: number;
   totalSpent: number;
   safeSpending: number;
+  formatAmount: (amount: number) => string;
 }
 
-export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, totalSpent, safeSpending }) => {
+export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, totalSpent, safeSpending, formatAmount }) => {
   const safeSpendPercentage = monthlyBudget > 0 ? (safeSpending / monthlyBudget) * 100 : 0;
   const totalSpentPercentage = monthlyBudget > 0 ? (totalSpent / monthlyBudget) * 100 : 0;
   const remainingBudget = Math.max(0, monthlyBudget - totalSpent);
@@ -23,7 +24,7 @@ export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, tot
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center">
+        <h3 className="dashboard-subheading text-slate-900 dark:text-white flex items-center">
           <Shield className="h-5 w-5 mr-2 text-cyan-600 dark:text-cyan-400" />
           Safe Spend Zone
         </h3>
@@ -34,23 +35,31 @@ export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, tot
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="text-center">
-          <div className="text-2xl font-bold text-green-600 dark:text-green-400">₹{safeSpending.toLocaleString()}</div>
-          <div className="text-sm text-slate-600 dark:text-slate-400">Safe Spending</div>
+          <div className="dashboard-value text-2xl text-green-600 dark:text-green-400">
+            {formatAmount(safeSpending)}
+          </div>
+          <div className="dashboard-label">Safe Spending</div>
         </div>
         <div className="text-center">
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">₹{remainingBudget.toLocaleString()}</div>
-          <div className="text-sm text-slate-600 dark:text-slate-400">Remaining Budget</div>
+          <div className="dashboard-value text-2xl text-slate-900 dark:text-white">
+            {formatAmount(remainingBudget)}
+          </div>
+          <div className="dashboard-label">Remaining Budget</div>
         </div>
         <div className="text-center">
-          <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">{safeSpendPercentage.toFixed(1)}%</div>
-          <div className="text-sm text-slate-600 dark:text-slate-400">Essential Ratio</div>
+          <div className="dashboard-value text-2xl text-cyan-600 dark:text-cyan-400">
+            {safeSpendPercentage.toFixed(1)}%
+          </div>
+          <div className="dashboard-label">Essential Ratio</div>
         </div>
       </div>
 
       <div className="space-y-3">
         <div className="flex justify-between text-sm">
-          <span className="text-slate-600 dark:text-slate-400">Budget Progress</span>
-          <span className="font-medium text-slate-900 dark:text-white">₹{totalSpent.toLocaleString()} / ₹{monthlyBudget.toLocaleString()}</span>
+          <span className="dashboard-label">Budget Progress</span>
+          <span className="dashboard-value text-slate-900 dark:text-white">
+            {formatAmount(totalSpent)} / {formatAmount(monthlyBudget)}
+          </span>
         </div>
         <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3">
           <div
@@ -70,7 +79,7 @@ export const SafeSpendZone: React.FC<SafeSpendZoneProps> = ({ monthlyBudget, tot
           <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
         )}
         <div className="text-sm">
-          <p className="font-medium text-slate-900 dark:text-white">
+          <p className="dashboard-value text-slate-900 dark:text-white">
             {spendingStatus.status === 'safe' 
               ? 'Great job! You\'re in your safe spending zone.'
               : spendingStatus.status === 'caution'

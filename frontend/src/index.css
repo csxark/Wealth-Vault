@@ -5,10 +5,12 @@
 /* Modern 2025-26 Design System Enhancements */
 
 @layer base {
-  /* Improved font rendering */
+  /* Improved font rendering and consistency */
   * {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
   /* Better focus indicators for accessibility */
@@ -24,11 +26,29 @@
   /* Root font settings with fluid typography */
   html {
     @apply scroll-smooth;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    letter-spacing: -0.01em;
   }
 
   body {
     @apply antialiased;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.6;
+    letter-spacing: -0.01em;
+  }
+
+  /* Fix text alignment issues */
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    font-weight: 600;
+  }
+
+  /* Ensure consistent text alignment */
+  p, span, div {
+    text-align: inherit;
+    line-height: 1.5;
   }
 }
 
@@ -71,6 +91,32 @@
   /* Modern gradient text */
   .gradient-text {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-primary-400;
+  }
+
+  /* Dashboard specific text improvements */
+  .dashboard-heading {
+    @apply text-2xl md:text-3xl font-semibold text-slate-900 dark:text-white;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    font-weight: 600;
+  }
+
+  .dashboard-subheading {
+    @apply text-lg font-medium text-slate-700 dark:text-slate-300;
+    letter-spacing: -0.015em;
+    line-height: 1.4;
+  }
+
+  .dashboard-value {
+    @apply font-semibold;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+
+  .dashboard-label {
+    @apply text-sm text-slate-600 dark:text-slate-400;
+    letter-spacing: 0.005em;
+    line-height: 1.4;
   }
 }
 
