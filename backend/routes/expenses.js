@@ -143,7 +143,7 @@ router.get("/", protect, async (req, res) => {
     if (maxAmount) conditions.push(lte(expenses.amount, maxAmount.toString()));
     if (paymentMethod)
       conditions.push(eq(expenses.paymentMethod, paymentMethod));
-    
+
     // Add search functionality
     if (search) {
       const searchTerm = `%${search.toLowerCase()}%`;
@@ -314,12 +314,10 @@ router.post(
       });
     } catch (error) {
       console.error("Create expense error:", error);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Server error while creating expense",
-        });
+      res.status(500).json({
+        success: false,
+        message: "Server error while creating expense",
+      });
     }
   }
 );
@@ -493,12 +491,10 @@ router.get("/stats/summary", protect, async (req, res) => {
     });
   } catch (error) {
     console.error("Get expense stats error:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Server error while fetching expense statistics",
-      });
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching expense statistics",
+    });
   }
 });
 
