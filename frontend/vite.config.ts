@@ -11,13 +11,13 @@ export default defineConfig({
     include: ['lucide-react'],
   },
   server: {
-    port: 3001,
+    port: 3002,
     host: true,
     cors: true,
     hmr: {
       protocol: 'ws',
       host: 'localhost',
-      port: 3001,
+      port: 3002,
     },
     proxy: {
       '/api': {

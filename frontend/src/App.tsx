@@ -6,6 +6,7 @@ import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
 import { routes } from './routes';
 import CurrencyConverter from './components/CurrencyConverter.jsx';
+import { DevAuthBypass } from './components/DevAuthBypass';
 
 function AppLayout() {
   const { isDark } = useTheme();
@@ -16,23 +17,29 @@ function AppLayout() {
 
   if (isAuthPage) {
     return (
-      <Routes>
-        <Route
-          path="/auth"
-          element={routes.find(r => r.path === '/auth')?.element}
-        />
-      </Routes>
+      <>
+        <Routes>
+          <Route
+            path="/auth"
+            element={routes.find(r => r.path === '/auth')?.element}
+          />
+        </Routes>
+        <DevAuthBypass />
+      </>
     );
   }
 
   if (isHomePage) {
     return (
-      <Routes>
-        <Route
-          path="/"
-          element={routes.find(r => r.path === '/')?.element}
-        />
-      </Routes>
+      <>
+        <Routes>
+          <Route
+            path="/"
+            element={routes.find(r => r.path === '/')?.element}
+          />
+        </Routes>
+        <DevAuthBypass />
+      </>
     );
   }
 
@@ -93,6 +100,7 @@ function AppLayout() {
           </main>
         </div>
       </div>
+      <DevAuthBypass />
     </ErrorBoundary>
   );
 }

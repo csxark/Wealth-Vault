@@ -1,9 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export const DevAuthBypass: React.FC = () => {
   const navigate = useNavigate();
   const [bypassed, setBypassed] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    // Check if user is already logged in
+    const token = localStorage.getItem('authToken');
+    const user = localStorage.getItem('user');
+    setIsLoggedIn(!!(token && user));
+  }, []);
 
   const bypassAuth = () => {
     // Create a mock user session for development
@@ -17,7 +25,7 @@ export const DevAuthBypass: React.FC = () => {
     };
 
     // Store mock session in localStorage
-    localStorage.setItem('auth_token', 'dev-mock-token-123');
+    localStorage.setItem('authToken', 'dev-mock-token-123');
     localStorage.setItem('user', JSON.stringify(mockUser));
     
     setBypassed(true);
@@ -30,10 +38,16 @@ export const DevAuthBypass: React.FC = () => {
   };
 
   const clearBypass = () => {
-    localStorage.removeItem('auth_token');
+    localStorage.removeItem('authToken');
     localStorage.removeItem('user');
     setBypassed(false);
+    setIsLoggedIn(false);
   };
+
+  // Don't show the button if user is already logged in
+  if (isLoggedIn) {
+    return null;
+  }
 
   return (
     <div className="fixed bottom-4 right-4 z-50">

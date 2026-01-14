@@ -13,6 +13,17 @@ export const useAuth = () => {
         // Check if we have a token in localStorage
         const token = localStorage.getItem('authToken');
         if (token) {
+          // Check if it's a dev bypass token
+          if (token === 'dev-mock-token-123') {
+            // Use the stored mock user without backend validation
+            const storedUser = localStorage.getItem('user');
+            if (storedUser) {
+              setUser(JSON.parse(storedUser));
+              setLoading(false);
+              return;
+            }
+          }
+          
           // Try to get user profile from backend
           const response = await authAPI.getProfile();
           if (response.success && response.data.user) {
@@ -24,6 +35,16 @@ export const useAuth = () => {
         }
       } catch (error) {
         console.error('Error checking session:', error);
+        // Don't remove dev mock token on error
+        const token = localStorage.getItem('authToken');
+        if (token === 'dev-mock-token-123') {
+          const storedUser = localStorage.getItem('user');
+          if (storedUser) {
+            setUser(JSON.parse(storedUser));
+            setLoading(false);
+            return;
+          }
+        }
         // Remove invalid token
         localStorage.removeItem('authToken');
       } finally {
