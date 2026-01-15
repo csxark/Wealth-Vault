@@ -5,12 +5,16 @@ import {
   IndianRupee,
   TrendingUp,
   Activity,
-  Search
+  Search,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { Line, Pie } from 'react-chartjs-2';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
 import AddExpenseButton from './AddExpenseButton';
+import { LoadingSpinner } from '../Loading/LoadingSpinner';
+import { DashboardSkeleton } from './DashboardSkeleton';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 import CurrencyConverter from '../CurrencyConverter.jsx';
@@ -45,10 +49,19 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Expense[]>([]);
+  
+  // Loading and error states
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Fetch expenses from backend and update dashboard state
   useEffect(() => {
     const fetchExpenses = async () => {
+      setIsLoading(true);
+      setError(null);
+      
       try {
         const res = await expensesAPI.getAll();
         const allExpenses: Expense[] = res.data.expenses || [];
@@ -81,7 +94,10 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
         });
         setCategoryDetails(details);
       } catch (err) {
-        // Optionally handle error
+        console.error('Failed to fetch expenses:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load expenses. Please try again.');
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchExpenses();
@@ -92,15 +108,22 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     const searchExpenses = async () => {
       if (searchTerm.trim() === '') {
         setSearchResults([]);
+        setSearchError(null);
         return;
       }
+      
+      setIsSearching(true);
+      setSearchError(null);
       
       try {
         const res = await expensesAPI.getAll({ search: searchTerm, limit: 50 });
         setSearchResults(res.data.expenses || []);
       } catch (err) {
         console.error('Search failed:', err);
+        setSearchError('Search failed. Please try again.');
         setSearchResults([]);
+      } finally {
+        setIsSearching(false);
       }
     };
 
@@ -248,6 +271,46 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       })
     );
   };
+
+  // Retry handler for failed data fetch
+  const handleRetry = () => {
+    window.location.reload();
+  };
+
+  // Show loading state
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-red-200 dark:border-red-900 p-6 text-center">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+          </div>
+          
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
+            Failed to Load Dashboard
+          </h2>
+          
+          <p className="text-slate-600 dark:text-slate-400 mb-6">
+            {error}
+          </p>
+
+          <button
+            onClick={handleRetry}
+            className="w-full bg-cyan-600 text-white px-4 py-3 rounded-lg hover:bg-cyan-700 transition-colors flex items-center justify-center gap-2 font-medium"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 px-2 sm:px-6 md:px-12 lg:px-24 py-8
       bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 min-h-screen transition-colors mt-8">
@@ -304,17 +367,32 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
           </div>
           <input
             type="text"
-            className="block w-full pl-10 pr-3 py-3 border border-slate-200 dark:border-slate-700 rounded-xl leading-5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-base transition duration-150 ease-in-out"
+            className="block w-full pl-10 pr-10 py-3 border border-slate-200 dark:border-slate-700 rounded-xl leading-5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-base transition duration-150 ease-in-out"
             placeholder="Search transactions by description, amount, or payment method..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            disabled={isSearching}
           />
-          {searchTerm && (
-            <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-              {searchResults.length > 0 
-                ? `Found ${searchResults.length} matching transactions` 
-                : 'No transactions found'
-              }
+          {isSearching && (
+            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+              <LoadingSpinner size="sm" message="" />
+            </div>
+          )}
+          {searchTerm && !isSearching && (
+            <div className="mt-2 flex items-center justify-between">
+              {searchError ? (
+                <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                  <AlertCircle className="h-4 w-4" />
+                  {searchError}
+                </div>
+              ) : (
+                <div className="text-sm text-slate-600 dark:text-slate-400">
+                  {searchResults.length > 0 
+                    ? `Found ${searchResults.length} matching transaction${searchResults.length !== 1 ? 's' : ''}` 
+                    : 'No transactions found'
+                  }
+                </div>
+              )}
             </div>
           )}
         </div>
