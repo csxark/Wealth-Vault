@@ -12,34 +12,45 @@ export const useAuth = () => {
       try {
         // Check if we have a token in localStorage
         const token = localStorage.getItem('authToken');
+        console.log('[useAuth] Checking session, token:', token);
+        
         if (token) {
           // Check if it's a dev bypass token
           if (token === 'dev-mock-token-123') {
             // Use the stored mock user without backend validation
             const storedUser = localStorage.getItem('user');
+            console.log('[useAuth] Dev token detected, storedUser:', storedUser);
             if (storedUser) {
-              setUser(JSON.parse(storedUser));
+              const parsedUser = JSON.parse(storedUser);
+              console.log('[useAuth] Setting dev user:', parsedUser);
+              setUser(parsedUser);
               setLoading(false);
               return;
             }
           }
           
           // Try to get user profile from backend
+          console.log('[useAuth] Fetching profile from backend');
           const response = await authAPI.getProfile();
           if (response.success && response.data.user) {
+            console.log('[useAuth] Backend profile success:', response.data.user);
             setUser(response.data.user);
           } else {
             // Token might be invalid, remove it
+            console.log('[useAuth] Invalid token, removing');
             localStorage.removeItem('authToken');
           }
+        } else {
+          console.log('[useAuth] No token found');
         }
       } catch (error) {
-        console.error('Error checking session:', error);
+        console.error('[useAuth] Error checking session:', error);
         // Don't remove dev mock token on error
         const token = localStorage.getItem('authToken');
         if (token === 'dev-mock-token-123') {
           const storedUser = localStorage.getItem('user');
           if (storedUser) {
+            console.log('[useAuth] Error but dev token present, using mock user');
             setUser(JSON.parse(storedUser));
             setLoading(false);
             return;
@@ -48,6 +59,7 @@ export const useAuth = () => {
         // Remove invalid token
         localStorage.removeItem('authToken');
       } finally {
+        console.log('[useAuth] Setting loading to false');
         setLoading(false);
       }
     };

@@ -50,6 +50,16 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Expense[]>([]);
   
+  // Format amount to Indian Rupee
+  const formatAmount = (amount: number): string => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
+  
   // Loading and error states
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
