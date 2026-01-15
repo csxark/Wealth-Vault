@@ -5,8 +5,11 @@ import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
 import { routes } from './routes';
+<<<<<<< HEAD
 import CurrencyConverter from './components/CurrencyConverter.jsx';
 import { DevAuthBypass } from './components/DevAuthBypass';
+=======
+>>>>>>> e21b91d6a61fe8f896a1fe4f5cca7a8f02d9b14d
 
 function AppLayout() {
   const { isDark } = useTheme();
@@ -72,14 +75,9 @@ function AppLayout() {
                       <Route
                         key={route.path}
                         path={route.path}
-                        element={
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="lg:col-span-2">
-                              {route.element}
-                            </div>
-                            <CurrencyConverter />
-                          </div>
-                        }
+                  import CurrencyConverter from './components/CurrencyConverter.jsx';
+                  import { DevAuthBypass } from './components/DevAuthBypass';
+                        element={route.element}
                       />
                     );
                   }

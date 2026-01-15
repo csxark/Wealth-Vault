@@ -215,6 +215,7 @@ export const expensesAPI = {
     paymentMethod?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    search?: string;
   }) => {
     return apiRequest<{
       success: boolean;

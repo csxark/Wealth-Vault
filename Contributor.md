@@ -5,8 +5,9 @@
 Wealth Vault is a comprehensive financial wellness application built with the MERN stack (MongoDB, Express.js, React, TypeScript) that helps users track spending patterns, set financial goals, and make informed financial decisions using AI-powered insights.
 
 ### Tech Stack
+
 - **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS
-- **Backend**: Node.js + Express.js 
+- **Backend**: Node.js + Express.js
 - **Authentication**: JWT + Supabase (hybrid setup)
 - **Charts**: Chart.js + React-Chartjs-2
 - **Additional**: QR scanning, CSV import, AI coaching
@@ -14,13 +15,15 @@ Wealth Vault is a comprehensive financial wellness application built with the ME
 ## Expectations for Contributors
 
 ### Technical Skills Required
+
 - **Frontend**: React, TypeScript, Tailwind CSS, Vite
-- **Backend**: Node.js, Express.js, Prisma
+- **Backend**: Node.js, Express.js, Drizzle ORM
 - **Tools**: Git, npm/yarn, ESLint, Jest (for testing)
 - **APIs**: RESTful API design, JWT authentication
 - **Optional but helpful**: Supabase, Chart.js, QR code libraries
 
 ### Coding Standards
+
 - **TypeScript**: Strict typing required, no `any` types without justification
 - **React**: Functional components with hooks, proper state management
 - **Code Style**: Follow ESLint configuration, consistent naming (camelCase for variables/functions, PascalCase for components)
@@ -28,6 +31,7 @@ Wealth Vault is a comprehensive financial wellness application built with the ME
 - **Documentation**: JSDoc for functions, inline comments for complex logic
 
 ### Development Workflow
+
 1. Fork the repository
 2. Create a feature branch from `main`
 3. Make changes with proper tests
@@ -36,12 +40,14 @@ Wealth Vault is a comprehensive financial wellness application built with the ME
 6. Address review feedback
 
 ### Testing Requirements
+
 - Unit tests for utilities and hooks
 - Integration tests for API endpoints
 - Component tests for React components
 - E2E tests for critical user flows (future goal)
 
 ### Code Review Process
+
 - All PRs require at least one approval
 - Reviews focus on code quality, security, and functionality
 - Maintainers will provide constructive feedback
@@ -108,7 +114,7 @@ The user interface is functional but could benefit from enhanced user experience
 - Keyboard navigation support for accessibility
 - Enhanced mobile responsiveness and touch interactions
 - Persistent user preferences, including dark mode settings
-- Progressive web app features fora  native-like experience
+- Progressive web app features fora native-like experience
 
 ### Feature Development
 
@@ -146,6 +152,7 @@ The hybrid MongoDB/Supabase architecture provides flexibility, but could be enha
 ## Getting Started for Contributors
 
 1. **Setup Development Environment**:
+
    ```bash
    npm run sync  # Automated setup
    # OR
@@ -155,6 +162,7 @@ The hybrid MongoDB/Supabase architecture provides flexibility, but could be enha
    ```
 
 2. **Run Tests**:
+
    ```bash
    cd backend && npm test
    cd ../frontend && npm run lint
@@ -173,4 +181,3 @@ The hybrid MongoDB/Supabase architecture provides flexibility, but could be enha
 - **Code Reviews**: Be constructive and respectful
 
 Thank you for contributing to Wealth Vault! Your efforts help users achieve better financial wellness.</content>
-
