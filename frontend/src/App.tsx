@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { useTheme } from './hooks/useTheme';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
 import { routes } from './routes';
+import { DevAuthBypass } from './components/DevAuthBypass';
 
 function AppLayout() {
-  const { isDark } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const isAuthPage = location.pathname === '/auth';
@@ -15,23 +14,29 @@ function AppLayout() {
 
   if (isAuthPage) {
     return (
-      <Routes>
-        <Route
-          path="/auth"
-          element={routes.find(r => r.path === '/auth')?.element}
-        />
-      </Routes>
+      <>
+        <Routes>
+          <Route
+            path="/auth"
+            element={routes.find(r => r.path === '/auth')?.element}
+          />
+        </Routes>
+        <DevAuthBypass />
+      </>
     );
   }
 
   if (isHomePage) {
     return (
-      <Routes>
-        <Route
-          path="/"
-          element={routes.find(r => r.path === '/')?.element}
-        />
-      </Routes>
+      <>
+        <Routes>
+          <Route
+            path="/"
+            element={routes.find(r => r.path === '/')?.element}
+          />
+        </Routes>
+        <DevAuthBypass />
+      </>
     );
   }
 
@@ -85,6 +90,7 @@ function AppLayout() {
           </main>
         </div>
       </div>
+      <DevAuthBypass />
     </ErrorBoundary>
   );
 }
