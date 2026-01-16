@@ -43,7 +43,7 @@ const data = [
     name: "Emma",
     location: "Paris, France",
     text: "Highly recommend Wealth Vault for beginners and pros alike. It's powerful yet simple to use, and the insights are invaluable.",
-    img: "https://i.pravatar.cc/150?img=77",
+    img: "https://i.pravatar.cc/150?img=7",
     stars: 4.5,
   },
 ];

@@ -5,13 +5,13 @@ import {
   IndianRupee,
   TrendingUp,
   Activity,
-  Search,
   AlertCircle,
   RefreshCw
 } from 'lucide-react';
 import { Line, Pie } from 'react-chartjs-2';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
+import { TransactionSearch } from './TransactionSearch';
 import AddExpenseButton from './AddExpenseButton';
 import { LoadingSpinner } from '../Loading/LoadingSpinner';
 import { DashboardSkeleton } from './DashboardSkeleton';
@@ -50,14 +50,21 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const [categoryDetails, setCategoryDetails] = useState<CategoryDetailsType[]>([]);
   const [monthlyBudget] = useState(40000);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<Expense[]>([]);
+  const [filteredExpenses, setFilteredExpenses] = useState<Expense[]>([]);
+  
+  // Format amount to Indian Rupee
+  const formatAmount = (amount: number): string => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
   
   // Loading and error states
   const [isLoading, setIsLoading] = useState(true);
-  const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Fetch expenses from backend and update dashboard state
   useEffect(() => {
@@ -109,7 +116,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     fetchExpenses();
   }, [paymentMade, showToast]);
 
-  // Search functionality with backend API
+  // Initialize filtered expenses when expenses change
   useEffect(() => {
     const searchExpenses = async () => {
       if (searchTerm.trim() === '') {
@@ -201,11 +208,10 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     ],
   };
 
-  // 7. Recent transactions (last 10) - use search results if searching, otherwise regular expenses
-  const displayExpenses = searchTerm.trim() ? searchResults : expenses;
-  const recentTransactions = [...displayExpenses]
+  // 7. Recent transactions - use filtered expenses
+  const recentTransactions = [...filteredExpenses]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, searchTerm.trim() ? 20 : 10); // Show more results when searching
+    .slice(0, 20); // Show up to 20 transactions
 
   // Card stats array
   const stats = [
@@ -371,45 +377,6 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
 
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-800 p-6">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            className="block w-full pl-10 pr-10 py-3 border border-slate-200 dark:border-slate-700 rounded-xl leading-5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-base transition duration-150 ease-in-out"
-            placeholder="Search transactions by description, amount, or payment method..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            disabled={isSearching}
-          />
-          {isSearching && (
-            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-              <LoadingSpinner size="sm" message="" />
-            </div>
-          )}
-          {searchTerm && !isSearching && (
-            <div className="mt-2 flex items-center justify-between">
-              {searchError ? (
-                <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-                  <AlertCircle className="h-4 w-4" />
-                  {searchError}
-                </div>
-              ) : (
-                <div className="text-sm text-slate-600 dark:text-slate-400">
-                  {searchResults.length > 0 
-                    ? `Found ${searchResults.length} matching transaction${searchResults.length !== 1 ? 's' : ''}` 
-                    : 'No transactions found'
-                  }
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Empty State - Show when no expenses */}
       {expenses.length === 0 ? (
         <div className="flex items-center justify-center py-20">
@@ -515,40 +482,63 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             ))}
           </ul>
         </div>
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
-          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400 mb-6">
-            Recent Transactions
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="dashboard-label">
-                  <th className="px-3 py-2 text-left font-medium">Date</th>
-                  <th className="px-3 py-2 text-left font-medium">Description</th>
-                  <th className="px-3 py-2 text-right font-medium">Amount</th>
-                  <th className="px-3 py-2 text-left font-medium">Method</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentTransactions.map(tx => (
-                  <tr key={tx._id} className="border-b border-cyan-50 dark:border-cyan-900">
-                    <td className="px-3 py-2 dashboard-label">
-                      {new Date(tx.date).toLocaleDateString()}
-                    </td>
-                    <td className="px-3 py-2 text-slate-900 dark:text-white">
-                      {tx.description}
-                    </td>
-                    <td className="px-3 py-2 text-right dashboard-value text-slate-900 dark:text-white">
-                      {formatAmount(Math.abs(tx.amount))}
-                    </td>
-                    <td className="px-3 py-2 dashboard-label">
-                      {tx.paymentMethod}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="space-y-6">
+          {/* Transaction Search Component */}
+          <TransactionSearch 
+            expenses={expenses}
+            onFilteredResults={setFilteredExpenses}
+          />
+          
+          {/* Recent Transactions Table */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400">
+              Recent Transactions
+            </h3>
+            <span className="text-sm text-slate-600 dark:text-slate-400">
+              {filteredExpenses.length === expenses.length 
+                ? `${recentTransactions.length} of ${expenses.length}` 
+                : `${recentTransactions.length} of ${filteredExpenses.length} filtered`}
+            </span>
           </div>
+          <div className="overflow-x-auto">
+            {recentTransactions.length > 0 ? (
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="dashboard-label">
+                    <th className="px-3 py-2 text-left font-medium">Date</th>
+                    <th className="px-3 py-2 text-left font-medium">Description</th>
+                    <th className="px-3 py-2 text-right font-medium">Amount</th>
+                    <th className="px-3 py-2 text-left font-medium">Method</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentTransactions.map(tx => (
+                    <tr key={tx._id} className="border-b border-cyan-50 dark:border-cyan-900 hover:bg-cyan-50 dark:hover:bg-slate-800 transition-colors">
+                      <td className="px-3 py-2 dashboard-label">
+                        {new Date(tx.date).toLocaleDateString()}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-white">
+                        {tx.description}
+                      </td>
+                      <td className="px-3 py-2 text-right dashboard-value text-slate-900 dark:text-white">
+                        {formatAmount(Math.abs(tx.amount))}
+                      </td>
+                      <td className="px-3 py-2 dashboard-label">
+                        {tx.paymentMethod}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="text-center py-8 text-slate-600 dark:text-slate-400">
+                <p className="text-lg mb-2">No transactions found</p>
+                <p className="text-sm">Try adjusting your filters</p>
+              </div>
+            )}
+          </div>
+        </div>
         </div>
       </div>
       {/* Responsive Category Breakdown */}
