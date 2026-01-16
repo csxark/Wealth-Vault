@@ -4,6 +4,7 @@ import { useTheme } from './hooks/useTheme';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
+import { ToastContainer } from './components/Toast/ToastContainer';
 import { routes } from './routes';
 
 function AppLayout() {
@@ -37,6 +38,7 @@ function AppLayout() {
 
   return (
     <ErrorBoundary>
+      <ToastContainer />
       <div className="min-h-screen bg-neutral-50 dark:bg-slate-900">
         <Header onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
 

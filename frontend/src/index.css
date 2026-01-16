@@ -142,4 +142,20 @@
   .scrollbar-modern::-webkit-scrollbar-thumb:hover {
     @apply bg-neutral-400 dark:bg-slate-500;
   }
+
+  /* Toast notification animations */
+  @keyframes slide-in {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in {
+    animation: slide-in 0.3s ease-out;
+  }
 }
