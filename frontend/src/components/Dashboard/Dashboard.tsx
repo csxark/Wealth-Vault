@@ -6,7 +6,8 @@ import {
   TrendingUp,
   Activity,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  BarChart3
 } from 'lucide-react';
 import { Line, Pie } from 'react-chartjs-2';
 import { SafeSpendZone } from './SafeSpendZone';
@@ -15,6 +16,7 @@ import { TransactionSearch } from './TransactionSearch';
 import AddExpenseButton from './AddExpenseButton';
 import { LoadingSpinner } from '../Loading/LoadingSpinner';
 import { DashboardSkeleton } from './DashboardSkeleton';
+import SpendingAnalytics from './SpendingAnalytics';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 import CurrencyConverter from '../CurrencyConverter.jsx';
@@ -507,9 +509,18 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       </div>
       {/* Responsive Category Breakdown */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
-        <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400 mb-6">
-          Category Breakdown
-        </h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400">
+            Category Breakdown
+          </h3>
+          <a 
+            href="/analytics" 
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 rounded-lg hover:bg-cyan-200 dark:hover:bg-cyan-800 transition-colors text-sm font-medium"
+          >
+            <BarChart3 className="h-4 w-4" />
+            View Full Analytics
+          </a>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {categoryDetails.map((cat) => (
             <CategoryDetails 
@@ -519,6 +530,16 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             />
           ))}
         </div>
+      </div>
+      
+      {/* Quick Analytics Preview */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400">
+            Quick Insights
+          </h3>
+        </div>
+        <SpendingAnalytics expenses={expenses.slice(0, 50)} formatAmount={formatAmount} />
       </div>
       </>
       )}

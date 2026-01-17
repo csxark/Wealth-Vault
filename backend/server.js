@@ -18,6 +18,7 @@ import expenseRoutes from "./routes/expenses.js";
 import goalRoutes from "./routes/goals.js";
 import categoryRoutes from "./routes/categories.js";
 import geminiRouter from "./routes/gemini.js";
+import analyticsRoutes from "./routes/analytics.js";
 
 // Load environment variables
 dotenv.config();
@@ -126,6 +127,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/goals", goalRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/analytics", analyticsRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 
 // Health check endpoint

@@ -505,11 +505,93 @@ export const healthAPI = {
   },
 };
 
+// Analytics API
+export const analyticsAPI = {
+  // Get spending summary analytics
+  getSpendingSummary: async (params?: {
+    startDate?: string;
+    endDate?: string;
+    period?: 'month' | 'quarter' | 'year';
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        period: { start: string; end: string; type: string };
+        summary: {
+          totalAmount: number;
+          totalCount: number;
+          avgTransaction: number;
+          maxTransaction: number;
+          minTransaction: number;
+        };
+        categoryBreakdown: Array<{
+          categoryId: string;
+          categoryName: string;
+          categoryColor: string;
+          categoryIcon: string;
+          total: number;
+          count: number;
+          avgAmount: number;
+          percentage: number;
+        }>;
+        monthlyTrend: Array<{
+          month: string;
+          total: number;
+          count: number;
+          date: string;
+        }>;
+        topExpenses: Array<{
+          id: string;
+          amount: number;
+          description: string;
+          date: string;
+          category: any;
+        }>;
+        paymentMethods: Array<{
+          method: string;
+          total: number;
+          count: number;
+          percentage: number;
+        }>;
+      };
+    }>('/analytics/spending-summary', {
+      method: 'GET',
+      params,
+    });
+  },
+
+  // Get category trends
+  getCategoryTrends: async (params?: {
+    categoryId?: string;
+    months?: number;
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        trends: Array<{
+          month: string;
+          date: string;
+          categories: Array<{
+            categoryId: string;
+            categoryName: string;
+            total: number;
+            count: number;
+          }>;
+        }>;
+      };
+    }>('/analytics/category-trends', {
+      method: 'GET',
+      params,
+    });
+  },
+};
+
 // Export all APIs
 export default {
   auth: authAPI,
   expenses: expensesAPI,
   categories: categoriesAPI,
   goals: goalsAPI,
+  analytics: analyticsAPI,
   health: healthAPI,
 };

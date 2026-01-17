@@ -6,6 +6,7 @@ import { Coach } from '../components/Coach/Coach';
 import { Goals } from '../components/Goals/Goals';
 import { DataImport } from '../components/Import/DataImport';
 import { Profile } from '../components/Profile/Profile';
+import Analytics from '../components/Analytics/Analytics';
 import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
@@ -121,6 +122,14 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <Profile />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/analytics',
+    element: (
+      <ProtectedRoute>
+        <Analytics />
       </ProtectedRoute>
     )
   },
