@@ -7,6 +7,7 @@ import {
   Activity,
   AlertCircle,
   RefreshCw,
+  BarChart3
   BarChart3,
   Receipt,
   Grid3x3
@@ -17,6 +18,7 @@ import { CategoryDetails } from './CategoryDetails';
 import { TransactionSearch } from './TransactionSearch';
 import AddExpenseButton from './AddExpenseButton';
 import { DashboardSkeleton } from './DashboardSkeleton';
+import SpendingAnalytics from './SpendingAnalytics';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 // @ts-ignore - CurrencyConverter is a .jsx file without type declarations
@@ -396,6 +398,45 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
               />
             </div>
           </div>
+        </div>
+        </div>
+      </div>
+      {/* Responsive Category Breakdown */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400">
+            Category Breakdown
+          </h3>
+          <a 
+            href="/analytics" 
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 rounded-lg hover:bg-cyan-200 dark:hover:bg-cyan-800 transition-colors text-sm font-medium"
+          >
+            <BarChart3 className="h-4 w-4" />
+            View Full Analytics
+          </a>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {categoryDetails.map((cat) => (
+            <CategoryDetails 
+              key={cat.category} 
+              {...cat} 
+              formatAmount={formatAmount} 
+            />
+          ))}
+        </div>
+      </div>
+      
+      {/* Quick Analytics Preview */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400">
+            Quick Insights
+          </h3>
+        </div>
+        <SpendingAnalytics expenses={expenses.slice(0, 50)} formatAmount={formatAmount} />
+      </div>
+      </>
+      )}
         ) : (
           <>
             {/* Tab Content */}
