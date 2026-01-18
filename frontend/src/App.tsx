@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
+import { ToastContainer } from './components/Toast/ToastContainer';
 import { routes } from './routes';
 import { DevAuthBypass } from './components/DevAuthBypass';
 
@@ -42,6 +43,7 @@ function AppLayout() {
 
   return (
     <ErrorBoundary>
+      <ToastContainer />
       <div className="min-h-screen bg-neutral-50 dark:bg-slate-900">
         <Header onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
 

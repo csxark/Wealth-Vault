@@ -21,8 +21,8 @@ import { DashboardSkeleton } from './DashboardSkeleton';
 import SpendingAnalytics from './SpendingAnalytics';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
-// @ts-ignore - CurrencyConverter is a .jsx file without type declarations
-import CurrencyConverter from '../CurrencyConverter';
+import { useToast } from '../../context/ToastContext';
+import CurrencyConverter from '../CurrencyConverter.jsx';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -35,6 +35,8 @@ export interface SpendingChartProps {
 type TabType = 'overview' | 'transactions' | 'analytics' | 'categories';
 
 const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
+  const { showToast } = useToast();
+  
   // Theme state for dark/light
   const [theme] = useState<'light' | 'dark'>(
     localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
@@ -139,20 +141,52 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
           };
         });
         setCategoryDetails(details);
+        showToast(`Loaded ${allExpenses.length} expenses successfully`, 'success', 2000);
       } catch (err) {
         console.error('Failed to fetch expenses:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load expenses. Please try again.');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load expenses. Please try again.';
+        setError(errorMessage);
+        showToast(errorMessage, 'error');
       } finally {
         setIsLoading(false);
       }
     };
     fetchExpenses();
-  }, [paymentMade, timeRange]);
+  }, [paymentMade, showToast]);
 
   // Initialize filtered expenses when expenses change
   useEffect(() => {
-    setFilteredExpenses(expenses);
-  }, [expenses]);
+    const searchExpenses = async () => {
+      if (searchTerm.trim() === '') {
+        setSearchResults([]);
+        setSearchError(null);
+        return;
+      }
+      
+      setIsSearching(true);
+      setSearchError(null);
+      
+      try {
+        const res = await expensesAPI.getAll({ search: searchTerm, limit: 50 });
+        setSearchResults(res.data.expenses || []);
+        const count = res.data.expenses?.length || 0;
+        if (count > 0) {
+          showToast(`Found ${count} matching transaction${count !== 1 ? 's' : ''}`, 'info', 2000);
+        }
+      } catch (err) {
+        console.error('Search failed:', err);
+        setSearchError('Search failed. Please try again.');
+        showToast('Search failed. Please try again.', 'error');
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    // Debounce search to avoid too many API calls
+    const timeoutId = setTimeout(searchExpenses, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, showToast]);
 
   // --- Analytics ---
   // 1. Spending trend (by day for current month)
@@ -301,6 +335,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
         return cat;
       })
     );
+    showToast(`Expense of ₹${expense.amount} added successfully!`, 'success');
   };
 
   // Handle currency conversion

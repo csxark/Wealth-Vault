@@ -1,22 +1,26 @@
 # Loading States & Error Handling Implementation
 
 ## Overview
+
 This document describes the comprehensive loading states and error handling features added to the Wealth Vault Dashboard component.
 
 ## Features Implemented
 
 ### 1. Dashboard Loading States
+
 - **Skeleton Loader**: Beautiful animated placeholder UI while data loads
 - **Initial Load**: Shows skeleton instead of blank screen
 - **Better UX**: Users see page structure immediately while content loads
 
 ### 2. Error Handling
+
 - **Error State UI**: Full-page error display with retry functionality
 - **Retry Mechanism**: Users can reload data without refreshing browser
 - **Error Messages**: Clear, user-friendly error descriptions
 - **Visual Feedback**: Icon-based error alerts
 
 ### 3. Search Loading & Error States
+
 - **Real-time Feedback**: Loading spinner appears during search
 - **Debounced Search**: 300ms delay prevents excessive API calls
 - **Search Errors**: Displays specific error messages for failed searches
@@ -24,6 +28,7 @@ This document describes the comprehensive loading states and error handling feat
 - **Disabled Input**: Input disables during search to prevent conflicts
 
 ### 4. API Error Handling
+
 - **Try-Catch Blocks**: All API calls wrapped in error handling
 - **Finally Blocks**: Ensures loading states reset properly
 - **Error Logging**: Console errors for debugging
@@ -32,7 +37,9 @@ This document describes the comprehensive loading states and error handling feat
 ## Files Modified
 
 ### `/frontend/src/components/Dashboard/Dashboard.tsx`
+
 **Changes:**
+
 - Added loading state management (`isLoading`, `isSearching`)
 - Added error state management (`error`, `searchError`)
 - Implemented try-catch-finally in `fetchExpenses` useEffect
@@ -42,13 +49,15 @@ This document describes the comprehensive loading states and error handling feat
 - Enhanced search bar with loading indicator and error display
 
 **New Imports:**
+
 ```typescript
-import { AlertCircle, RefreshCw } from 'lucide-react';
-import { LoadingSpinner } from '../Loading/LoadingSpinner';
-import { DashboardSkeleton } from './DashboardSkeleton';
+import { AlertCircle, RefreshCw } from "lucide-react";
+import { LoadingSpinner } from "../Loading/LoadingSpinner";
+import { DashboardSkeleton } from "./DashboardSkeleton";
 ```
 
 **New State Variables:**
+
 ```typescript
 const [isLoading, setIsLoading] = useState(true);
 const [isSearching, setIsSearching] = useState(false);
@@ -57,9 +66,11 @@ const [searchError, setSearchError] = useState<string | null>(null);
 ```
 
 ### `/frontend/src/components/Dashboard/DashboardSkeleton.tsx` (NEW)
+
 **Purpose:** Skeleton loader component for better perceived performance
 
 **Features:**
+
 - Animated pulse effect
 - Mimics actual dashboard layout
 - Responsive grid layout
@@ -69,6 +80,7 @@ const [searchError, setSearchError] = useState<string | null>(null);
 ## User Experience Improvements
 
 ### Before
+
 - ❌ Blank white screen during initial load
 - ❌ No feedback during API calls
 - ❌ Unhandled errors crash the UI
@@ -76,6 +88,7 @@ const [searchError, setSearchError] = useState<string | null>(null);
 - ❌ Search appears "frozen" while loading
 
 ### After
+
 - ✅ Skeleton UI shows immediately
 - ✅ Loading spinners during operations
 - ✅ Graceful error states with retry
@@ -85,6 +98,7 @@ const [searchError, setSearchError] = useState<string | null>(null);
 ## Technical Details
 
 ### Loading Flow
+
 ```
 Component Mount
   ↓
@@ -99,6 +113,7 @@ Data Error → Set error message → Show Error UI
 ```
 
 ### Search Flow
+
 ```
 User Types
   ↓
@@ -117,6 +132,7 @@ Set isSearching = false
 ```
 
 ### Error Recovery
+
 ```
 Error Occurs
   ↓
@@ -130,11 +146,12 @@ Reload Page (window.location.reload())
 ## Code Examples
 
 ### Error State Rendering
+
 ```typescript
 if (error) {
   return (
     <div className="error-container">
-      <AlertCircle icon/>
+      <AlertCircle icon />
       <h2>Failed to Load Dashboard</h2>
       <p>{error}</p>
       <button onClick={handleRetry}>
@@ -146,6 +163,7 @@ if (error) {
 ```
 
 ### Search with Loading
+
 ```typescript
 <input
   value={searchTerm}
@@ -159,6 +177,7 @@ if (error) {
 ## Testing Recommendations
 
 ### Manual Testing
+
 1. **Initial Load**: Refresh page and verify skeleton appears
 2. **Slow Network**: Throttle network to see loading states
 3. **Error Handling**: Disconnect network and verify error UI
@@ -167,13 +186,14 @@ if (error) {
 6. **Search Error**: Simulate API failure during search
 
 ### Automated Testing (Future)
+
 ```javascript
-describe('Dashboard Loading States', () => {
-  it('shows skeleton during initial load', () => {});
-  it('shows error UI when API fails', () => {});
-  it('allows retry on error', () => {});
-  it('shows search spinner while searching', () => {});
-  it('displays search errors correctly', () => {});
+describe("Dashboard Loading States", () => {
+  it("shows skeleton during initial load", () => {});
+  it("shows error UI when API fails", () => {});
+  it("allows retry on error", () => {});
+  it("shows search spinner while searching", () => {});
+  it("displays search errors correctly", () => {});
 });
 ```
 
@@ -208,6 +228,7 @@ describe('Dashboard Loading States', () => {
 ## Contribution Notes
 
 This implementation addresses the following items from `Contributor.md`:
+
 - ✅ Error Handling and Validation
 - ✅ User-friendly error messages with actionable guidance
 - ✅ Improved UX with loading states
@@ -215,6 +236,7 @@ This implementation addresses the following items from `Contributor.md`:
 ## Summary
 
 This contribution significantly improves the Dashboard user experience by:
+
 1. Providing immediate visual feedback during all operations
 2. Handling errors gracefully with clear messaging
 3. Allowing users to recover from failures

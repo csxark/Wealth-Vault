@@ -28,6 +28,7 @@
     "morgan": "^1.10.0",
     "openai": "^6.15.0",
     "postgres": "^3.4.7",
+    "react-hot-toast": "^2.6.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },
