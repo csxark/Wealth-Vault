@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   db:
@@ -37,7 +35,7 @@ services:
       dockerfile: Dockerfile
     container_name: wealth-vault-frontend
     ports:
-      - "3000:3000"
+      - "3000:3002"
     depends_on:
       - backend
 
