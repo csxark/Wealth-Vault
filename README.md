@@ -81,6 +81,10 @@ Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware
 - npm
 - Git
 
+**OR** 
+
+- Docker & Docker Compose ([see Docker setup](DOCKER_GUIDE.md))
+
 ---
 
 ## ⚡ Quick Setup
@@ -98,6 +102,21 @@ This will:
 - Install all dependencies (root, backend, and frontend)
 - Create environment configuration files
 - Set up the database connection
+
+---
+
+### 🐳 Docker Setup
+
+If you have Docker installed:
+
+```bash
+git clone https://github.com/csxark/Wealth-Vault.git
+cd Wealth-Vault
+docker-compose up
+```
+
+Access at http://localhost:3000 | [Full Docker docs →](DOCKER_GUIDE.md)
+
 
 ---
 

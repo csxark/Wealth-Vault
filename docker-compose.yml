@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: wealth-vault-db
+    environment:
+      POSTGRES_USER: wealthvault
+      POSTGRES_PASSWORD: wealthvault123
+      POSTGRES_DB: wealth_vault
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wealth-vault-backend
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql://wealthvault:wealthvault123@db:5432/wealth_vault
+      PORT: 5000
+      JWT_SECRET: your-secret-key-change-in-production
+      JWT_EXPIRE: 7d
+    depends_on:
+      - db
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: wealth-vault-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
