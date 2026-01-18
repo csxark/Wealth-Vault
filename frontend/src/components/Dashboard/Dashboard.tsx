@@ -61,12 +61,14 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const formatAmount = (amount: number): string => {
     const convertedAmount = convertedCurrency ? amount * conversionRate : amount;
     const currency = convertedCurrency || 'INR';
-    return new Intl.NumberFormat('en-IN', {
+    const formatted = new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: currency,
       minimumFractionDigits: 0,
       maximumFractionDigits: 2
     }).format(convertedAmount);
+    // Add extra space between currency symbol and amount for better readability
+    return formatted.replace(/^([^\d]+)/, '$1\u00A0');
   };
 
   // Function to filter expenses by time range
