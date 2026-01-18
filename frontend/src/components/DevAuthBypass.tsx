@@ -16,14 +16,34 @@ export const DevAuthBypass: React.FC = () => {
   const bypassAuth = () => {
     console.log('[DevAuthBypass] Button clicked');
     
-    // Create a mock user session for development
+    // Create a comprehensive mock user session for development
     const mockUser = {
-      id: 'dev-user-001',
+      _id: 'dev-user-001',
       email: 'dev@test.com',
-      firstName: 'Developer',
-      lastName: 'Test',
-      role: 'user',
-      createdAt: new Date().toISOString()
+      firstName: 'Alex',
+      lastName: 'Developer',
+      profilePicture: undefined,
+      dateOfBirth: '1995-06-15',
+      phoneNumber: '+91 98765 43210',
+      currency: 'INR',
+      monthlyIncome: 150000,
+      monthlyBudget: 100000,
+      emergencyFund: 500000,
+      isActive: true,
+      lastLogin: new Date().toISOString(),
+      preferences: {
+        notifications: {
+          email: true,
+          push: true,
+          sms: false
+        },
+        theme: 'dark',
+        language: 'en'
+      },
+      createdAt: '2024-01-15T00:00:00.000Z',
+      updatedAt: new Date().toISOString(),
+      fullName: 'Alex Developer',
+      netWorth: 1250000
     };
 
     // Store mock session in localStorage first

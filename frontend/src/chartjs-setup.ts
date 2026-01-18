@@ -8,7 +8,8 @@ import {
   BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 } from 'chart.js';
 
 // Register all necessary elements and scales for chart.js
@@ -21,5 +22,6 @@ ChartJS.register(
   BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 );

@@ -126,6 +126,22 @@
     text-wrap: balance;
   }
 
+  /* Fade in animation for tab transitions */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+  }
+
   /* Improved scrollbar styling */
   .scrollbar-modern::-webkit-scrollbar {
     @apply w-2 h-2;
@@ -159,3 +175,4 @@
     animation: slide-in 0.3s ease-out;
   }
 }
+

@@ -17,7 +17,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   };
 
   return (
-    <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm border-b border-neutral-200/60 dark:border-slate-700/60 absolute top-0 z-50 w-full">
+    <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm border-b border-neutral-200/60 dark:border-slate-700/60 absolute top-0 z-40 w-full">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center gap-4">
