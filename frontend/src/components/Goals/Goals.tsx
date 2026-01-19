@@ -24,8 +24,14 @@ export const Goals: React.FC = () => {
     setLoading(true);
     try {
       const response = await goalsAPI.getAll();
-      if (response.success) setGoals(response.data.goals);
-    } catch { /* Handle error quietly for sleek UI */ }
+      if (response.success && response.data.goals) {
+        setGoals(response.data.goals);
+      } else {
+        setGoals([]);
+      }
+    } catch { 
+      setGoals([]); // Ensure goals is always an array
+    }
     finally { setLoading(false); }
   };
 
@@ -34,8 +40,25 @@ export const Goals: React.FC = () => {
     try {
       if (editingGoal) {
         const response = await goalsAPI.update(editingGoal._id, goalData);
-        if (!response.success) return;
+        console.log('Update response:', response);
+        if (!response.success) {
+          console.error('Failed to update goal:', response);
+          return;
+        }
       } else {
+        const deadline = goalData.deadline || goalData.targetDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+        console.log('Creating goal with data:', {
+          title: goalData.title || '',
+          description: goalData.description || '',
+          targetAmount: goalData.targetAmount || 0,
+          currentAmount: goalData.currentAmount ?? 0,
+          type: 'savings',
+          priority: 'medium',
+          status: 'active',
+          targetDate: deadline,
+          deadline: deadline,
+          contributions: goalData.contributions ?? [],
+        });
         const response = await goalsAPI.create({
           title: goalData.title || '',
           description: goalData.description || '',
@@ -44,16 +67,22 @@ export const Goals: React.FC = () => {
           type: 'savings',
           priority: 'medium',
           status: 'active',
-          targetDate: goalData.targetDate || goalData.deadline || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-          deadline: goalData.deadline || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          targetDate: deadline,
+          deadline: deadline,
           contributions: goalData.contributions ?? [],
         });
-        if (!response.success) return;
+        console.log('Create response:', response);
+        if (!response.success) {
+          console.error('Failed to create goal:', response);
+          return;
+        }
       }
       await loadGoals();
       setShowForm(false);
       setEditingGoal(undefined);
-    } catch { /* Silently fail for minimalist UX */ }
+    } catch (error) { 
+      console.error('Error saving goal:', error);
+    }
   };
 
   const handleEditGoal = (goal: Goal) => {
@@ -68,8 +97,8 @@ export const Goals: React.FC = () => {
     } catch { /* Silent */ }
   };
 
-  const totalGoalsValue = goals.reduce((sum, goal) => sum + goal.targetAmount, 0);
-  const totalProgress = goals.reduce((sum, goal) => sum + goal.currentAmount, 0);
+  const totalGoalsValue = (goals || []).reduce((sum, goal) => sum + goal.targetAmount, 0);
+  const totalProgress = (goals || []).reduce((sum, goal) => sum + goal.currentAmount, 0);
   const overallProgress = totalGoalsValue > 0 ? (totalProgress / totalGoalsValue) * 100 : 0;
 
   if (loading) {

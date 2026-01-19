@@ -12,9 +12,9 @@ export const GoalForm: React.FC<GoalFormProps> = ({ goal, onSave, onCancel }) =>
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    target_amount: '',
-    current_amount: '',
-    target_date: ''
+    targetAmount: '',
+    currentAmount: '',
+    targetDate: ''
   });
 
   useEffect(() => {
@@ -22,9 +22,9 @@ export const GoalForm: React.FC<GoalFormProps> = ({ goal, onSave, onCancel }) =>
       setFormData({
         title: goal.title,
         description: goal.description,
-        target_amount: goal.target_amount.toString(),
-        current_amount: goal.current_amount.toString(),
-        target_date: goal.target_date.split('T')[0] // Format for date input
+        targetAmount: goal.targetAmount.toString(),
+        currentAmount: goal.currentAmount.toString(),
+        targetDate: (goal.deadline || goal.targetDate).split('T')[0] // Format for date input
       });
     }
   }, [goal]);
@@ -35,15 +35,11 @@ export const GoalForm: React.FC<GoalFormProps> = ({ goal, onSave, onCancel }) =>
     const goalData: Partial<Goal> = {
       title: formData.title,
       description: formData.description,
-      target_amount: parseFloat(formData.target_amount),
-      current_amount: parseFloat(formData.current_amount) || 0,
-      target_date: formData.target_date,
-      updated_at: new Date().toISOString()
+      targetAmount: parseFloat(formData.targetAmount),
+      currentAmount: parseFloat(formData.currentAmount) || 0,
+      targetDate: formData.targetDate,
+      deadline: formData.targetDate
     };
-
-    if (!goal) {
-      goalData.created_at = new Date().toISOString();
-    }
 
     onSave(goalData);
   };
@@ -103,8 +99,8 @@ export const GoalForm: React.FC<GoalFormProps> = ({ goal, onSave, onCancel }) =>
                 type="number"
                 step="0.01"
                 min="0"
-                value={formData.target_amount}
-                onChange={(e) => setFormData({ ...formData, target_amount: e.target.value })}
+                value={formData.targetAmount}
+                onChange={(e) => setFormData({ ...formData, targetAmount: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                 placeholder="100000"
                 required
@@ -119,8 +115,8 @@ export const GoalForm: React.FC<GoalFormProps> = ({ goal, onSave, onCancel }) =>
                 type="number"
                 step="0.01"
                 min="0"
-                value={formData.current_amount}
-                onChange={(e) => setFormData({ ...formData, current_amount: e.target.value })}
+                value={formData.currentAmount}
+                onChange={(e) => setFormData({ ...formData, currentAmount: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                 placeholder="0"
               />
@@ -134,8 +130,8 @@ export const GoalForm: React.FC<GoalFormProps> = ({ goal, onSave, onCancel }) =>
             </label>
             <input
               type="date"
-              value={formData.target_date}
-              onChange={(e) => setFormData({ ...formData, target_date: e.target.value })}
+              value={formData.targetDate}
+              onChange={(e) => setFormData({ ...formData, targetDate: e.target.value })}
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
               required
             />
