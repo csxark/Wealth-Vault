@@ -18,6 +18,7 @@ import expenseRoutes from "./routes/expenses.js";
 import goalRoutes from "./routes/goals.js";
 import categoryRoutes from "./routes/categories.js";
 import geminiRouter from "./routes/gemini.js";
+import analyticsRoutes from "./routes/analytics.js";
 
 // Load environment variables
 dotenv.config();
@@ -42,6 +43,10 @@ app.use(
       const allowedOrigins = [
         "http://localhost:3001",
         "http://127.0.0.1:3001",
+        "http://localhost:3002",
+        "http://127.0.0.1:3002",
+        "http://localhost:3003",
+        "http://127.0.0.1:3003",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
@@ -122,6 +127,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/goals", goalRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/analytics", analyticsRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 
 // Health check endpoint
@@ -160,3 +166,4 @@ app.listen(PORT, () => {
   console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
   console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
 });
+

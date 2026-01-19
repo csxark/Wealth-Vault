@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, MessageCircle, Target, Upload, User } from 'lucide-react';
+import { BarChart3, MessageCircle, Target, Upload, User, PieChart } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 interface SidebarProps {
@@ -10,6 +10,7 @@ interface SidebarProps {
 
 const navigation = [
   { id: 'dashboard', name: 'Dashboard', icon: BarChart3, path: '/dashboard' },
+  { id: 'analytics', name: 'Analytics', icon: PieChart, path: '/analytics' },
   { id: 'coach', name: 'AI Coach', icon: MessageCircle, path: '/coach' },
   { id: 'goals', name: 'Goals', icon: Target, path: '/goals' },
   { id: 'import', name: 'Import Data', icon: Upload, path: '/import' },

@@ -1,39 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export const DevAuthBypass: React.FC = () => {
   const navigate = useNavigate();
   const [bypassed, setBypassed] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    // Check if user is already logged in
+    const token = localStorage.getItem('authToken');
+    const user = localStorage.getItem('user');
+    setIsLoggedIn(!!(token && user));
+  }, []);
 
   const bypassAuth = () => {
-    // Create a mock user session for development
+    console.log('[DevAuthBypass] Button clicked');
+    
+    // Create a comprehensive mock user session for development
     const mockUser = {
-      id: 'dev-user-001',
+      _id: 'dev-user-001',
       email: 'dev@test.com',
-      firstName: 'Developer',
-      lastName: 'Test',
-      role: 'user',
-      createdAt: new Date().toISOString()
+      firstName: 'Alex',
+      lastName: 'Developer',
+      profilePicture: undefined,
+      dateOfBirth: '1995-06-15',
+      phoneNumber: '+91 98765 43210',
+      currency: 'INR',
+      monthlyIncome: 150000,
+      monthlyBudget: 100000,
+      emergencyFund: 500000,
+      isActive: true,
+      lastLogin: new Date().toISOString(),
+      preferences: {
+        notifications: {
+          email: true,
+          push: true,
+          sms: false
+        },
+        theme: 'dark',
+        language: 'en'
+      },
+      createdAt: '2024-01-15T00:00:00.000Z',
+      updatedAt: new Date().toISOString(),
+      fullName: 'Alex Developer',
+      netWorth: 1250000
     };
 
-    // Store mock session in localStorage
-    localStorage.setItem('auth_token', 'dev-mock-token-123');
+    // Store mock session in localStorage first
+    localStorage.setItem('authToken', 'dev-mock-token-123');
     localStorage.setItem('user', JSON.stringify(mockUser));
+    
+    console.log('[DevAuthBypass] Token set:', localStorage.getItem('authToken'));
+    console.log('[DevAuthBypass] User set:', localStorage.getItem('user'));
     
     setBypassed(true);
     
-    // Redirect to dashboard after a short delay
-    setTimeout(() => {
-      navigate('/dashboard');
-      window.location.reload(); // Force reload to pick up the mock session
-    }, 1000);
+    console.log('[DevAuthBypass] Redirecting to dashboard...');
+    // Force a complete page reload to dashboard
+    window.location.href = '/dashboard';
   };
 
   const clearBypass = () => {
-    localStorage.removeItem('auth_token');
+    localStorage.removeItem('authToken');
     localStorage.removeItem('user');
     setBypassed(false);
+    setIsLoggedIn(false);
   };
+
+  // Don't show the button if user is already logged in
+  if (isLoggedIn) {
+    return null;
+  }
 
   return (
     <div className="fixed bottom-4 right-4 z-50">

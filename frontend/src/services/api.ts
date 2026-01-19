@@ -20,6 +20,11 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('authToken');
     if (token) {
+      // Check if it's dev bypass token - return mock data without making the request
+      if (token === 'dev-mock-token-123') {
+        // We'll handle this in the apiRequest function instead
+        config.headers['X-Dev-Mode'] = 'true';
+      }
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -55,15 +60,90 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401) {
       // Token expired or invalid
-      localStorage.removeItem('authToken');
-      window.location.href = '/login';
+      const token = localStorage.getItem('authToken');
+      // Don't clear dev bypass token
+      if (token !== 'dev-mock-token-123') {
+        localStorage.removeItem('authToken');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
 );
 
+// Mock data generator for dev mode
+const generateMockExpenses = (count: number = 20): Expense[] => {
+  const categories = ['safe', 'impulsive', 'anxious'];
+  const paymentMethods = ['cash', 'card', 'upi', 'netbanking'];
+  const descriptions = [
+    'Groceries', 'Restaurant', 'Movie tickets', 'Shopping', 'Fuel',
+    'Electricity bill', 'Internet bill', 'Medicine', 'Books', 'Coffee'
+  ];
+  
+  const expenses: Expense[] = [];
+  const now = new Date();
+  
+  for (let i = 0; i < count; i++) {
+    const daysAgo = Math.floor(Math.random() * 30);
+    const date = new Date(now);
+    date.setDate(date.getDate() - daysAgo);
+    
+    expenses.push({
+      _id: `mock-expense-${i}`,
+      user: 'dev-user-001',
+      amount: Math.floor(Math.random() * 5000) + 100,
+      category: categories[Math.floor(Math.random() * categories.length)] as 'safe' | 'impulsive' | 'anxious',
+      description: descriptions[Math.floor(Math.random() * descriptions.length)],
+      date: date.toISOString(),
+      paymentMethod: paymentMethods[Math.floor(Math.random() * paymentMethods.length)] as 'cash' | 'card' | 'upi' | 'netbanking',
+      createdAt: date.toISOString(),
+      updatedAt: date.toISOString()
+    });
+  }
+  
+  return expenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+};
+
 // Generic API request function with enhanced error handling
 const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> => {
+  // Check if we're in dev mode
+  const token = localStorage.getItem('authToken');
+  if (token === 'dev-mock-token-123') {
+    console.log('[API] Dev mode detected, returning mock data for:', endpoint);
+    
+    // Return mock data based on endpoint
+    if (endpoint === '/expenses' || endpoint.startsWith('/expenses?')) {
+      const mockExpenses = generateMockExpenses(30);
+      return {
+        success: true,
+        data: {
+          expenses: mockExpenses,
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: mockExpenses.length,
+            itemsPerPage: 50
+          }
+        }
+      } as T;
+    }
+    
+    if (endpoint === '/auth/profile' || endpoint === '/users/profile') {
+      const mockUser = JSON.parse(localStorage.getItem('user') || '{}');
+      return {
+        success: true,
+        data: { user: mockUser }
+      } as T;
+    }
+    
+    // Default mock response
+    return {
+      success: true,
+      data: {},
+      message: 'Dev mode mock response'
+    } as T;
+  }
+  
   try {
     const response = await api.request({
       url: endpoint,
@@ -425,11 +505,93 @@ export const healthAPI = {
   },
 };
 
+// Analytics API
+export const analyticsAPI = {
+  // Get spending summary analytics
+  getSpendingSummary: async (params?: {
+    startDate?: string;
+    endDate?: string;
+    period?: 'month' | 'quarter' | 'year';
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        period: { start: string; end: string; type: string };
+        summary: {
+          totalAmount: number;
+          totalCount: number;
+          avgTransaction: number;
+          maxTransaction: number;
+          minTransaction: number;
+        };
+        categoryBreakdown: Array<{
+          categoryId: string;
+          categoryName: string;
+          categoryColor: string;
+          categoryIcon: string;
+          total: number;
+          count: number;
+          avgAmount: number;
+          percentage: number;
+        }>;
+        monthlyTrend: Array<{
+          month: string;
+          total: number;
+          count: number;
+          date: string;
+        }>;
+        topExpenses: Array<{
+          id: string;
+          amount: number;
+          description: string;
+          date: string;
+          category: any;
+        }>;
+        paymentMethods: Array<{
+          method: string;
+          total: number;
+          count: number;
+          percentage: number;
+        }>;
+      };
+    }>('/analytics/spending-summary', {
+      method: 'GET',
+      params,
+    });
+  },
+
+  // Get category trends
+  getCategoryTrends: async (params?: {
+    categoryId?: string;
+    months?: number;
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        trends: Array<{
+          month: string;
+          date: string;
+          categories: Array<{
+            categoryId: string;
+            categoryName: string;
+            total: number;
+            count: number;
+          }>;
+        }>;
+      };
+    }>('/analytics/category-trends', {
+      method: 'GET',
+      params,
+    });
+  },
+};
+
 // Export all APIs
 export default {
   auth: authAPI,
   expenses: expensesAPI,
   categories: categoriesAPI,
   goals: goalsAPI,
+  analytics: analyticsAPI,
   health: healthAPI,
 };
