@@ -9,9 +9,9 @@ interface GoalCardProps {
 }
 
 export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) => {
-  const progress = goal.target_amount > 0 ? (goal.current_amount / goal.target_amount) * 100 : 0;
-  const remainingAmount = goal.target_amount - goal.current_amount;
-  const daysUntilTarget = Math.ceil((new Date(goal.target_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
+  const remainingAmount = goal.targetAmount - goal.currentAmount;
+  const daysUntilTarget = Math.ceil((new Date(goal.deadline || goal.targetDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
   
   const getMotivationalMessage = () => {
     if (progress >= 100) return "🎉 Goal achieved! You're amazing!";
@@ -42,7 +42,7 @@ export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) =>
             <Edit3 className="h-4 w-4" />
           </button>
           <button
-            onClick={() => onDelete(goal.id)}
+            onClick={() => onDelete(goal._id)}
             className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
           >
             <Trash2 className="h-4 w-4" />
@@ -54,7 +54,7 @@ export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) =>
         <div className="flex justify-between items-center text-sm">
           <span className="text-slate-600 dark:text-slate-400">Progress</span>
           <span className="font-medium text-slate-900 dark:text-white">
-            ₹{goal.current_amount.toLocaleString()} / ₹{goal.target_amount.toLocaleString()}
+            ₹{goal.currentAmount.toLocaleString()} / ₹{goal.targetAmount.toLocaleString()}
           </span>
         </div>
 

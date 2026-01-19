@@ -136,6 +136,71 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       } as T;
     }
     
+    // Handle goals endpoints in dev mode
+    if (endpoint === '/goals' && options.method === 'POST') {
+      // Create new goal
+      const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
+      const newGoal = {
+        _id: `mock-goal-${Date.now()}`,
+        user: 'dev-user-001',
+        ...options.data,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockGoals.push(newGoal);
+      localStorage.setItem('mockGoals', JSON.stringify(mockGoals));
+      return {
+        success: true,
+        data: { goal: newGoal },
+        message: 'Goal created successfully'
+      } as T;
+    }
+    
+    if (endpoint === '/goals' || endpoint.startsWith('/goals?')) {
+      // Get all goals
+      const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
+      return {
+        success: true,
+        data: {
+          goals: mockGoals,
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: mockGoals.length,
+            itemsPerPage: 20
+          }
+        }
+      } as T;
+    }
+    
+    if (endpoint.startsWith('/goals/') && options.method === 'PUT') {
+      // Update goal
+      const goalId = endpoint.split('/')[2];
+      const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
+      const index = mockGoals.findIndex((g: any) => g._id === goalId);
+      if (index !== -1) {
+        mockGoals[index] = { ...mockGoals[index], ...options.data, updatedAt: new Date().toISOString() };
+        localStorage.setItem('mockGoals', JSON.stringify(mockGoals));
+        return {
+          success: true,
+          data: { goal: mockGoals[index] },
+          message: 'Goal updated successfully'
+        } as T;
+      }
+    }
+    
+    if (endpoint.startsWith('/goals/') && options.method === 'DELETE') {
+      // Delete goal
+      const goalId = endpoint.split('/')[2];
+      const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
+      const filtered = mockGoals.filter((g: any) => g._id !== goalId);
+      localStorage.setItem('mockGoals', JSON.stringify(filtered));
+      return {
+        success: true,
+        message: 'Goal deleted successfully'
+      } as T;
+    }
+    
     // Default mock response
     return {
       success: true,
