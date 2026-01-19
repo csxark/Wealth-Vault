@@ -1,11 +1,13 @@
 # Toast Notifications System - Implementation Guide
 
 ## Overview
+
 A custom-built toast notification system for Wealth Vault using React Context API, Tailwind CSS, and Lucide React icons. Zero external dependencies required!
 
 ## Features Implemented
 
 ### ✅ Core Features
+
 - **Auto-dismiss**: Toasts automatically disappear after 3 seconds (customizable)
 - **Manual close**: Users can click X button to dismiss
 - **Multiple toasts**: Stack vertically in top-right corner
@@ -15,6 +17,7 @@ A custom-built toast notification system for Wealth Vault using React Context AP
 - **TypeScript**: Full type safety
 
 ### ✅ Toast Types
+
 1. **Success** (Green) - For successful operations
 2. **Error** (Red) - For failures and errors
 3. **Info** (Blue) - For informational messages
@@ -23,15 +26,18 @@ A custom-built toast notification system for Wealth Vault using React Context AP
 ## Files Created
 
 ### 1. `/frontend/src/context/ToastContext.tsx`
+
 **Purpose:** Global state management for toasts
 
 **Exports:**
+
 - `ToastProvider` - Wrap your app with this
 - `useToast()` - Hook to access toast functions
 - `ToastType` - TypeScript type for toast types
 - `Toast` - TypeScript interface for toast objects
 
 **API:**
+
 ```typescript
 const { showToast, removeToast, toasts } = useToast();
 
@@ -43,22 +49,27 @@ removeToast(id: string);
 ```
 
 ### 2. `/frontend/src/components/Toast/Toast.tsx`
+
 **Purpose:** Individual toast component with icon, message, and close button
 
 **Features:**
+
 - Type-based icons (CheckCircle, AlertCircle, Info, AlertTriangle)
 - Type-based background colors
 - Close button with hover effect
 - ARIA accessibility attributes
 
 ### 3. `/frontend/src/components/Toast/ToastContainer.tsx`
+
 **Purpose:** Container that renders all active toasts
 
 **Location:** Fixed top-right corner (`top-4 right-4`)
 **Z-index:** 50 (appears above most content)
 
 ### 4. `/frontend/src/index.css` (Modified)
+
 **Added:** Custom slide-in animation
+
 ```css
 @keyframes slide-in {
   from {
@@ -73,13 +84,17 @@ removeToast(id: string);
 ```
 
 ### 5. `/frontend/src/main.tsx` (Modified)
+
 **Added:** ToastProvider wrapper around App
 
 ### 6. `/frontend/src/App.tsx` (Modified)
+
 **Added:** ToastContainer component
 
 ### 7. `/frontend/src/components/Dashboard/Dashboard.tsx` (Modified)
+
 **Integrated:** Toast notifications for:
+
 - Successful expense loading
 - Failed expense loading
 - Search results
@@ -89,37 +104,40 @@ removeToast(id: string);
 ## Usage Examples
 
 ### Basic Usage
+
 ```typescript
-import { useToast } from '../../context/ToastContext';
+import { useToast } from "../../context/ToastContext";
 
 function MyComponent() {
   const { showToast } = useToast();
-  
+
   const handleClick = () => {
-    showToast('Operation successful!', 'success');
+    showToast("Operation successful!", "success");
   };
-  
+
   return <button onClick={handleClick}>Click me</button>;
 }
 ```
 
 ### With Custom Duration
+
 ```typescript
 // Show for 5 seconds instead of default 3
-showToast('Loading...', 'info', 5000);
+showToast("Loading...", "info", 5000);
 
 // Show for 1 second (quick notification)
-showToast('Copied!', 'success', 1000);
+showToast("Copied!", "success", 1000);
 ```
 
 ### In Async Functions
+
 ```typescript
 const saveData = async () => {
   try {
     await api.save(data);
-    showToast('Data saved successfully!', 'success');
+    showToast("Data saved successfully!", "success");
   } catch (error) {
-    showToast('Failed to save data', 'error');
+    showToast("Failed to save data", "error");
   }
 };
 ```
@@ -127,48 +145,59 @@ const saveData = async () => {
 ### Dashboard Integration Examples
 
 #### 1. Expense Loading
+
 ```typescript
 try {
   const res = await expensesAPI.getAll();
   setExpenses(res.data.expenses || []);
-  showToast(`Loaded ${res.data.expenses.length} expenses successfully`, 'success', 2000);
+  showToast(
+    `Loaded ${res.data.expenses.length} expenses successfully`,
+    "success",
+    2000
+  );
 } catch (err) {
-  showToast('Failed to load expenses', 'error');
+  showToast("Failed to load expenses", "error");
 }
 ```
 
 #### 2. Search Results
+
 ```typescript
 try {
   const res = await expensesAPI.getAll({ search: searchTerm });
   const count = res.data.expenses?.length || 0;
   if (count > 0) {
-    showToast(`Found ${count} matching transactions`, 'info', 2000);
+    showToast(`Found ${count} matching transactions`, "info", 2000);
   }
 } catch (err) {
-  showToast('Search failed. Please try again.', 'error');
+  showToast("Search failed. Please try again.", "error");
 }
 ```
 
 #### 3. Expense Addition
+
 ```typescript
 const handleExpenseAdd = (expense) => {
   // ... save logic
-  showToast(`Expense of ₹${expense.amount} added successfully!`, 'success');
+  showToast(`Expense of ₹${expense.amount} added successfully!`, "success");
 };
 ```
 
 ## Styling Customization
 
 ### Toast Colors
+
 Edit `Toast.tsx` `getBackgroundColor()` function:
+
 ```typescript
 case 'success':
   return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
 ```
 
 ### Toast Position
+
 Edit `ToastContainer.tsx`:
+
 ```typescript
 // Top-right (current)
 <div className="fixed top-4 right-4 z-50">
@@ -181,7 +210,9 @@ Edit `ToastContainer.tsx`:
 ```
 
 ### Animation Speed
+
 Edit `index.css`:
+
 ```css
 .animate-slide-in {
   animation: slide-in 0.5s ease-out; /* Change 0.3s to 0.5s */
@@ -194,26 +225,27 @@ Edit `index.css`:
 
 Returns an object with:
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `showToast` | `(message: string, type: ToastType, duration?: number) => void` | Show a new toast |
-| `removeToast` | `(id: string) => void` | Remove a toast by ID |
-| `toasts` | `Toast[]` | Array of active toasts |
+| Property      | Type                                                            | Description            |
+| ------------- | --------------------------------------------------------------- | ---------------------- |
+| `showToast`   | `(message: string, type: ToastType, duration?: number) => void` | Show a new toast       |
+| `removeToast` | `(id: string) => void`                                          | Remove a toast by ID   |
+| `toasts`      | `Toast[]`                                                       | Array of active toasts |
 
 ### `Toast` Interface
 
 ```typescript
 interface Toast {
-  id: string;          // Unique identifier
-  message: string;     // Toast message
-  type: ToastType;     // 'success' | 'error' | 'info' | 'warning'
-  duration?: number;   // Duration in milliseconds
+  id: string; // Unique identifier
+  message: string; // Toast message
+  type: ToastType; // 'success' | 'error' | 'info' | 'warning'
+  duration?: number; // Duration in milliseconds
 }
 ```
 
 ## Testing
 
 ### Manual Testing Checklist
+
 - [ ] Toast appears when action triggered
 - [ ] Toast auto-dismisses after specified duration
 - [ ] Close button works
@@ -224,14 +256,15 @@ interface Toast {
 - [ ] Long messages don't break layout
 
 ### Automated Testing (Future)
+
 ```typescript
 // Example test
-it('should show success toast when expense is added', async () => {
+it("should show success toast when expense is added", async () => {
   const { getByText } = render(<Dashboard />);
-  
-  fireEvent.click(getByText('Add Expense'));
+
+  fireEvent.click(getByText("Add Expense"));
   // ... fill form and submit
-  
+
   await waitFor(() => {
     expect(getByText(/added successfully/i)).toBeInTheDocument();
   });
@@ -255,16 +288,19 @@ it('should show success toast when expense is added', async () => {
 ## Troubleshooting
 
 ### Toast doesn't appear
+
 1. Check if `ToastProvider` wraps your app in `main.tsx`
 2. Check if `ToastContainer` is in `App.tsx`
 3. Verify `useToast()` is called inside component (not top-level)
 
 ### Toast appears but no animation
+
 1. Check if animation is added to `index.css`
 2. Clear browser cache
 3. Verify Tailwind is configured properly
 
 ### Multiple toasts overlap
+
 1. Check `ToastContainer` has `flex-col` class
 2. Verify `mb-3` spacing in `Toast` component
 
@@ -280,12 +316,14 @@ it('should show success toast when expense is added', async () => {
 ## Dependencies
 
 ### Already in Project
+
 - ✅ React 18
 - ✅ TypeScript
 - ✅ Tailwind CSS
 - ✅ Lucide React (for icons)
 
 ### No New Dependencies Required
+
 - ❌ react-hot-toast
 - ❌ react-toastify
 - ❌ sonner
@@ -293,6 +331,7 @@ it('should show success toast when expense is added', async () => {
 ## Summary
 
 This custom toast system provides a lightweight, fully integrated notification solution for Wealth Vault with:
+
 - **Zero new dependencies**
 - **Full TypeScript support**
 - **Dark mode compatibility**
