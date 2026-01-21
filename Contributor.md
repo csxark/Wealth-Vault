@@ -176,8 +176,46 @@ The hybrid MongoDB/Supabase architecture provides flexibility, but could be enha
 ## Communication
 
 - **Issues**: Use GitHub Issues for bugs and feature requests
+  - We have templates for: Bug Reports, Feature Requests, Documentation Issues, and Security Concerns
+  - Choose the appropriate template when creating a new issue
+  - Fill out all required fields to help us understand and address your issue quickly
 - **Discussions**: Use GitHub Discussions for questions and ideas
 - **Pull Requests**: Follow the PR template and provide detailed descriptions
+  - Our PR template includes sections for description, testing steps, and checklists
+  - Link all related issues in your PR description
+  - Ensure all checklist items are completed before requesting review
 - **Code Reviews**: Be constructive and respectful
+
+## Using Issue and PR Templates
+
+### Creating an Issue
+
+When creating a new issue, you'll be presented with template options:
+
+1. **🐛 Bug Report** - For reporting bugs and unexpected behavior
+2. **💡 Feature Request** - For suggesting new features or enhancements
+3. **📚 Documentation Issue** - For reporting documentation problems
+4. **🔒 Security Vulnerability** - For security concerns (use private reporting for critical issues)
+
+Select the appropriate template and fill in all required fields. This helps maintainers understand and address your issue quickly.
+
+### Creating a Pull Request
+
+All pull requests must use the PR template, which includes:
+
+- Clear description of changes
+- Related issue links
+- Type of change checkboxes
+- Implementation details
+- Testing steps and evidence
+- Comprehensive checklist covering code quality, documentation, testing, and security
+
+**Important PR Guidelines:**
+
+- Mark all applicable checkboxes before requesting review
+- Include screenshots/demos for UI changes
+- Describe testing performed and environments tested
+- Note any breaking changes or deployment considerations
+- Tag relevant reviewers if you need specific feedback
 
 Thank you for contributing to Wealth Vault! Your efforts help users achieve better financial wellness.</content>
