@@ -9,7 +9,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
-import { generalLimiter, aiLimiter } from "./middleware/rateLimiter.js";
+import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
+import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
+import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 // Import routes
 import authRoutes from "./routes/auth.js";
@@ -82,6 +84,10 @@ app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// Security: Sanitize user input to prevent XSS and NoSQL injection
+app.use(sanitizeMongo);
+app.use(sanitizeInput);
+
 // Additional CORS headers middleware
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", req.headers.origin);
@@ -123,11 +129,11 @@ app.use(
 
 // Routes
 app.use("/api/auth", authRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/expenses", expenseRoutes);
-app.use("/api/goals", goalRoutes);
-app.use("/api/categories", categoryRoutes);
-app.use("/api/analytics", analyticsRoutes);
+app.use("/api/users", userLimiter, userRoutes);
+app.use("/api/expenses", userLimiter, expenseRoutes);
+app.use("/api/goals", userLimiter, goalRoutes);
+app.use("/api/categories", userLimiter, categoryRoutes);
+app.use("/api/analytics", userLimiter, analyticsRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 
 // Health check endpoint
@@ -139,22 +145,11 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    error: "Something went wrong!",
-    message:
-      process.env.NODE_ENV === "development"
-        ? err.message
-        : "Internal server error",
-  });
-});
+// 404 handler for undefined routes (must be before error handler)
+app.use(notFound);
 
-// 404 handler
-app.use("*", (req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
+// Centralized error handling middleware (must be last)
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
