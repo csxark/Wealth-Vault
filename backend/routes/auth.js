@@ -8,6 +8,9 @@ import { users, categories } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { getDefaultCategories } from "../utils/defaults.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
+import { validatePasswordStrength, isCommonPassword } from "../utils/passwordValidator.js";
+import { asyncHandler } from "../middleware/errorHandler.js";
+import { ValidationError, ConflictError, UnauthorizedError, NotFoundError } from "../utils/errors.js";
 
 const router = express.Router();
 
@@ -65,42 +68,27 @@ router.post(
       .withMessage("Please provide a valid email")
       .normalizeEmail(),
   ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid email format",
-          errors: errors.array(),
-        });
-      }
-
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({
-          success: false,
-          message: "Email is required",
-        });
-      }
-
-      const [existingUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email));
-
-      return res.json({
-        success: true,
-        exists: !!existingUser,
-      });
-    } catch (error) {
-      console.error("Email check error:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Server error while checking email",
-      });
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Invalid email format", errors.array());
     }
-  }
+
+    const { email } = req.body;
+    if (!email) {
+      throw new ValidationError("Email is required");
+    }
+
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+
+    return res.json({
+      success: true,
+      exists: !!existingUser,
+    });
+  })
 );
 
 /**
@@ -213,6 +201,25 @@ router.post(
         return res.status(400).json({
           success: false,
           message: "User with this email already exists",
+        });
+      }
+
+      // Check if password is common
+      if (isCommonPassword(password)) {
+        return res.status(400).json({
+          success: false,
+          message: "This password is too common. Please choose a more secure password.",
+        });
+      }
+
+      // Validate password strength
+      const passwordValidation = validatePasswordStrength(password, [email, firstName, lastName]);
+      if (!passwordValidation.success) {
+        return res.status(400).json({
+          success: false,
+          message: passwordValidation.message,
+          feedback: passwordValidation.feedback,
+          score: passwordValidation.score,
         });
       }
 
@@ -526,6 +533,33 @@ router.put(
         return res
           .status(400)
           .json({ success: false, message: "Current password is incorrect" });
+      }
+
+      // Check if new password is the same as current password
+      if (currentPassword === newPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "New password must be different from current password",
+        });
+      }
+
+      // Check if password is common
+      if (isCommonPassword(newPassword)) {
+        return res.status(400).json({
+          success: false,
+          message: "This password is too common. Please choose a more secure password.",
+        });
+      }
+
+      // Validate new password strength
+      const passwordValidation = validatePasswordStrength(newPassword, [user.email, user.firstName, user.lastName]);
+      if (!passwordValidation.success) {
+        return res.status(400).json({
+          success: false,
+          message: passwordValidation.message,
+          feedback: passwordValidation.feedback,
+          score: passwordValidation.score,
+        });
       }
 
       const salt = await bcrypt.genSalt(12);
