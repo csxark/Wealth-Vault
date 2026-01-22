@@ -10,25 +10,18 @@ import {
   TrendingUp,
   Activity,
   IndianRupee,
-  AlertCircle,
-} from "lucide-react";
-
-import { SafeSpendZone } from "./SafeSpendZone";
-import { CategoryDetails } from "./CategoryDetails";
-import { TransactionSearch } from "./TransactionSearch";
-import AddExpenseButton from "./AddExpenseButton";
-import { DashboardSkeleton } from "./DashboardSkeleton";
-import SpendingAnalytics from "./SpendingAnalytics";
-
-import type {
-  SpendingData,
-  Expense,
-  CategoryDetails as CategoryDetailsType,
-} from "../../types";
-
-import { expensesAPI } from "../../services/api";
-import { useToast } from "../../context/ToastContext";
-import CurrencyConverter from "../CurrencyConverter.jsx";
+  AlertCircle
+} from 'lucide-react';
+import { SafeSpendZone } from './SafeSpendZone';
+import { CategoryDetails } from './CategoryDetails';
+import { TransactionSearch } from './TransactionSearch';
+import AddExpenseButton from './AddExpenseButton';
+import { DashboardSkeleton } from './DashboardSkeleton';
+import SpendingAnalytics from './SpendingAnalytics';
+import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
+import { expensesAPI } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
+import CurrencyConverter from '../CurrencyConvert.jsx';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -201,44 +194,49 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     };
 
     fetchExpenses();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentMade, timeRange]);
+  }, [paymentMade, showToast]);
 
-  // Trend data
-  const trendData = useMemo(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-
-    const dailyTotals = Array(daysInMonth).fill(0);
-
-    expenses.forEach((exp) => {
-      const d = new Date(exp.date);
-      if (d >= monthStart && d.getMonth() === now.getMonth()) {
-        dailyTotals[d.getDate() - 1] += Math.abs(exp.amount);
-      }
-    });
-
-    return {
-      labels: Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString()),
-      datasets: [
-        {
-          label: "Daily Spend",
-          data: dailyTotals,
-          fill: true,
-          borderColor: "#06b6d4",
-          backgroundColor: "rgba(6, 182, 212, 0.12)",
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-          pointHoverRadius: 6,
-          pointBackgroundColor: "#06b6d4",
-          pointBorderColor: "#fff",
-          pointBorderWidth: 2,
-        },
-      ],
-    };
+  // Initialize filtered expenses when expenses change
+  useEffect(() => {
+    setFilteredExpenses(expenses);
   }, [expenses]);
+
+  // --- Analytics ---
+  // 1. Spending trend (by day for current month)
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dailyTotals = Array(daysInMonth).fill(0);
+  expenses.forEach(exp => {
+    const d = new Date(exp.date);
+    if (d >= monthStart && d.getMonth() === now.getMonth()) {
+      dailyTotals[d.getDate() - 1] += Math.abs(exp.amount);
+    }
+  });
+  const trendData = {
+    labels: Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString()),
+    datasets: [
+      {
+        label: 'Daily Spend',
+        data: dailyTotals,
+        fill: true,
+        borderColor: '#06b6d4',
+        backgroundColor: 'rgba(6, 182, 212, 0.1)',
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 6,
+        pointBackgroundColor: '#06b6d4',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+      },
+    ],
+  };
+
+  // 2. Top 5 expenses overall
+  const top5Expenses = [...expenses]
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 5);
 
   // Payment methods
   const paymentMethodMap = useMemo(() => {
@@ -456,36 +454,37 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* OVERVIEW */}
-            {activeTab === "overview" && (
-              <div className="space-y-6 animate-fadeIn">
-                {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {stats.map((stat, index) => {
-                    const Icon = stat.icon;
-                    return (
-                      <div
-                        key={index}
-                        className="group bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg hover:shadow-2xl border border-white/20 dark:border-slate-800/50 p-6 sm:p-8 transition-all duration-300 hover:scale-[1.02]"
-                      >
-                        <div className="flex items-start justify-between mb-4">
-                          <div
-                            className={`p-3 rounded-xl bg-gradient-to-br ${stat.bgGradient} shadow-lg`}
-                          >
-                            <Icon className="h-6 w-6 text-white" />
+          <>
+            {/* Tab Content */}
+            <div className="space-y-6">
+
+              {/* Overview Tab */}
+              {activeTab === 'overview' && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Hero Stats */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {stats.map((stat, index) => {
+                      const Icon = stat.icon;
+                      return (
+                        <div
+                          key={index}
+                          className="group bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg hover:shadow-2xl border border-white/20 dark:border-slate-800/50 p-6 sm:p-8 transition-all duration-300 hover:scale-[1.02]"
+                        >
+                          <div className="flex items-start justify-between mb-4">
+                            <div className={`p-3 rounded-xl bg-gradient-to-br ${stat.bgGradient} shadow-lg`}>
+                              <Icon className="h-6 w-6 text-white" />
+                            </div>
                           </div>
+                          <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            {stat.name}
+                          </p>
+                          <p className="text-3xl sm:text-4xl font-bold text-slate-900 dark:text-white">
+                            {stat.value}
+                          </p>
                         </div>
-                        <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">
-                          {stat.name}
-                        </p>
-                        <p className="text-3xl sm:text-4xl font-bold text-slate-900 dark:text-white">
-                          {stat.value}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
 
                 {/* Safe Spend + Trend */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -630,16 +629,16 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
             {/* ANALYTICS */}
             {activeTab === "analytics" && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-slate-800/50 p-6 sm:p-8 lg:col-span-2">
-                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-                      Monthly Spending Trend
-                    </h3>
-                    <div className="h-80">
-                      <Line data={trendData} options={{ maintainAspectRatio: false }} />
-                    </div>
+                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-slate-800/50 p-6 sm:p-8">
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+                    Monthly Spending Trend
+                  </h3>
+                  <div className="h-80">
+                    <Line data={trendData} options={{ maintainAspectRatio: false }} />
                   </div>
+                </div>
 
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-slate-800/50 p-6 sm:p-8">
                     <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
                       Payment Methods
@@ -651,29 +650,36 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
 
                   <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-slate-800/50 p-6 sm:p-8">
                     <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-                      Category Summary
+                      Top 5 Expenses
                     </h3>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      {categoryDetails.map((cat) => (
-                        <CategoryDetails
-                          key={cat.category}
-                          {...cat}
-                          formatAmount={formatAmount}
-                        />
+                    <div className="space-y-3">
+                      {top5Expenses.map((exp, idx) => (
+                        <div key={exp._id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <span className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 text-sm font-bold">
+                              {idx + 1}
+                            </span>
+                            <div>
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">
+                                {exp.description}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {new Date(exp.date).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {formatAmount(Math.abs(exp.amount))}
+                          </p>
+                        </div>
                       ))}
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {/* CATEGORIES */}
-            {activeTab === "categories" && (
-              <div className="space-y-6 animate-fadeIn">
                 <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-slate-800/50 p-6 sm:p-8">
                   <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-                    Spending by Category
+                    Category Breakdown
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {categoryDetails.map((cat) => (
@@ -687,7 +693,28 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
                 </div>
               </div>
             )}
-          </div>
+
+              {/* Categories Tab */}
+              {activeTab === 'categories' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-slate-800/50 p-6 sm:p-8">
+                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+                      Spending by Category
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {categoryDetails.map((cat) => (
+                        <CategoryDetails
+                          key={cat.category}
+                          {...cat}
+                          formatAmount={formatAmount}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>
