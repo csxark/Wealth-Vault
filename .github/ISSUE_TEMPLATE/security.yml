@@ -8,16 +8,10 @@ body:
   - type: markdown
     attributes:
       value: |
-        ⚠️ **IMPORTANT: For serious security vulnerabilities, please DO NOT create a public issue.**
-
-        Instead, please report it privately to the maintainers via email or GitHub Security Advisories.
-
         Use this template only for:
         - Security-related feature requests (e.g., "Add 2FA support")
         - General security improvements
         - Non-critical security concerns
-
-        For critical vulnerabilities, follow responsible disclosure practices.
 
   - type: dropdown
     id: severity

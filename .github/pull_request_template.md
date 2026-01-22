@@ -2,13 +2,7 @@
 
 <!-- Provide a clear and concise description of what this PR does -->
 
-## 🔗 Related Issue(s)
-
-<!-- Link to the issue(s) this PR addresses -->
-
-Closes #
 Fixes #
-Relates to #
 
 ## 🎯 Type of Change
 
@@ -16,7 +10,6 @@ Relates to #
 
 - [ ] 🐛 Bug fix (non-breaking change which fixes an issue)
 - [ ] ✨ New feature (non-breaking change which adds functionality)
-- [ ] 💥 Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] 📚 Documentation update
 - [ ] 🎨 UI/UX improvement
 - [ ] ♻️ Code refactoring (no functional changes)
@@ -98,52 +91,3 @@ Relates to #
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] I have tested on multiple browsers/devices (if UI changes)
-
-### Dependencies
-
-- [ ] I have checked that all new dependencies are necessary
-- [ ] All dependencies are free and open-source (for open-source projects)
-- [ ] I have updated package.json and package-lock.json (if dependencies changed)
-
-### Security & Performance
-
-- [ ] My changes do not introduce any security vulnerabilities
-- [ ] I have considered the performance impact of my changes
-- [ ] I have validated all user inputs (if applicable)
-
-### Git & Version Control
-
-- [ ] My commits are atomic and have clear, descriptive messages
-- [ ] I have rebased my branch on the latest main/develop branch
-- [ ] There are no merge conflicts
-- [ ] I have not committed any sensitive information (keys, passwords, etc.)
-
-## 🚀 Deployment Notes
-
-<!-- Any special considerations for deployment? Environment variables, migrations, etc. -->
-
-## 📊 Performance Impact
-
-<!-- If applicable, describe any performance improvements or concerns -->
-
-## ⚠️ Breaking Changes
-
-<!-- If this introduces breaking changes, describe them and the migration path -->
-
-## 🤔 Additional Context
-
-<!-- Add any other context, concerns, or questions about the PR here -->
-
-## 👥 Reviewers
-
-<!-- Tag specific people if you want their review -->
-
-@maintainer1 @maintainer2
-
----
-
-**By submitting this PR, I confirm that:**
-
-- [ ] I have read and agree to the [Code of Conduct](../CODE_OF_CONDUCT.md)
-- [ ] I have read the [Contributing Guidelines](../Contributor.md)
-- [ ] I am willing to address any feedback from reviewers

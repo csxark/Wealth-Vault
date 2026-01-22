@@ -7,7 +7,6 @@ import {
   Activity,
   AlertCircle,
   RefreshCw,
-  BarChart3
   BarChart3,
   Receipt,
   Grid3x3
@@ -22,7 +21,7 @@ import SpendingAnalytics from './SpendingAnalytics';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
-import CurrencyConverter from '../CurrencyConverter.jsx';
+import { CurrencyConverter } from '../CurrencyConvert';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -156,37 +155,8 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
 
   // Initialize filtered expenses when expenses change
   useEffect(() => {
-    const searchExpenses = async () => {
-      if (searchTerm.trim() === '') {
-        setSearchResults([]);
-        setSearchError(null);
-        return;
-      }
-      
-      setIsSearching(true);
-      setSearchError(null);
-      
-      try {
-        const res = await expensesAPI.getAll({ search: searchTerm, limit: 50 });
-        setSearchResults(res.data.expenses || []);
-        const count = res.data.expenses?.length || 0;
-        if (count > 0) {
-          showToast(`Found ${count} matching transaction${count !== 1 ? 's' : ''}`, 'info', 2000);
-        }
-      } catch (err) {
-        console.error('Search failed:', err);
-        setSearchError('Search failed. Please try again.');
-        showToast('Search failed. Please try again.', 'error');
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    };
-
-    // Debounce search to avoid too many API calls
-    const timeoutId = setTimeout(searchExpenses, 300);
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm, showToast]);
+    setFilteredExpenses(expenses);
+  }, [expenses]);
 
   // --- Analytics ---
   // 1. Spending trend (by day for current month)
@@ -481,11 +451,10 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
               />
             </div>
           </div>
-        </div>
-        </div>
-      </div>
-      {/* Responsive Category Breakdown */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
+        ) : (
+          <div className="space-y-6">
+            {/* Responsive Category Breakdown */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
         <div className="flex items-center justify-between mb-6">
           <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400">
             Category Breakdown
@@ -509,22 +478,18 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
         </div>
       </div>
       
-      {/* Quick Analytics Preview */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8 mt-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400">
-            Quick Insights
-          </h3>
-        </div>
-        <SpendingAnalytics expenses={expenses.slice(0, 50)} formatAmount={formatAmount} />
-      </div>
-      </>
-      )}
-        ) : (
-          <>
+            {/* Quick Analytics Preview */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="dashboard-subheading text-cyan-700 dark:text-cyan-400">
+                  Quick Insights
+                </h3>
+              </div>
+              <SpendingAnalytics expenses={expenses.slice(0, 50)} formatAmount={formatAmount} />
+            </div>
+
             {/* Tab Content */}
             <div className="space-y-6">
-
               {/* Overview Tab */}
               {activeTab === 'overview' && (
                 <div className="space-y-6 animate-fadeIn">
@@ -808,7 +773,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
                 </div>
               )}
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
