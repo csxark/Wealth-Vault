@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { Sun, Moon, Vault, ArrowRight, MoreHorizontal, ArrowUpRight, TrendingDown, ShoppingBag, Coffee, Home as HomeIcon } from "lucide-react";
 import AOS from "aos";
 import "aos/dist/aos.css";
 import FAQSection from "./Faq";
+import { useTheme } from '../../hooks/useTheme';
 
 const sectionBg =
   "relative overflow-hidden rounded-3xl border border-white/10 dark:border-slate-800 " +
@@ -12,14 +13,9 @@ const sectionBg =
   "linear-gradient(180deg,#020617,#020617)] backdrop-blur-xl";
 
 const Home: React.FC = () => {
-  const [theme, setTheme] = useState<"light" | "dark">(
-    localStorage.getItem("theme") === "dark" ? "dark" : "light"
-  );
+  const { isDark, toggleTheme } = useTheme();
 
   useEffect(() => {
-    document.documentElement.className = theme === "dark" ? "dark" : "";
-    localStorage.setItem("theme", theme);
-
     AOS.init({
       duration: 900,
       easing: "ease-out-cubic",
@@ -27,7 +23,7 @@ const Home: React.FC = () => {
       mirror: true,
       offset: 120,
     });
-  }, [theme]);
+  }, []);
 
   return (
     <div className="min-h-screen transition-colors bg-white dark:bg-slate-950 text-black dark:text-white relative overflow-hidden font-sans">
@@ -51,10 +47,10 @@ const Home: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            onClick={toggleTheme}
             className="p-2 rounded-full bg-black/10 dark:bg-white/10 hover:bg-emerald-500/20 transition"
           >
-            {theme === "light" ? <Moon className="text-black" /> : <Sun className="text-white" />}
+            {isDark ? <Sun className="text-white" /> : <Moon className="text-black" />}
           </button>
         </div>
       </nav>
