@@ -6,6 +6,7 @@
 ## 📊 Badges
 
 ![Visitors](https://visitor-badge.glitch.me/badge?page_id=csxark.Wealth-Vault)
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
 ---
 
