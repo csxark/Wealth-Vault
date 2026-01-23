@@ -136,7 +136,111 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       } as T;
     }
     
-    // Handle goals endpoints in dev mode
+    // Handle analytics endpoints in dev mode
+    if (endpoint.startsWith('/analytics/')) {
+      if (endpoint === '/analytics/spending-summary') {
+        const mockCategories = [
+          { categoryId: '1', categoryName: 'Food & Dining', categoryColor: '#ef4444', categoryIcon: 'utensils', total: 15000, count: 25, avgAmount: 600, percentage: 35 },
+          { categoryId: '2', categoryName: 'Transportation', categoryColor: '#3b82f6', categoryIcon: 'car', total: 8000, count: 15, avgAmount: 533, percentage: 18.6 },
+          { categoryId: '3', categoryName: 'Shopping', categoryColor: '#10b981', categoryIcon: 'shopping-bag', total: 12000, count: 20, avgAmount: 600, percentage: 27.9 },
+          { categoryId: '4', categoryName: 'Entertainment', categoryColor: '#f59e0b', categoryIcon: 'film', total: 5000, count: 10, avgAmount: 500, percentage: 11.6 },
+          { categoryId: '5', categoryName: 'Bills & Utilities', categoryColor: '#8b5cf6', categoryIcon: 'receipt', total: 3000, count: 5, avgAmount: 600, percentage: 7 }
+        ];
+
+        const mockMonthlyTrend = [
+          { month: 'Aug 24', total: 35000, count: 65, date: '2024-08-01T00:00:00.000Z' },
+          { month: 'Sep 24', total: 42000, count: 78, date: '2024-09-01T00:00:00.000Z' },
+          { month: 'Oct 24', total: 38000, count: 72, date: '2024-10-01T00:00:00.000Z' },
+          { month: 'Nov 24', total: 45000, count: 85, date: '2024-11-01T00:00:00.000Z' },
+          { month: 'Dec 24', total: 40000, count: 75, date: '2024-12-01T00:00:00.000Z' },
+          { month: 'Jan 25', total: 43000, count: 80, date: '2025-01-01T00:00:00.000Z' }
+        ];
+
+        return {
+          success: true,
+          data: {
+            period: { start: '2025-01-01T00:00:00.000Z', end: '2025-01-31T23:59:59.999Z', type: 'month' },
+            summary: {
+              totalAmount: 43000,
+              totalCount: 75,
+              avgTransaction: 573,
+              maxTransaction: 2500,
+              minTransaction: 50
+            },
+            categoryBreakdown: mockCategories,
+            monthlyTrend: mockMonthlyTrend,
+            topExpenses: [
+              { id: '1', amount: 2500, description: 'Grocery Shopping', date: '2025-01-20T00:00:00.000Z', category: { name: 'Food & Dining', color: '#ef4444' } },
+              { id: '2', amount: 1800, description: 'Restaurant Dinner', date: '2025-01-18T00:00:00.000Z', category: { name: 'Food & Dining', color: '#ef4444' } },
+              { id: '3', amount: 1500, description: 'Fuel', date: '2025-01-15T00:00:00.000Z', category: { name: 'Transportation', color: '#3b82f6' } }
+            ],
+            paymentMethods: [
+              { method: 'card', total: 25000, count: 45, percentage: 58.1 },
+              { method: 'upi', total: 15000, count: 25, percentage: 34.9 },
+              { method: 'cash', total: 3000, count: 5, percentage: 7 }
+            ]
+          }
+        } as T;
+      }
+
+      if (endpoint === '/analytics/spending-patterns') {
+        const mockDailyPattern = [];
+        const now = new Date();
+        for (let i = 29; i >= 0; i--) {
+          const date = new Date(now);
+          date.setDate(date.getDate() - i);
+          mockDailyPattern.push({
+            date: date.toISOString().split('T')[0],
+            total: Math.floor(Math.random() * 3000) + 500,
+            count: Math.floor(Math.random() * 5) + 1,
+            dayOfWeek: date.getDay(),
+            dayName: date.toLocaleDateString('en-US', { weekday: 'short' })
+          });
+        }
+
+        return {
+          success: true,
+          data: {
+            period: {
+              current: { start: '2025-01-01T00:00:00.000Z', end: '2025-01-31T23:59:59.999Z' },
+              previous: { start: '2024-12-01T00:00:00.000Z', end: '2024-12-31T23:59:59.999Z' },
+              type: 'month'
+            },
+            comparison: {
+              current: { totalAmount: 43000, totalCount: 75, avgTransaction: 573 },
+              previous: { totalAmount: 40000, totalCount: 70, avgTransaction: 571 },
+              changes: {
+                totalAmount: { value: 7.5, trend: 'up' },
+                totalCount: { value: 7.1, trend: 'up' },
+                avgTransaction: { value: 0.4, trend: 'up' }
+              }
+            },
+            dailyPattern: mockDailyPattern,
+            insights: {
+              highestSpendingDay: mockDailyPattern.reduce((max, day) => day.total > max.total ? day : max, mockDailyPattern[0]),
+              averageDailySpending: mockDailyPattern.reduce((sum, day) => sum + day.total, 0) / mockDailyPattern.length,
+              spendingFrequency: mockDailyPattern.filter(day => day.count > 0).length
+            }
+          }
+        } as T;
+      }
+
+      if (endpoint === '/analytics/export') {
+        // Mock export response
+        return {
+          success: true,
+          data: {
+            exportInfo: {
+              startDate: '2024-10-01T00:00:00.000Z',
+              endDate: '2025-01-23T23:59:59.999Z',
+              totalRecords: 150,
+              exportedAt: new Date().toISOString()
+            },
+            expenses: generateMockExpenses(150)
+          }
+        } as T;
+      }
+    }
     if (endpoint === '/goals' && options.method === 'POST') {
       // Create new goal
       const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
@@ -625,29 +729,119 @@ export const analyticsAPI = {
     });
   },
 
-  // Get category trends
-  getCategoryTrends: async (params?: {
-    categoryId?: string;
-    months?: number;
+  // Get spending patterns analysis
+  getSpendingPatterns: async (params?: {
+    period?: 'week' | 'month' | 'quarter' | 'year';
   }) => {
     return apiRequest<{
       success: boolean;
       data: {
-        trends: Array<{
-          month: string;
+        period: {
+          current: { start: string; end: string };
+          previous: { start: string; end: string };
+          type: string;
+        };
+        comparison: {
+          current: {
+            totalAmount: number;
+            totalCount: number;
+            avgTransaction: number;
+          };
+          previous: {
+            totalAmount: number;
+            totalCount: number;
+            avgTransaction: number;
+          };
+          changes: {
+            totalAmount: { value: number; trend: 'up' | 'down' | 'stable' };
+            totalCount: { value: number; trend: 'up' | 'down' | 'stable' };
+            avgTransaction: { value: number; trend: 'up' | 'down' | 'stable' };
+          };
+        };
+        dailyPattern: Array<{
           date: string;
-          categories: Array<{
-            categoryId: string;
-            categoryName: string;
+          total: number;
+          count: number;
+          dayOfWeek: number;
+          dayName: string;
+        }>;
+        insights: {
+          highestSpendingDay: {
+            date: string;
             total: number;
             count: number;
-          }>;
-        }>;
+            dayName: string;
+          };
+          averageDailySpending: number;
+          spendingFrequency: number;
+        };
       };
-    }>('/analytics/category-trends', {
+    }>('/analytics/spending-patterns', {
       method: 'GET',
       params,
     });
+  },
+
+  // Export analytics data
+  exportData: async (params?: {
+    format?: 'csv' | 'json';
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const token = localStorage.getItem('authToken');
+    
+    // Handle dev mode
+    if (token === 'dev-mock-token-123') {
+      const mockData = generateMockExpenses(100);
+      
+      if (params?.format === 'csv') {
+        const csvHeader = 'Date,Amount,Currency,Description,Category,Payment Method\n';
+        const csvRows = mockData.map(expense => 
+          `${expense.date.split('T')[0]},${expense.amount},INR,"${expense.description}","${expense.category}","${expense.paymentMethod}"`
+        ).join('\n');
+        
+        const csvContent = csvHeader + csvRows;
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        
+        // Create a mock response that mimics the fetch API
+        return {
+          blob: () => Promise.resolve(blob),
+          json: () => Promise.resolve({ data: mockData })
+        } as any;
+      } else {
+        const jsonData = {
+          exportInfo: {
+            startDate: '2024-10-01T00:00:00.000Z',
+            endDate: new Date().toISOString(),
+            totalRecords: mockData.length,
+            exportedAt: new Date().toISOString()
+          },
+          expenses: mockData
+        };
+        
+        return {
+          blob: () => Promise.resolve(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' })),
+          json: () => Promise.resolve(jsonData)
+        } as any;
+      }
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params?.format) queryParams.append('format', params.format);
+    if (params?.startDate) queryParams.append('startDate', params.startDate);
+    if (params?.endDate) queryParams.append('endDate', params.endDate);
+
+    const response = await fetch(`${API_BASE_URL}/analytics/export?${queryParams}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+
+    return response;
   },
 };
 
