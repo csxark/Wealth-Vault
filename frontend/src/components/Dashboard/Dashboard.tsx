@@ -22,6 +22,7 @@ import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } fr
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import CurrencyConverter from '../CurrencyConvert.jsx';
+import { useTheme } from '../../hooks/useTheme';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -31,16 +32,6 @@ type TabType = "overview" | "transactions" | "analytics" | "categories";
 
 const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const { showToast } = useToast();
-
-  // Theme
-  const [theme] = useState<"light" | "dark">(
-    localStorage.getItem("theme") === "dark" ? "dark" : "light"
-  );
-
-  useEffect(() => {
-    document.documentElement.className = theme === "dark" ? "dark" : "";
-    localStorage.setItem("theme", theme);
-  }, [theme]);
 
   // Tabs + Filters
   const [activeTab, setActiveTab] = useState<TabType>("overview");
