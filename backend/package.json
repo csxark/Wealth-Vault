@@ -13,7 +13,8 @@
     "db:studio": "drizzle-kit studio",
     "db:migrate": "node -e 'import(\"./config/migrate.js\").then(m => m.migrate())'",
     "db:fix-schema": "node db/migrations/fix-schema-consistency.js",
-    "db:validate": "node -e 'import(\"./utils/schemaValidation.js\").then(v => console.log(\"Schema validation loaded\"))'"
+    "db:validate": "node -e 'import(\"./utils/schemaValidation.js\").then(v => console.log(\"Schema validation loaded\"))",
+    "tokens:cleanup": "node -e 'import(\"./jobs/tokenCleanup.js\").then(j => j.runCleanup())'"
   },
   "dependencies": {
     "@google/genai": "^1.35.0",

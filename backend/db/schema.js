@@ -110,11 +110,41 @@ export const goals = pgTable('goals', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Device Sessions Table for token management
+export const deviceSessions = pgTable('device_sessions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    deviceId: text('device_id').notNull(),
+    deviceName: text('device_name'),
+    deviceType: text('device_type').default('web'), // web, mobile, tablet
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    refreshToken: text('refresh_token').notNull().unique(),
+    accessToken: text('access_token'),
+    isActive: boolean('is_active').default(true),
+    lastActivity: timestamp('last_activity').defaultNow(),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Token Blacklist Table
+export const tokenBlacklist = pgTable('token_blacklist', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    token: text('token').notNull().unique(),
+    tokenType: text('token_type').notNull(), // access, refresh
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    reason: text('reason').default('logout'), // logout, password_change, security
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
     expenses: many(expenses),
     goals: many(goals),
+    deviceSessions: many(deviceSessions),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -152,6 +182,20 @@ export const goalsRelations = relations(goals, ({ one }) => ({
     }),
     category: one(categories, {
         fields: [goals.categoryId],
-        references: [categories.id],
+        references: [goals.id],
+    }),
+}));
+
+export const deviceSessionsRelations = relations(deviceSessions, ({ one }) => ({
+    user: one(users, {
+        fields: [deviceSessions.userId],
+        references: [users.id],
+    }),
+}));
+
+export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
+    user: one(users, {
+        fields: [tokenBlacklist.userId],
+        references: [users.id],
     }),
 }));
