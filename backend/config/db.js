@@ -7,15 +7,37 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const connectionString = process.env.DATABASE_URL;
-// Fallback for development if not set, though it should be set
-const defaultUrl = 'postgres://postgres:postgres@localhost:5432/wealth-vault';
+let dbWarningShown = false;
 
-if (!connectionString) {
-    console.warn('DATABASE_URL is not defined, using default local URL');
+if (!connectionString && !dbWarningShown) {
+    console.warn('⚠️ DATABASE_URL not found, using default local connection');
+    console.log('📝 Please set DATABASE_URL in your .env file for production');
+    dbWarningShown = true;
 }
 
-// Disable prefetch as it is not supported for "Transaction" pool mode in Supabase
-const client = postgres(connectionString || defaultUrl, { prepare: false });
+// Use fallback for development
+const dbUrl = connectionString || 'postgres://postgres:password@localhost:5432/wealth_vault';
+
+// Test database connection (non-blocking, one time)
+let connectionTested = false;
+const testConnection = async () => {
+    if (connectionTested) return;
+    connectionTested = true;
+    
+    try {
+        const testClient = postgres(dbUrl, { prepare: false });
+        await testClient`SELECT 1`;
+        console.log('✅ Database connection successful');
+        await testClient.end();
+    } catch (error) {
+        console.warn('⚠️ Database connection failed - Server will continue but database operations may fail');
+    }
+};
+
+// Test connection without blocking startup
+setTimeout(testConnection, 1000);
+
+const client = postgres(dbUrl, { prepare: false });
 const db = drizzle(client, { schema });
 
 export default db;
