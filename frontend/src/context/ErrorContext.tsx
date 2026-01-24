@@ -51,7 +51,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({ children }) => {
     setTimeout(() => {
       clearError(error.id);
     }, 5000);
-  }, []);
+  }, [clearError]);
 
   const clearError = useCallback((id: string) => {
     setErrors((prev) => prev.filter((err) => err.id !== id));

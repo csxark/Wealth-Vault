@@ -4,7 +4,7 @@ import { healthAPI } from '../services/api';
 const ConnectionTest: React.FC = () => {
   const [status, setStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
-  const [details, setDetails] = useState<Record<string, any> | null>(null);
+  const [details, setDetails] = useState<Record<string, unknown> | null>(null);
 
   const testConnection = async () => {
     setStatus('testing');
@@ -17,7 +17,7 @@ const ConnectionTest: React.FC = () => {
       setMessage('✅ Backend connection successful!');
       setDetails(response);
     } catch (error: unknown) {
-      const err = error as Error & { status?: number; details?: any };
+      const err = error as Error & { status?: number; details?: unknown };
       setStatus('error');
       setMessage('❌ Backend connection failed');
       setDetails({

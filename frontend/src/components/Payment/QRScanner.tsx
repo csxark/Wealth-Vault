@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import QrScanner from 'qr-scanner';
 
 interface QRScannerProps {
@@ -67,9 +67,9 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, onScanError }) => 
         scannerRef.current = null;
       }
     };
-  }, [hasPermission, onScanError]);
+  }, [hasPermission, onScanError, handleQRCode]);
 
-  const handleQRCode = (decodedText: string) => {
+  const handleQRCode = useCallback((decodedText: string) => {
     // Parse UPI QR code (format: upi://pay?pa=...&pn=...&am=...&tn=...)
     try {
       if (!decodedText.startsWith('upi://pay?')) {
@@ -93,7 +93,7 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, onScanError }) => 
         onScanError((error as Error).message);
       }
     }
-  };
+  }, [onScanSuccess, onScanError]);
 
   if (hasPermission === null) {
     // Permission not requested yet

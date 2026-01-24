@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   User as UserIcon, 
   Phone, 
@@ -64,9 +64,9 @@ export const Profile: React.FC = () => {
     if (user) {
       loadProfile();
     }
-  }, [user]);
+  }, [user, loadProfile]);
 
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     if (!user) return;
 
     setLoading(true);
@@ -97,7 +97,7 @@ export const Profile: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   const handleSave = async () => {
     if (!user) return;

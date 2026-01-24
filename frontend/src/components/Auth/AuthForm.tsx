@@ -34,7 +34,7 @@ interface ButtonProps {
   children: React.ReactNode;
   className?: string;
   disabled?: boolean;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 const Button = ({ children, className, disabled, ...props }: ButtonProps) => (

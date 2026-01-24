@@ -105,7 +105,7 @@ const generateMockExpenses = (count: number = 20): Expense[] => {
 };
 
 // Generic API request function with enhanced error handling
-const apiRequest = async <T>(endpoint: string, options: Record<string, any> = {}): Promise<T> => {
+const apiRequest = async <T>(endpoint: string, options: Record<string, unknown> = {}): Promise<T> => {
   // Check if we're in dev mode
   const token = localStorage.getItem('authToken');
   if (token === 'dev-mock-token-123') {
@@ -341,8 +341,8 @@ const apiRequest = async <T>(endpoint: string, options: Record<string, any> = {}
       // Create a more informative error object
       const enhancedError = new Error(errorMessage) as Error & {
         status?: number;
-        response?: any;
-        details?: any;
+        response?: unknown;
+        details?: unknown;
       };
       enhancedError.status = error.response?.status;
       enhancedError.response = error.response;
