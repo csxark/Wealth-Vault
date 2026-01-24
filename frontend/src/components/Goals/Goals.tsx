@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Target } from 'lucide-react';
 import { GoalCard } from './GoalCard';
 import { GoalForm } from './GoalForm';
@@ -17,9 +17,9 @@ export const Goals: React.FC = () => {
     if (user) {
       loadGoals();
     }
-  }, [user]);
+  }, [user, loadGoals]);
 
-  const loadGoals = async () => {
+  const loadGoals = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -33,7 +33,7 @@ export const Goals: React.FC = () => {
       setGoals([]); // Ensure goals is always an array
     }
     finally { setLoading(false); }
-  };
+  }, [user]);
 
   const handleSaveGoal = async (goalData: Partial<Goal>) => {
     if (!user) return;

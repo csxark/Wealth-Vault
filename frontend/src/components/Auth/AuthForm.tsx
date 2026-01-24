@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 
 import {
 
-  Vault, User, Mail, Lock, Eye, EyeOff, Shield, TrendingUp, CheckCircle,
+  Vault, User, Mail, Eye, EyeOff, Shield, TrendingUp, CheckCircle,
 
 } from "lucide-react";
 
@@ -30,7 +30,14 @@ import type { UserProfile } from "../../types";
 
  */
 
-const Button = ({ children, className, disabled, ...props }: any) => (
+interface ButtonProps {
+  children: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+  [key: string]: unknown;
+}
+
+const Button = ({ children, className, disabled, ...props }: ButtonProps) => (
 
   <button
 
@@ -130,8 +137,6 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
   const [showPassword, setShowPassword] = useState(false);
 
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-
   const [showProfileSetup, setShowProfileSetup] = useState(false);
 
 
@@ -154,7 +159,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
     e.preventDefault();
 
-    setFieldErrors({});
+    setError('');
 
     if (isSignUp) {
 
@@ -164,7 +169,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
       const result = await signIn(email, password);
 
-      if (!result.success) setFieldErrors({ auth: "Invalid credentials" });
+      if (!result.success) setError("Invalid credentials");
 
     }
 
@@ -486,7 +491,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                 <div className="absolute inset-0 flex items-center justify-center">
 
-                  <div className="relative w-48 h-full bg-slate-900 border-4 border-slate-700 rounded-3xl shadow-2xl transform -rotate-6 translate-y-4 floating-shape" style={{ "--tw-rotate": "-6deg" } as any}>
+                  <div className="relative w-48 h-full bg-slate-900 border-4 border-slate-700 rounded-3xl shadow-2xl transform -rotate-6 translate-y-4 floating-shape" style={{ "--tw-rotate": "-6deg" } as React.CSSProperties}>
 
                     <div className="absolute top-0 left-0 right-0 h-6 bg-slate-800 rounded-t-2xl flex justify-center items-center">
 
@@ -522,7 +527,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                   </div>
 
-                  <div className="relative w-48 h-full bg-white dark:bg-slate-800 border-4 border-gray-200 dark:border-slate-600 rounded-3xl shadow-xl transform rotate-12 translate-x-10 translate-y-[-20px] z-[-1] floating-shape opacity-80" style={{ "--tw-rotate": "12deg" } as any}>
+                  <div className="relative w-48 h-full bg-white dark:bg-slate-800 border-4 border-gray-200 dark:border-slate-600 rounded-3xl shadow-xl transform rotate-12 translate-x-10 translate-y-[-20px] z-[-1] floating-shape opacity-80" style={{ "--tw-rotate": "12deg" } as React.CSSProperties}>
 
                     <div className="absolute top-0 left-0 right-0 h-6 bg-gray-100 dark:bg-slate-700 rounded-t-2xl"></div>
 

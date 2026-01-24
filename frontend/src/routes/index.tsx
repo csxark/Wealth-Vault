@@ -55,7 +55,7 @@ export const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
   }
 
   if (user) {
-    return <Navigate to={(location.state as any)?.from?.pathname || '/dashboard'} replace />;
+    return <Navigate to={(location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'} replace />;
   }
 
   return <>{children}</>;

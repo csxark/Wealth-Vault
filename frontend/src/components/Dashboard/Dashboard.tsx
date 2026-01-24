@@ -1,5 +1,5 @@
 import "../../chartjs-setup";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Line, Pie } from "react-chartjs-2";
 import {
   RefreshCw,
@@ -22,7 +22,6 @@ import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } fr
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import CurrencyConverter from '../CurrencyConvert.jsx';
-import { useTheme } from '../../hooks/useTheme';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -86,7 +85,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   };
 
   // Filter expenses by time range
-  const getFilteredExpensesByTimeRange = (allExpenses: Expense[]) => {
+  const getFilteredExpensesByTimeRange = useCallback((allExpenses: Expense[]) => {
     const now = new Date();
     let startDate: Date;
 
@@ -111,7 +110,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     }
 
     return allExpenses.filter((t) => new Date(t.date) >= startDate);
-  };
+  }, [timeRange]);
 
   // Fetch expenses
   useEffect(() => {
@@ -185,7 +184,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     };
 
     fetchExpenses();
-  }, [paymentMade, showToast]);
+  }, [paymentMade, showToast, getFilteredExpensesByTimeRange]);
 
   // Initialize filtered expenses when expenses change
   useEffect(() => {

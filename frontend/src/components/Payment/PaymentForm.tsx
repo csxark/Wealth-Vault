@@ -24,6 +24,11 @@ interface Category {
 const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onCancel }) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [formData, setFormData] = useState<PaymentFormData>({
+    amount: '',
+    category: '',
+    description: '',
+  });
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -39,13 +44,6 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
     fetchCategories();
   }, []);
 
-const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onCancel }) => {
-  const [formData, setFormData] = useState<PaymentFormData>({
-    amount: '',
-    category: '',
-    description: '',
-  });
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -59,13 +57,13 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
     try {
       const catRes = await categoriesAPI.getAll();
       const categories = catRes.data.categories;
-      const found = categories.find((cat: any) => cat.name === formData.category);
+      const found = categories.find((cat: Category) => cat.name === formData.category);
       if (!found) {
         alert('Selected category not found in backend.');
         return;
       }
       categoryId = found._id;
-    } catch (err) {
+    } catch {
       alert('Failed to fetch categories.');
       return;
     }
@@ -85,7 +83,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
     try {
       await expensesAPI.create(expensePayload);
       // Optionally show a success message
-    } catch (err: any) {
+    } catch {
       alert('Failed to save payment to database.');
       return;
     }

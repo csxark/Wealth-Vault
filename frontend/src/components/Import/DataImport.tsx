@@ -38,7 +38,7 @@ export const DataImport: React.FC = () => {
         const errors: string[] = [];
         const transactions: Transaction[] = [];
 
-        results.data.forEach((row: any, index) => {
+        results.data.forEach((row: Record<string, unknown>, index) => {
           try {
             // Expected CSV format: date, description, amount
             const date = row.date || row.Date || row.DATE;

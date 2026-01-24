@@ -84,8 +84,9 @@ export const useAuth = () => {
       } else {
         return { success: false, error: 'Registration failed' };
       }
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Registration failed' };
+    } catch (error: unknown) {
+      const err = error as Error;
+      return { success: false, error: err.message || 'Registration failed' };
     } finally {
       setLoading(false);
     }
@@ -103,8 +104,9 @@ export const useAuth = () => {
       } else {
         return { success: false, error: 'Login failed' };
       }
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Login failed' };
+    } catch (error: unknown) {
+      const err = error as Error;
+      return { success: false, error: err.message || 'Login failed' };
     } finally {
       setLoading(false);
     }
@@ -132,8 +134,9 @@ export const useAuth = () => {
       } else {
         return { success: false, error: 'Profile update failed' };
       }
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Profile update failed' };
+    } catch (error: unknown) {
+      const err = error as Error;
+      return { success: false, error: err.message || 'Profile update failed' };
     }
   };
 
