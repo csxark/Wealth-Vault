@@ -40,4 +40,5 @@ setTimeout(testConnection, 1000);
 const client = postgres(dbUrl, { prepare: false });
 const db = drizzle(client, { schema });
 
+export { client };
 export default db;

@@ -38,3 +38,16 @@ global.console = {
   warn: () => {},
   error: () => {},
 };
+
+// Global test teardown to clean up resources
+global.afterAll(async () => {
+  // Close database connections
+  try {
+    const { client } = await import('../config/db.js');
+    if (client && typeof client.end === 'function') {
+      await client.end();
+    }
+  } catch (error) {
+    console.warn('Error closing database connection:', error.message);
+  }
+});

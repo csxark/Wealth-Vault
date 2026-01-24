@@ -2,17 +2,55 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { body, validationResult } from "express-validator";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import db from "../config/db.js";
-import { users, categories } from "../db/schema.js";
+import { users, categories, deviceSessions } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { getDefaultCategories } from "../utils/defaults.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
 import { validatePasswordStrength, isCommonPassword } from "../utils/passwordValidator.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { ValidationError, ConflictError, UnauthorizedError, NotFoundError } from "../utils/errors.js";
+import { 
+  createDeviceSession, 
+  refreshAccessToken, 
+  revokeDeviceSession, 
+  revokeAllUserSessions,
+  getUserSessions,
+  blacklistToken
+} from "../services/tokenService.js";
 
 const router = express.Router();
+
+// Helper to get device info from request
+const getDeviceInfo = (req) => {
+  const userAgent = req.get('User-Agent') || '';
+  const deviceId = req.get('X-Device-ID') || req.get('Device-ID');
+  
+  let deviceType = 'web';
+  let deviceName = 'Unknown Device';
+  
+  if (userAgent.includes('Mobile')) {
+    deviceType = 'mobile';
+    deviceName = 'Mobile Device';
+  } else if (userAgent.includes('Tablet')) {
+    deviceType = 'tablet';
+    deviceName = 'Tablet Device';
+  } else if (userAgent.includes('Chrome')) {
+    deviceName = 'Chrome Browser';
+  } else if (userAgent.includes('Firefox')) {
+    deviceName = 'Firefox Browser';
+  } else if (userAgent.includes('Safari')) {
+    deviceName = 'Safari Browser';
+  }
+  
+  return {
+    deviceId,
+    deviceName,
+    deviceType,
+    userAgent
+  };
+};
 
 // Helper to sanitize user object
 const getPublicProfile = (user) => {
@@ -20,7 +58,7 @@ const getPublicProfile = (user) => {
   return publicUser;
 };
 
-// Generate JWT Token
+// Legacy token generation (for backward compatibility)
 const generateToken = (id) => {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
     throw new Error('JWT_SECRET must be at least 32 characters long');
@@ -244,14 +282,17 @@ router.post(
 
     await db.insert(categories).values(defaultCategoriesData);
 
-    const token = generateToken(newUser.id);
+    // Create device session with enhanced tokens
+    const deviceInfo = getDeviceInfo(req);
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
 
     res.status(201).json({
       success: true,
       message: "User registered successfully",
       data: {
         user: getPublicProfile(newUser),
-        token,
+        ...tokens,
       },
     });
   })
@@ -357,14 +398,17 @@ router.post(
         .set({ lastLogin: new Date() })
         .where(eq(users.id, user.id));
 
-      const token = generateToken(user.id);
+      // Create device session with enhanced tokens
+      const deviceInfo = getDeviceInfo(req);
+      const ipAddress = req.ip || req.connection.remoteAddress;
+      const tokens = await createDeviceSession(user.id, deviceInfo, ipAddress);
 
       res.json({
         success: true,
         message: "Login successful",
         data: {
           user: getPublicProfile(user),
-          token,
+          ...tokens,
         },
       });
     } catch (error) {
@@ -550,9 +594,19 @@ router.put(
         .set({ password: hashedPassword, updatedAt: new Date() })
         .where(eq(users.id, user.id));
 
+      // Revoke all other sessions for security
+      const currentSessionId = req.sessionId;
+      const allSessions = await getUserSessions(user.id);
+      
+      for (const session of allSessions) {
+        if (session.id !== currentSessionId) {
+          await revokeDeviceSession(session.id, user.id, 'password_change');
+        }
+      }
+
       res.json({
         success: true,
-        message: "Password changed successfully",
+        message: "Password changed successfully. Other sessions have been logged out for security.",
       });
     } catch (error) {
       console.error("Password change error:", error);
@@ -567,30 +621,88 @@ router.put(
 );
 
 // @route   POST /api/auth/refresh
-// @desc    Refresh JWT token
-// @access  Private
-router.post("/refresh", protect, async (req, res) => {
-  try {
-    const token = generateToken(req.user.id);
+// @desc    Refresh access token using refresh token
+// @access  Public
+router.post("/refresh", 
+  [
+    body("refreshToken").notEmpty().withMessage("Refresh token is required"),
+  ],
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation failed", errors.array());
+    }
+
+    const { refreshToken } = req.body;
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    
+    const tokens = await refreshAccessToken(refreshToken, ipAddress);
+    
     res.json({
       success: true,
       message: "Token refreshed successfully",
-      data: { token },
+      data: tokens,
     });
-  } catch (error) {
-    console.error("Token refresh error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server error while refreshing token" });
-  }
-});
+  })
+);
 
 // @route   POST /api/auth/logout
-// @desc    Logout user
+// @desc    Logout user from current device
 // @access  Private
-router.post("/logout", protect, async (req, res) => {
-  res.json({ success: true, message: "Logged out successfully" });
-});
+router.post("/logout", protect, asyncHandler(async (req, res) => {
+  const sessionId = req.sessionId;
+  const userId = req.user.id;
+  
+  if (sessionId) {
+    await revokeDeviceSession(sessionId, userId, 'logout');
+  }
+  
+  res.json({ 
+    success: true, 
+    message: "Logged out successfully" 
+  });
+}));
+
+// @route   POST /api/auth/logout-all
+// @desc    Logout user from all devices
+// @access  Private
+router.post("/logout-all", protect, asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const revokedCount = await revokeAllUserSessions(userId, 'logout_all');
+  
+  res.json({ 
+    success: true, 
+    message: `Logged out from ${revokedCount} devices successfully` 
+  });
+}));
+
+// @route   GET /api/auth/sessions
+// @desc    Get user's active sessions
+// @access  Private
+router.get("/sessions", protect, asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const sessions = await getUserSessions(userId);
+  
+  res.json({
+    success: true,
+    data: { sessions },
+  });
+}));
+
+// @route   DELETE /api/auth/sessions/:sessionId
+// @desc    Revoke specific session
+// @access  Private
+router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => {
+  const { sessionId } = req.params;
+  const userId = req.user.id;
+  
+  await revokeDeviceSession(sessionId, userId, 'manual_revoke');
+  
+  res.json({
+    success: true,
+    message: "Session revoked successfully",
+  });
+}));
 
 // Test endpoint
 router.get("/test", (req, res) => {
