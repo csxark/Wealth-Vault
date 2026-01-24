@@ -4,12 +4,15 @@ import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ErrorBoundary } from './components/Layout/ErrorBoundary';
 import { ToastContainer } from './components/Toast/ToastContainer';
+import { LoadingOverlay } from './components/Loading/LoadingSpinner';
 import { routes } from './routes';
 import { DevAuthBypass } from './components/DevAuthBypass';
+import { useLoading } from './context/LoadingContext';
 
 function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const { isLoading, loadingMessage } = useLoading();
   const isAuthPage = location.pathname === '/auth';
   const isHomePage = location.pathname === '/';
 
@@ -93,6 +96,7 @@ function AppLayout() {
         </div>
       </div>
       <DevAuthBypass />
+      <LoadingOverlay show={isLoading} message={loadingMessage} />
     </ErrorBoundary>
   );
 }

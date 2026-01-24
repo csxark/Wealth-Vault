@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
+import { useLoading } from '../context/LoadingContext';
 import type { User } from '../types';
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { withLoading } = useLoading();
 
   useEffect(() => {
     // Check current session
@@ -68,14 +70,13 @@ export const useAuth = () => {
   }, []);
 
   const signUp = async (email: string, password: string, firstName: string, lastName: string) => {
-    setLoading(true);
     try {
-      const result = await authAPI.register({
+      const result = await withLoading(authAPI.register({
         email,
         password,
         firstName,
         lastName
-      });
+      }), 'Creating your account...');
       
       if (result.success && result.data.user) {
         setUser(result.data.user);
@@ -86,15 +87,12 @@ export const useAuth = () => {
       }
     } catch (error: any) {
       return { success: false, error: error.message || 'Registration failed' };
-    } finally {
-      setLoading(false);
     }
   };
 
   const signIn = async (email: string, password: string) => {
-    setLoading(true);
     try {
-      const result = await authAPI.login({ email, password });
+      const result = await withLoading(authAPI.login({ email, password }), 'Signing you in...');
       
       if (result.success && result.data.user) {
         setUser(result.data.user);
@@ -105,8 +103,6 @@ export const useAuth = () => {
       }
     } catch (error: any) {
       return { success: false, error: error.message || 'Login failed' };
-    } finally {
-      setLoading(false);
     }
   };
 
