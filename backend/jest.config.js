@@ -25,5 +25,8 @@ export default {
     }
   },
   setupFilesAfterEnv: ['<rootDir>/test/setup.js'],
-  testTimeout: 10000
+  testTimeout: 10000,
+  // Ensure Jest exits properly after tests
+  detectOpenHandles: true,
+  forceExit: true
 };
