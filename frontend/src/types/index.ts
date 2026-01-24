@@ -176,6 +176,8 @@ export interface UserProfile {
   monthlyIncome: number;
   financialGoals?: string;
   full_name?: string; // For legacy compatibility
+  currency?: string;
+  monthlyBudget?: number;
 }
 
 // API Response types
@@ -196,6 +198,7 @@ export interface PaginatedResponse<T> {
       itemsPerPage: number;
     };
   };
+  message?: string;
 }
 
 // Auth types
@@ -205,6 +208,7 @@ export interface AuthResponse {
     user: User;
     token: string;
   };
+  message?: string;
 }
 
 export interface LoginCredentials {
