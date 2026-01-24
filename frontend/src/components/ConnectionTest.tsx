@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { healthAPI } from '../services/api';
 
 const ConnectionTest: React.FC = () => {

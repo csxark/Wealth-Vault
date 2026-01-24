@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 
 import {
 
-  Vault, User, Mail, Lock, Eye, EyeOff, Shield, TrendingUp, CheckCircle,
+  Vault, User, Mail, Eye, EyeOff, Shield, TrendingUp, CheckCircle,
 
 } from "lucide-react";
 

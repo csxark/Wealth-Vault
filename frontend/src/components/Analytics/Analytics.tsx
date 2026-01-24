@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, PieChart, TrendingUp, Calendar, Filter, Download } from 'lucide-react';
+import { BarChart3, PieChart, Calendar, Filter } from 'lucide-react';
 import SpendingAnalytics from '../Dashboard/SpendingAnalytics';
 import { LoadingSpinner } from '../Loading/LoadingSpinner';
 import type { Expense } from '../../types';
