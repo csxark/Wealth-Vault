@@ -4,6 +4,7 @@ import { GoalCard } from './GoalCard';
 import { GoalForm } from './GoalForm';
 import { useAuth } from '../../hooks/useAuth';
 import { goalsAPI } from '../../services/api';
+import { useLoading } from '../../context/LoadingContext';
 import type { Goal } from '../../types';
 
 export const Goals: React.FC = () => {
@@ -12,6 +13,7 @@ export const Goals: React.FC = () => {
   const [editingGoal, setEditingGoal] = useState<Goal | undefined>();
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const { withLoading } = useLoading();
 
   useEffect(() => {
     if (user) {
@@ -23,7 +25,7 @@ export const Goals: React.FC = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const response = await goalsAPI.getAll();
+      const response = await withLoading(goalsAPI.getAll(), 'Loading goals...');
       if (response.success && response.data.goals) {
         setGoals(response.data.goals);
       } else {
@@ -39,7 +41,7 @@ export const Goals: React.FC = () => {
     if (!user) return;
     try {
       if (editingGoal) {
-        const response = await goalsAPI.update(editingGoal._id, goalData);
+        const response = await withLoading(goalsAPI.update(editingGoal._id, goalData), 'Updating goal...');
         console.log('Update response:', response);
         if (!response.success) {
           console.error('Failed to update goal:', response);
@@ -59,7 +61,7 @@ export const Goals: React.FC = () => {
           deadline: deadline,
           contributions: goalData.contributions ?? [],
         });
-        const response = await goalsAPI.create({
+        const response = await withLoading(goalsAPI.create({
           title: goalData.title || '',
           description: goalData.description || '',
           targetAmount: goalData.targetAmount || 0,
@@ -70,7 +72,7 @@ export const Goals: React.FC = () => {
           targetDate: deadline,
           deadline: deadline,
           contributions: goalData.contributions ?? [],
-        });
+        }), 'Creating goal...');
         console.log('Create response:', response);
         if (!response.success) {
           console.error('Failed to create goal:', response);
@@ -92,7 +94,7 @@ export const Goals: React.FC = () => {
 
   const handleDeleteGoal = async (goalId: string) => {
     try {
-      const response = await goalsAPI.delete(goalId);
+      const response = await withLoading(goalsAPI.delete(goalId), 'Deleting goal...');
       if (response.success) await loadGoals();
     } catch { /* Silent */ }
   };

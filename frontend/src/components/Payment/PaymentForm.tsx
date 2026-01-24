@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { expensesAPI, categoriesAPI } from '../../services/api';
+import { useLoading } from '../../context/LoadingContext';
 import type { UPIData } from './QRScanner';
 
 interface PaymentFormProps {
@@ -24,11 +25,17 @@ interface Category {
 const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onCancel }) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [formData, setFormData] = useState<PaymentFormData>({
+    amount: '',
+    category: '',
+    description: '',
+  });
+  const { withLoading } = useLoading();
 
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await categoriesAPI.getAll();
+        const response = await withLoading(categoriesAPI.getAll(), 'Loading categories...');
         setCategories(response.data.categories);
       } catch (error) {
         console.error('Failed to fetch categories:', error);
@@ -38,13 +45,6 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
     };
     fetchCategories();
   }, []);
-
-const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onCancel }) => {
-  const [formData, setFormData] = useState<PaymentFormData>({
-    amount: '',
-    category: '',
-    description: '',
-  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +57,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
     // 1. Find the category ID from the backend
     let categoryId = '';
     try {
-      const catRes = await categoriesAPI.getAll();
+      const catRes = await withLoading(categoriesAPI.getAll(), 'Finding category...');
       const categories = catRes.data.categories;
       const found = categories.find((cat: any) => cat.name === formData.category);
       if (!found) {
@@ -83,7 +83,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
     };
 
     try {
-      await expensesAPI.create(expensePayload);
+      await withLoading(expensesAPI.create(expensePayload), 'Saving expense...');
       // Optionally show a success message
     } catch (err: any) {
       alert('Failed to save payment to database.');

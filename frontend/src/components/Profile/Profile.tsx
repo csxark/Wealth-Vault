@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { authAPI } from '../../services/api';
+import { useLoading } from '../../context/LoadingContext';
 import type { User } from '../../types';
 
 // Mock dev profile with complete data
@@ -57,6 +58,7 @@ export const Profile: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedProfile, setEditedProfile] = useState<Partial<User>>({});
   const [loading, setLoading] = useState(true);
+  const { withLoading } = useLoading();
   const [saving, setSaving] = useState(false);
   const [isDevMode, setIsDevMode] = useState(false);
 
@@ -85,7 +87,7 @@ export const Profile: React.FC = () => {
       }
 
       // Load real profile from backend
-      const response = await authAPI.getProfile();
+      const response = await withLoading(authAPI.getProfile(), 'Loading profile...');
       if (response.success) {
         setProfile(response.data.user);
         setEditedProfile(response.data.user);
@@ -111,7 +113,7 @@ export const Profile: React.FC = () => {
 
     setSaving(true);
     try {
-      const response = await authAPI.updateProfile(editedProfile);
+      const response = await withLoading(authAPI.updateProfile(editedProfile), 'Saving profile...');
 
       if (response.success) {
         setProfile(response.data.user);

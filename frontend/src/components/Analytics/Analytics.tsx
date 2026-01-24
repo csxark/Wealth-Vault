@@ -4,6 +4,7 @@ import SpendingAnalytics from '../Dashboard/SpendingAnalytics';
 import { LoadingSpinner } from '../Loading/LoadingSpinner';
 import type { Expense } from '../../types';
 import { expensesAPI } from '../../services/api';
+import { useLoading } from '../../context/LoadingContext';
 
 const Analytics: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -11,6 +12,7 @@ const Analytics: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState('6months');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const { withLoading } = useLoading();
 
   // Format amount to Indian Rupee
   const formatAmount = (amount: number): string => {
@@ -29,11 +31,11 @@ const Analytics: React.FC = () => {
       setError(null);
       
       try {
-        const res = await expensesAPI.getAll({
+        const res = await withLoading(expensesAPI.getAll({
           limit: 1000, // Get more data for analytics
           sortBy: 'date',
           sortOrder: 'desc'
-        });
+        }), 'Loading analytics data...');
         setExpenses(res.data.expenses || []);
       } catch (err) {
         console.error('Failed to fetch expenses:', err);
