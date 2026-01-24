@@ -22,7 +22,6 @@ import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } fr
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import CurrencyConverter from '../CurrencyConvert.jsx';
-import { useTheme } from '../../hooks/useTheme';
 
 interface DashboardProps {
   paymentMade?: boolean;

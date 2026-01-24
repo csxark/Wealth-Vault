@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Target, DollarSign, Calendar, FileText, IndianRupee } from 'lucide-react';
+import { X, Target, Calendar, FileText, IndianRupee } from 'lucide-react';
 import type { Goal } from '../../types';
 
 interface GoalFormProps {

@@ -241,8 +241,6 @@ export const Profile: React.FC = () => {
     );
   }
 
-  const totalSpent = profile.monthlyBudget - (profile.emergencyFund || 0);
-  const budgetUsagePercent = profile.monthlyBudget > 0 ? (totalSpent / profile.monthlyBudget) * 100 : 0;
   const savingsRate = profile.monthlyIncome > 0 ? ((profile.monthlyIncome - profile.monthlyBudget) / profile.monthlyIncome) * 100 : 0;
 
   return (

@@ -3,6 +3,14 @@ import { ChevronLeft, ChevronRight, Star } from "lucide-react";
 import AOS from "aos";
 import "aos/dist/aos.css";
 
+interface TestimonialData {
+  name: string;
+  location: string;
+  text: string;
+  img: string;
+  stars: number;
+}
+
 const data = [
   {
     name: "Aarav",
@@ -50,7 +58,7 @@ const data = [
 
 const Testimonials: React.FC = () => {
   const [index, setIndex] = useState(0);
-  const timer = useRef<any>(null);
+  const timer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     AOS.init({ duration: 1000, easing: "ease-out-cubic", once: false });
@@ -61,7 +69,7 @@ const Testimonials: React.FC = () => {
     return () => clearInterval(timer.current);
   }, []);
 
-  const Card = ({ u, big = false }: any) => (
+  const Card = ({ u, big = false }: { u: TestimonialData; big?: boolean }) => (
     <div
       className={`rounded-2xl p-6 border transition-all duration-500 transform
         bg-white/70 dark:bg-slate-950/70 backdrop-blur

@@ -175,8 +175,6 @@ export interface UserProfile {
   occupation?: string;
   monthlyIncome: number;
   financialGoals?: string;
-<<<<<<< Updated upstream
-=======
   full_name?: string; // For legacy compatibility
 }
 
@@ -222,6 +220,4 @@ export interface RegisterData {
   currency?: string;
   monthlyIncome?: number;
   monthlyBudget?: number;
->>>>>>> Stashed changes
->>>>>>> Stashed changes
 }

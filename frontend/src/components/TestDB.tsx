@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { authAPI, expensesAPI, categoriesAPI, goalsAPI, healthAPI } from '../services/api';
 

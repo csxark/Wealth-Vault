@@ -105,7 +105,7 @@ const generateMockExpenses = (count: number = 20): Expense[] => {
 };
 
 // Generic API request function with enhanced error handling
-const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> => {
+const apiRequest = async <T>(endpoint: string, options: Record<string, any> = {}): Promise<T> => {
   // Check if we're in dev mode
   const token = localStorage.getItem('authToken');
   if (token === 'dev-mock-token-123') {
@@ -281,7 +281,7 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       // Update goal
       const goalId = endpoint.split('/')[2];
       const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
-      const index = mockGoals.findIndex((g: any) => g._id === goalId);
+      const index = mockGoals.findIndex((g: { _id: string }) => g._id === goalId);
       if (index !== -1) {
         mockGoals[index] = { ...mockGoals[index], ...options.data, updatedAt: new Date().toISOString() };
         localStorage.setItem('mockGoals', JSON.stringify(mockGoals));
@@ -297,7 +297,7 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       // Delete goal
       const goalId = endpoint.split('/')[2];
       const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
-      const filtered = mockGoals.filter((g: any) => g._id !== goalId);
+      const filtered = mockGoals.filter((g: { _id: string }) => g._id !== goalId);
       localStorage.setItem('mockGoals', JSON.stringify(filtered));
       return {
         success: true,
@@ -319,7 +319,7 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       ...options,
     });
     return response.data;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Additional error processing
     if (axios.isAxiosError(error)) {
       // Extract meaningful error message
@@ -339,10 +339,14 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       console.error('API Request Failed:', errorDetails);
 
       // Create a more informative error object
-      const enhancedError = new Error(errorMessage);
-      (enhancedError as any).status = error.response?.status;
-      (enhancedError as any).response = error.response;
-      (enhancedError as any).details = errorDetails;
+      const enhancedError = new Error(errorMessage) as Error & {
+        status?: number;
+        response?: any;
+        details?: any;
+      };
+      enhancedError.status = error.response?.status;
+      enhancedError.response = error.response;
+      enhancedError.details = errorDetails;
       
       throw enhancedError;
     }
@@ -714,7 +718,7 @@ export const analyticsAPI = {
           amount: number;
           description: string;
           date: string;
-          category: any;
+          category: { name: string; color: string; icon?: string } | null;
         }>;
         paymentMethods: Array<{
           method: string;
@@ -807,7 +811,7 @@ export const analyticsAPI = {
         return {
           blob: () => Promise.resolve(blob),
           json: () => Promise.resolve({ data: mockData })
-        } as any;
+        } as Response;
       } else {
         const jsonData = {
           exportInfo: {
@@ -822,7 +826,7 @@ export const analyticsAPI = {
         return {
           blob: () => Promise.resolve(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' })),
           json: () => Promise.resolve(jsonData)
-        } as any;
+        } as Response;
       }
     }
 

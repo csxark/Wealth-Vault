@@ -14,7 +14,7 @@ interface ErrorContextType {
   showError: (message: string, code?: string, status?: number) => void;
   clearError: (id: string) => void;
   clearAllErrors: () => void;
-  handleApiError: (error: any) => void;
+  handleApiError: (error: Error | unknown) => void;
 }
 
 const ErrorContext = createContext<ErrorContextType | undefined>(undefined);
@@ -63,7 +63,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({ children }) => {
     setCurrentError(null);
   }, []);
 
-  const handleApiError = useCallback((error: any) => {
+  const handleApiError = useCallback((error: Error | unknown) => {
     let errorMessage = 'An unexpected error occurred';
     let errorCode: string | undefined;
     let errorStatus: number | undefined;
