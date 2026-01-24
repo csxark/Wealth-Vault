@@ -11,7 +11,9 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:migrate": "node -e 'import(\"./config/migrate.js\").then(m => m.migrate())'"
+    "db:migrate": "node -e 'import(\"./config/migrate.js\").then(m => m.migrate())'",
+    "db:fix-schema": "node db/migrations/fix-schema-consistency.js",
+    "db:validate": "node -e 'import(\"./utils/schemaValidation.js\").then(v => console.log(\"Schema validation loaded\"))'"
   },
   "dependencies": {
     "@google/genai": "^1.35.0",
@@ -29,7 +31,9 @@
     "morgan": "^1.10.0",
     "openai": "^6.15.0",
     "postgres": "^3.4.7",
+    "rate-limit-redis": "^4.2.0",
     "react-hot-toast": "^2.6.0",
+    "redis": "^4.7.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "xss": "^1.0.15",

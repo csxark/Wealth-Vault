@@ -38,7 +38,7 @@ export const categories = pgTable('categories', {
     type: text('type').default('expense'), // enum: 'expense', 'income', 'both'
     isDefault: boolean('is_default').default(false),
     isActive: boolean('is_active').default(true),
-    parentCategoryId: uuid('parent_category_id'), // Self-reference handled in relations? or direct reference if possible. Circular ref might be tricky in pure DDL, but OK in Drizzle.
+    parentCategoryId: uuid('parent_category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
     budget: jsonb('budget').default({ monthly: 0, yearly: 0 }),
     spendingLimit: numeric('spending_limit', { precision: 12, scale: 2 }).default('0'),
     priority: integer('priority').default(0),
@@ -55,9 +55,9 @@ export const categories = pgTable('categories', {
 export const expenses = pgTable('expenses', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
     amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
-    currency: text('currency').default('INR'),
+    currency: text('currency').default('USD'),
     description: text('description').notNull(),
     subcategory: text('subcategory'),
     date: timestamp('date').defaultNow().notNull(),
@@ -69,7 +69,12 @@ export const expenses = pgTable('expenses', {
     recurringPattern: jsonb('recurring_pattern'),
     notes: text('notes'),
     status: text('status').default('completed'),
-    metadata: jsonb('metadata'),
+    metadata: jsonb('metadata').default({
+        createdBy: 'system',
+        lastModified: null,
+        version: 1,
+        flags: []
+    }),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -78,7 +83,7 @@ export const expenses = pgTable('expenses', {
 export const goals = pgTable('goals', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
     title: text('title').notNull(),
     description: text('description'),
     targetAmount: numeric('target_amount', { precision: 12, scale: 2 }).notNull(),

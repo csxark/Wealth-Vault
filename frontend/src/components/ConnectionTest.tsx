@@ -4,7 +4,7 @@ import { healthAPI } from '../services/api';
 const ConnectionTest: React.FC = () => {
   const [status, setStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
-  const [details, setDetails] = useState<any>(null);
+  const [details, setDetails] = useState<Record<string, unknown> | null>(null);
 
   const testConnection = async () => {
     setStatus('testing');
@@ -16,13 +16,14 @@ const ConnectionTest: React.FC = () => {
       setStatus('success');
       setMessage('✅ Backend connection successful!');
       setDetails(response);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error & { status?: number; details?: unknown };
       setStatus('error');
       setMessage('❌ Backend connection failed');
       setDetails({
-        error: error.message,
-        status: error.status,
-        details: error.details
+        error: err.message,
+        status: err.status,
+        details: err.details
       });
     }
   };
@@ -41,8 +42,9 @@ const ConnectionTest: React.FC = () => {
       } else {
         setMessage(`❌ Auth endpoint error: ${response.status}`);
       }
-    } catch (error: any) {
-      setMessage(`❌ Auth endpoint failed: ${error.message}`);
+    } catch (error: unknown) {
+      const err = error as Error;
+      setMessage(`❌ Auth endpoint failed: ${err.message}`);
     }
   };
 
