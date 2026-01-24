@@ -22,6 +22,9 @@ const getPublicProfile = (user) => {
 
 // Generate JWT Token
 const generateToken = (id) => {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters long');
+  }
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE || "30d",
   });
@@ -172,109 +175,86 @@ router.post(
       .isLength({ min: 1, max: 50 })
       .withMessage("Last name is required and must be less than 50 characters"),
   ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation failed", errors.array());
+    }
 
-      const {
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      currency,
+      monthlyIncome,
+      monthlyBudget,
+    } = req.body;
+
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+    if (existingUser) {
+      throw new ConflictError("User with this email already exists");
+    }
+
+    // Check if password is common
+    if (isCommonPassword(password)) {
+      throw new ValidationError("This password is too common. Please choose a more secure password.");
+    }
+
+    // Validate password strength
+    const passwordValidation = validatePasswordStrength(password, [email, firstName, lastName]);
+    if (!passwordValidation.success) {
+      throw new ValidationError(passwordValidation.message, passwordValidation.feedback);
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create user
+    const [newUser] = await db
+      .insert(users)
+      .values({
         email,
-        password,
+        password: hashedPassword,
         firstName,
         lastName,
-        currency,
-        monthlyIncome,
-        monthlyBudget,
-      } = req.body;
+        currency: currency || "USD",
+        monthlyIncome: monthlyIncome || "0",
+        monthlyBudget: monthlyBudget || "0",
+      })
+      .returning();
 
-      const [existingUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email));
-      if (existingUser) {
-        return res.status(400).json({
-          success: false,
-          message: "User with this email already exists",
-        });
-      }
+    // Create default categories
+    const defaultCategoriesData = getDefaultCategories().map((cat) => ({
+      userId: newUser.id,
+      name: cat.name,
+      description: cat.description,
+      color: cat.color,
+      icon: cat.icon,
+      type: cat.type,
+      isDefault: cat.isDefault,
+      priority: cat.priority,
+      budget: { monthly: 0, yearly: 0 },
+      spendingLimit: "0",
+    }));
 
-      // Check if password is common
-      if (isCommonPassword(password)) {
-        return res.status(400).json({
-          success: false,
-          message: "This password is too common. Please choose a more secure password.",
-        });
-      }
+    await db.insert(categories).values(defaultCategoriesData);
 
-      // Validate password strength
-      const passwordValidation = validatePasswordStrength(password, [email, firstName, lastName]);
-      if (!passwordValidation.success) {
-        return res.status(400).json({
-          success: false,
-          message: passwordValidation.message,
-          feedback: passwordValidation.feedback,
-          score: passwordValidation.score,
-        });
-      }
+    const token = generateToken(newUser.id);
 
-      // Hash password
-      const salt = await bcrypt.genSalt(12);
-      const hashedPassword = await bcrypt.hash(password, salt);
-
-      // Create user
-      const [newUser] = await db
-        .insert(users)
-        .values({
-          email,
-          password: hashedPassword,
-          firstName,
-          lastName,
-          currency: currency || "USD",
-          monthlyIncome: monthlyIncome || "0",
-          monthlyBudget: monthlyBudget || "0",
-        })
-        .returning();
-
-      // Create default categories
-      const defaultCategoriesData = getDefaultCategories().map((cat) => ({
-        userId: newUser.id,
-        name: cat.name,
-        description: cat.description,
-        color: cat.color,
-        icon: cat.icon,
-        type: cat.type,
-        isDefault: cat.isDefault,
-        priority: cat.priority,
-        budget: { monthly: 0, yearly: 0 },
-        spendingLimit: "0",
-      }));
-
-      await db.insert(categories).values(defaultCategoriesData);
-
-      const token = generateToken(newUser.id);
-
-      res.status(201).json({
-        success: true,
-        message: "User registered successfully",
-        data: {
-          user: getPublicProfile(newUser),
-          token,
-        },
-      });
-    } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Server error during registration",
-      });
-    }
-  }
+    res.status(201).json({
+      success: true,
+      message: "User registered successfully",
+      data: {
+        user: getPublicProfile(newUser),
+        token,
+      },
+    });
+  })
 );
 
 /**
