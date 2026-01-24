@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, Zap, DollarSign, TrendingDown } from 'lucide-react';
 import type { ChatMessage } from '../../types';
 import { fetchGeminiResponse } from '../../services/gemini';
+import { useLoading } from '../../context/LoadingContext';
 
 const quickReplies = [
   { text: "Help me reduce impulsive spending", icon: TrendingDown },
@@ -14,6 +15,7 @@ export const Coach: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { withLoading } = useLoading();
 
   useEffect(() => {
     // Load messages from localStorage
@@ -52,7 +54,7 @@ Give practical tips about budgeting, saving, and financial wellness.
 User: ${userMessage}
 Coach:
     `;
-    return await fetchGeminiResponse(prompt);
+    return await withLoading(fetchGeminiResponse(prompt), 'Getting AI response...');
   };
 
   const handleSendMessage = async (content: string) => {

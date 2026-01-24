@@ -2,6 +2,7 @@ export default {
   testEnvironment: 'node',
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^../config/db.js$': '<rootDir>/test/__mocks__/db.js'
   },
   transform: {},
   testMatch: [
@@ -16,6 +17,8 @@ export default {
     '!**/__tests__/**',
     '!**/node_modules/**'
   ],
+  coverageReporters: ['text', 'lcov', 'clover', 'json'],
+  coverageDirectory: 'coverage',
   coverageThreshold: {
     global: {
       branches: 3,
@@ -26,7 +29,8 @@ export default {
   },
   setupFilesAfterEnv: ['<rootDir>/test/setup.js'],
   testTimeout: 10000,
-  // Ensure Jest exits properly after tests
-  detectOpenHandles: true,
-  forceExit: true
+  // Force exit to prevent hanging
+  forceExit: true,
+  // Detect open handles
+  detectOpenHandles: true
 };

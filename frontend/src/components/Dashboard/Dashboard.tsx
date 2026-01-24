@@ -21,6 +21,7 @@ import SpendingAnalytics from './SpendingAnalytics';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { useLoading } from '../../context/LoadingContext';
 import CurrencyConverter from '../CurrencyConvert.jsx';
 
 interface DashboardProps {
@@ -31,6 +32,7 @@ type TabType = "overview" | "transactions" | "analytics" | "categories";
 
 const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const { showToast } = useToast();
+  const { withLoading } = useLoading();
 
   // Tabs + Filters
   const [activeTab, setActiveTab] = useState<TabType>("overview");
@@ -119,7 +121,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       setError(null);
 
       try {
-        const res = await expensesAPI.getAll();
+        const res = await withLoading(expensesAPI.getAll(), 'Loading expenses...');
         const allExpenses: Expense[] = res.data.expenses || [];
 
         setExpenses(allExpenses);
