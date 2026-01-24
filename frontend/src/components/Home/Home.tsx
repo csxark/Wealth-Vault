@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Sun, Moon, Vault, ArrowRight, MoreHorizontal, ArrowUpRight, TrendingDown, ShoppingBag, Coffee, Home as HomeIcon } from "lucide-react";
+import { Sun, Moon, Vault, MoreHorizontal, ArrowUpRight, TrendingDown, ShoppingBag, Coffee, Home as HomeIcon } from "lucide-react";
 import AOS from "aos";
 import "aos/dist/aos.css";
 import FAQSection from "./Faq";

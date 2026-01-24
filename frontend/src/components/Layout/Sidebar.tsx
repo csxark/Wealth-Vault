@@ -1,6 +1,6 @@
 import React from 'react';
 import { BarChart3, MessageCircle, Target, Upload, User, PieChart } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 interface SidebarProps {
   activeTab: string;

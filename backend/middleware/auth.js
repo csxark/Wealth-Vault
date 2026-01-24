@@ -195,34 +195,3 @@ export const optionalAuth = async (req, res, next) => {
     next();
   }
 };
-
-// Rate limiting helper (basic implementation)
-export const rateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
-  const requests = new Map();
-
-  return (req, res, next) => {
-    const ip = req.ip || req.connection.remoteAddress;
-    const now = Date.now();
-    const windowStart = now - windowMs;
-
-    // Clean old entries
-    if (requests.has(ip)) {
-      const userRequests = requests.get(ip).filter(timestamp => timestamp > windowStart);
-      requests.set(ip, userRequests);
-    }
-
-    const userRequests = requests.get(ip) || [];
-
-    if (userRequests.length >= maxRequests) {
-      return res.status(429).json({
-        success: false,
-        message: 'Too many requests. Please try again later.'
-      });
-    }
-
-    userRequests.push(now);
-    requests.set(ip, userRequests);
-
-    next();
-  };
-};

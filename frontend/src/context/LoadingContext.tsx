@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode } fr
 interface LoadingContextType {
   isLoading: boolean;
   loadingMessage: string;
+  loadingCount: number;
   startLoading: (message?: string) => void;
   stopLoading: () => void;
   withLoading: <T>(promise: Promise<T>, message?: string) => Promise<T>;
@@ -59,6 +60,7 @@ export const LoadingProvider: React.FC<LoadingProviderProps> = ({ children }) =>
   const value: LoadingContextType = {
     isLoading,
     loadingMessage,
+    loadingCount,
     startLoading,
     stopLoading,
     withLoading,
