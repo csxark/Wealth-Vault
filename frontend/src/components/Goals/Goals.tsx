@@ -17,12 +17,6 @@ export const Goals: React.FC = () => {
   const { withLoading } = useLoading();
   const { showToast } = useToast();
 
-  useEffect(() => {
-    if (user) {
-      loadGoals();
-    }
-  }, [user, loadGoals]);
-
   const loadGoals = useCallback(async () => {
     if (!user) return;
     setLoading(true);
@@ -37,7 +31,13 @@ export const Goals: React.FC = () => {
       setGoals([]); // Ensure goals is always an array
     }
     finally { setLoading(false); }
-  }, [user]);
+  }, [user, withLoading]);
+
+  useEffect(() => {
+    if (user) {
+      loadGoals();
+    }
+  }, [user, loadGoals]);
 
   const handleSaveGoal = async (goalData: Partial<Goal>) => {
     if (!user) return;

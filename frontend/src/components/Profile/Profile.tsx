@@ -64,12 +64,6 @@ export const Profile: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [isDevMode, setIsDevMode] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      loadProfile();
-    }
-  }, [user, loadProfile]);
-
   const loadProfile = useCallback(async () => {
     if (!user) return;
 
@@ -101,7 +95,13 @@ export const Profile: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, withLoading]);
+
+  useEffect(() => {
+    if (user) {
+      loadProfile();
+    }
+  }, [user, loadProfile]);
 
   const handleSave = async () => {
     if (!user) return;
