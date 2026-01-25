@@ -3,14 +3,14 @@ import { Upload, FileText, AlertCircle, CheckCircle, Download } from 'lucide-rea
 import Papa from 'papaparse';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../context/ToastContext';
-import { expensesAPI } from '../../services/api';
+// import { expensesAPI } from '../../services/api';
 
 export const DataImport: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResults, setImportResults] = useState<{ success: number; errors: string[] } | null>(null);
   const { user } = useAuth();
-  const { showToast } = useToast();
+  // const { showToast } = useToast();
 
   const categorizeTransaction = (description: string, amount: number): 'safe' | 'impulsive' | 'anxious' => {
     const desc = description.toLowerCase();
