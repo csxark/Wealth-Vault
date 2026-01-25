@@ -24,16 +24,18 @@ interface LoadingProviderProps {
 }
 
 export const LoadingProvider: React.FC<LoadingProviderProps> = ({ children }) => {
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState('Loading...');
+
+  const isLoading = loadingCount > 0;
 
   const startLoading = useCallback((message: string = 'Loading...') => {
     setLoadingMessage(message);
-    setIsLoading(true);
+    setLoadingCount(prev => prev + 1);
   }, []);
 
   const stopLoading = useCallback(() => {
-    setIsLoading(false);
+    setLoadingCount(prev => Math.max(0, prev - 1));
   }, []);
 
   const withLoading = useCallback(
