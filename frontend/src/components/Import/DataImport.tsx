@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, Download } from 'lucide-react';
 import Papa from 'papaparse';
-import type { Transaction } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../context/ToastContext';
+import { expensesAPI } from '../../services/api';
 
 export const DataImport: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResults, setImportResults] = useState<{ success: number; errors: string[] } | null>(null);
   const { user } = useAuth();
+  const { showToast } = useToast();
 
   const categorizeTransaction = (description: string, amount: number): 'safe' | 'impulsive' | 'anxious' => {
     const desc = description.toLowerCase();
@@ -238,9 +240,9 @@ export const DataImport: React.FC = () => {
           Privacy & Security
         </h3>
         <p className="text-cyan-800 dark:text-cyan-200 text-sm">
-          Your financial data is processed locally in your browser and stored securely. 
-          We never send your transaction details to external servers. All categorization 
-          happens on your device to protect your privacy.
+          Your financial data is processed securely on our servers and stored in your personal account.
+          All data is encrypted and only accessible by you. We use AI to automatically categorize
+          your transactions for better spending insights.
         </p>
       </div>
     </div>
