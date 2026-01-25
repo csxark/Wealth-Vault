@@ -533,6 +533,34 @@ export const expensesAPI = {
       params,
     });
   },
+
+  // Import expenses from CSV data
+  import: async (expensesData: Array<{
+    amount: number;
+    description: string;
+    category: string;
+    date?: string;
+    paymentMethod?: string;
+    location?: string;
+    tags?: string[];
+    isRecurring?: boolean;
+    recurringPattern?: string;
+    notes?: string;
+    subcategory?: string;
+  }>) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      data: {
+        imported: number;
+        errors: number;
+        errorDetails: string[];
+      };
+    }>('/expenses/import', {
+      method: 'POST',
+      data: { expenses: expensesData },
+    });
+  },
 };
 
 // Categories API

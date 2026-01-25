@@ -430,6 +430,127 @@ router.delete("/:id", protect, checkOwnership("Expense"), async (req, res) => {
   }
 });
 
+// @route   POST /api/expenses/import
+// @desc    Import expenses from CSV data
+// @access  Private
+router.post("/import", protect, async (req, res) => {
+  try {
+    const { expenses: expensesData } = req.body;
+
+    if (!expensesData || !Array.isArray(expensesData)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid request: expenses array is required",
+      });
+    }
+
+    const errors = [];
+    const validExpenses = [];
+
+    // Validate and prepare expenses
+    for (let i = 0; i < expensesData.length; i++) {
+      const expense = expensesData[i];
+      const rowNumber = i + 1;
+
+      try {
+        // Validate required fields
+        if (!expense.amount || isNaN(parseFloat(expense.amount))) {
+          errors.push(`Row ${rowNumber}: Invalid or missing amount`);
+          continue;
+        }
+
+        if (!expense.description || typeof expense.description !== 'string' || expense.description.trim().length === 0) {
+          errors.push(`Row ${rowNumber}: Invalid or missing description`);
+          continue;
+        }
+
+        if (!expense.category || typeof expense.category !== 'string') {
+          errors.push(`Row ${rowNumber}: Invalid or missing category`);
+          continue;
+        }
+
+        // Validate category exists and belongs to user
+        const [categoryDoc] = await db
+          .select()
+          .from(categories)
+          .where(
+            and(eq(categories.id, expense.category), eq(categories.userId, req.user.id))
+          );
+
+        if (!categoryDoc) {
+          errors.push(`Row ${rowNumber}: Invalid category "${expense.category}"`);
+          continue;
+        }
+
+        // Validate date
+        let expenseDate;
+        if (expense.date) {
+          expenseDate = new Date(expense.date);
+          if (isNaN(expenseDate.getTime())) {
+            errors.push(`Row ${rowNumber}: Invalid date format`);
+            continue;
+          }
+        } else {
+          expenseDate = new Date();
+        }
+
+        validExpenses.push({
+          userId: req.user.id,
+          amount: parseFloat(expense.amount).toString(),
+          description: expense.description.trim(),
+          categoryId: expense.category,
+          date: expenseDate,
+          paymentMethod: expense.paymentMethod || "other",
+          location: expense.location || null,
+          tags: expense.tags || [],
+          isRecurring: expense.isRecurring || false,
+          recurringPattern: expense.recurringPattern || null,
+          notes: expense.notes || null,
+          subcategory: expense.subcategory || null,
+        });
+      } catch (error) {
+        errors.push(`Row ${rowNumber}: ${error.message}`);
+      }
+    }
+
+    if (validExpenses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid expenses to import",
+        errors,
+      });
+    }
+
+    // Bulk insert valid expenses
+    const insertedExpenses = await db
+      .insert(expenses)
+      .values(validExpenses)
+      .returning();
+
+    // Update category stats for all affected categories
+    const affectedCategoryIds = [...new Set(validExpenses.map(exp => exp.categoryId))];
+    for (const categoryId of affectedCategoryIds) {
+      await updateCategoryStats(categoryId);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Successfully imported ${insertedExpenses.length} expenses`,
+      data: {
+        imported: insertedExpenses.length,
+        errors: errors.length,
+        errorDetails: errors.slice(0, 10), // Limit error details to first 10
+      },
+    });
+  } catch (error) {
+    console.error("Import expenses error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while importing expenses",
+    });
+  }
+});
+
 // @route   GET /api/expenses/stats/summary
 // @desc    Get expense summary statistics
 // @access  Private
