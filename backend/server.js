@@ -13,6 +13,8 @@ import { connectRedis } from "./config/redis.js";
 import { scheduleCleanup } from "./jobs/tokenCleanup.js";
 import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
+import { responseWrapper } from "./middleware/responseWrapper.js";
+import { paginationMiddleware } from "./utils/pagination.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 // Import routes
@@ -97,6 +99,10 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Security: Sanitize user input to prevent XSS and NoSQL injection
 app.use(sanitizeMongo);
 app.use(sanitizeInput);
+
+// Response wrapper and pagination middleware
+app.use(responseWrapper);
+app.use(paginationMiddleware());
 
 // Additional CORS headers middleware
 app.use((req, res, next) => {

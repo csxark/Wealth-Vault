@@ -125,10 +125,7 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
 
-    return res.json({
-      success: true,
-      exists: !!existingUser,
-    });
+    return res.success({ exists: !!existingUser }, 'Email check completed');
   })
 );
 
@@ -295,14 +292,10 @@ router.post(
     const ipAddress = req.ip || req.connection.remoteAddress;
     const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
 
-    res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: {
-        user: getPublicProfile(newUser),
-        ...tokens,
-      },
-    });
+    res.created({
+      user: getPublicProfile(newUser),
+      ...tokens,
+    }, "User registered successfully");
   })
 );
 
