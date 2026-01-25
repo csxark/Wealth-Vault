@@ -193,7 +193,7 @@ router.post(
  */
 router.post(
   "/register",
-  authLimiter,
+  process.env.NODE_ENV === 'test' ? [] : authLimiter,
   [
     body("email")
       .isEmail()
@@ -228,6 +228,14 @@ router.post(
       monthlyIncome,
       monthlyBudget,
     } = req.body;
+
+    // Check for required fields
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required fields: email, password, firstName, and lastName are required.' 
+      });
+    }
 
     const [existingUser] = await db
       .select()
@@ -345,7 +353,7 @@ router.post(
  */
 router.post(
   "/login",
-  authLimiter,
+  process.env.NODE_ENV === 'test' ? [] : authLimiter,
   [
     body("email")
       .isEmail()
@@ -353,18 +361,18 @@ router.post(
       .normalizeEmail(),
     body("password").notEmpty().withMessage("Password is required"),
   ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation failed", errors.array());
+    }
 
-      const { email, password } = req.body;
+    const { email, password } = req.body;
+
+    // Check for required fields
+    if (!email || !password) {
+      throw new ValidationError("Missing required fields: email and password are required.");
+    }
 
       const [user] = await db
         .select()
@@ -411,14 +419,7 @@ router.post(
           ...tokens,
         },
       });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Server error during login",
-      });
-    }
-  }
+  })
 );
 
 // @route   GET /api/auth/me
