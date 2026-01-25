@@ -11,8 +11,12 @@ import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
 import { connectRedis } from "./config/redis.js";
 import { scheduleCleanup } from "./jobs/tokenCleanup.js";
+import { initializeUploads } from "./middleware/fileUpload.js";
+import { createFileServerRoute } from "./middleware/secureFileServer.js";
 import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
+import { responseWrapper } from "./middleware/responseWrapper.js";
+import { paginationMiddleware } from "./utils/pagination.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 // Import routes
@@ -34,6 +38,11 @@ connectRedis().catch(err => {
 
 // Schedule token cleanup job
 scheduleCleanup();
+
+// Initiliz uplod directorys
+initializeUploads().catch(err => {
+  console.error('❌ Failed to initialize upload directories:', err);
+});
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -98,6 +107,10 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(sanitizeMongo);
 app.use(sanitizeInput);
 
+// Response wrapper and pagination middleware
+app.use(responseWrapper);
+app.use(paginationMiddleware());
+
 // Additional CORS headers middleware
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", req.headers.origin);
@@ -145,6 +158,9 @@ app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
+
+// Secur fil servr for uploddd fils
+app.use("/uploads", createFileServerRoute());
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
