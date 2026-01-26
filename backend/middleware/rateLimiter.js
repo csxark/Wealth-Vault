@@ -12,98 +12,99 @@ const createStore = () => {
       });
     }
   }
-  return undefined; // Falls back to memory store
+  return undefined; // fallback to memory store
 };
 
-// Helper to get client IP
-const getClientIp = (req) => {
-  return req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.connection?.remoteAddress || 'unknown';
-};
+// ✅ SAFE key generator (no deprecated API)
+const ipKey = (req) => req.ip || req.connection?.remoteAddress || "unknown";
 
-// Enhanced rate limiter with proper headers and user identification
+// Enhanced rate limiter factory
 const createRateLimiter = (options) => {
   return rateLimit({
     store: createStore(),
     standardHeaders: true,
     legacyHeaders: false,
+
     keyGenerator: (req) => {
-      // Use user ID if authenticated, otherwise use IP
-      if (req.user && req.user.id) {
+      // Prefer authenticated user
+      if (req.user?.id) {
         return `user:${req.user.id}`;
       }
-      return getClientIp(req);
+      // Fallback to IP
+      return `ip:${ipKey(req)}`;
     },
-    handler: (req, res, next, options) => {
+
+    handler: (req, res, _next, options) => {
       res.status(429).json({
         success: false,
-        message: options.message.message || options.message,
-        retryAfter: Math.ceil(options.windowMs / 1000 / 60), // minutes
+        message: options.message?.message || options.message,
+        retryAfter: Math.ceil(options.windowMs / 1000),
         limit: options.max,
         remaining: 0,
         resetTime: new Date(Date.now() + options.windowMs).toISOString(),
       });
     },
+
     ...options,
   });
 };
 
 /**
  * General API rate limiter
- * Limits each IP + User to 100 requests per 15 minutes
  */
 export const generalLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: {
-    message: "Too many requests from this IP, please try again after 15 minutes",
+    message: "Too many requests, please try again after 15 minutes",
   },
 });
 
 /**
- * Strict rate limiter for authentication routes
- * Limits each IP to 5 requests per 15 minutes
+ * Auth limiter (IP-based only)
  */
-export const authLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
   max: 5,
-  skipSuccessfulRequests: true,
-  keyGenerator: (req) => `auth:${getClientIp(req)}`, // Always use IP for auth
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `auth:${ipKey(req)}`,
   message: {
-    message: "Too many authentication attempts from this IP, please try again after 15 minutes",
+    message:
+      "Too many authentication attempts, please try again after 15 minutes",
   },
 });
 
 /**
- * Rate limiter for password reset
- * Limits each IP to 3 requests per hour
+ * Password reset limiter
  */
-export const passwordResetLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000, // 1 hour
+export const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
   max: 3,
-  keyGenerator: (req) => `reset:${getClientIp(req)}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `reset:${ipKey(req)}`,
   message: {
     message: "Too many password reset attempts, please try again after an hour",
   },
 });
 
 /**
- * Rate limiter for AI/Gemini endpoints
- * Limits each IP+User to 20 requests per 15 minutes
+ * AI / Gemini limiter
  */
 export const aiLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 20,
   message: {
-    message: "Too many AI requests, please try again after 15 minutes",
+    message: "Too many AI requests, please try again later",
   },
 });
 
 /**
- * User-specific rate limiter for authenticated routes
- * Limits each authenticated user to 200 requests per 15 minutes
+ * User-specific limiter
  */
 export const userLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 200,
   skip: (req) => !req.user,
   message: {
