@@ -1,5 +1,5 @@
 import express from "express";
-
+import chatbotRoutes from "./routes/chatbot.routes.js";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
@@ -13,7 +13,11 @@ import { connectRedis } from "./config/redis.js";
 import { scheduleCleanup } from "./jobs/tokenCleanup.js";
 import { initializeUploads } from "./middleware/fileUpload.js";
 import { createFileServerRoute } from "./middleware/secureFileServer.js";
-import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
+import {
+  generalLimiter,
+  aiLimiter,
+  userLimiter,
+} from "./middleware/rateLimiter.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
 import { responseWrapper } from "./middleware/responseWrapper.js";
 import { paginationMiddleware } from "./utils/pagination.js";
@@ -32,16 +36,16 @@ import analyticsRoutes from "./routes/analytics.js";
 dotenv.config();
 
 // Initialize Redis connection
-connectRedis().catch(err => {
-  console.warn('⚠️ Redis connection failed, using memory-based rate limiting');
+connectRedis().catch((err) => {
+  console.warn("⚠️ Redis connection failed, using memory-based rate limiting");
 });
 
 // Schedule token cleanup job
 scheduleCleanup();
 
 // Initiliz uplod directorys
-initializeUploads().catch(err => {
-  console.error('❌ Failed to initialize upload directories:', err);
+initializeUploads().catch((err) => {
+  console.error("❌ Failed to initialize upload directories:", err);
 });
 
 const app = express();
@@ -54,7 +58,7 @@ app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
-  })
+  }),
 );
 
 // Configure CORS
@@ -96,7 +100,7 @@ app.use(
     exposedHeaders: ["Content-Range", "X-Content-Range", "Authorization"],
     preflightContinue: false,
     optionsSuccessStatus: 204,
-  })
+  }),
 );
 app.use(morgan("combined"));
 app.use(compression());
@@ -117,11 +121,11 @@ app.use((req, res, next) => {
   res.header("Access-Control-Allow-Credentials", "true");
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization",
   );
   res.header(
     "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+    "GET, POST, PUT, DELETE, OPTIONS, PATCH",
   );
 
   // Handle preflight requests
@@ -147,7 +151,7 @@ app.use(
   swaggerUi.setup(swaggerSpec, {
     customCss: ".swagger-ui .topbar { display: none }",
     customSiteTitle: "Wealth Vault API Docs",
-  })
+  }),
 );
 
 // Routes
@@ -158,6 +162,7 @@ app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
+app.use("/api", chatbotRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -182,9 +187,8 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(
-    `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`
+    `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`,
   );
   console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
   console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
 });
-
