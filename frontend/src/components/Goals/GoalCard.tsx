@@ -38,12 +38,14 @@ export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) =>
           <button
             onClick={() => onEdit(goal)}
             className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            aria-label="Edit goal"
           >
             <Edit3 className="h-4 w-4" />
           </button>
           <button
             onClick={() => onDelete(goal._id)}
             className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            aria-label="Delete goal"
           >
             <Trash2 className="h-4 w-4" />
           </button>

@@ -4,6 +4,8 @@ import { eq, and, gte, lte, asc, desc, sql, like } from "drizzle-orm";
 import db from "../config/db.js";
 import { expenses, categories, users } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
+import { asyncHandler, ValidationError, NotFoundError } from "../middleware/errorHandler.js";
+import { parseListQuery } from "../utils/pagination.js";
 
 const router = express.Router();
 
@@ -118,120 +120,85 @@ const updateCategoryStats = async (categoryId) => {
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  */
-router.get("/", protect, async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 20,
-      category,
-      startDate,
-      endDate,
-      minAmount,
-      maxAmount,
-      paymentMethod,
-      sortBy = "date",
-      sortOrder = "desc",
-      search,
-    } = req.query;
+router.get("/", protect, asyncHandler(async (req, res) => {
+  const queryOptions = {
+    allowedSortFields: ['date', 'amount', 'createdAt'],
+    defaultSortField: 'date',
+    allowedFilters: ['category', 'paymentMethod', 'status'],
+    maxLimit: 100,
+  };
 
-    const conditions = [eq(expenses.userId, req.user.id)];
+  const { pagination, sorting, search, filters, dateRange } = parseListQuery(req.query, queryOptions);
+  
+  const conditions = [eq(expenses.userId, req.user.id)];
 
-    if (category) conditions.push(eq(expenses.categoryId, category));
-    if (startDate) conditions.push(gte(expenses.date, new Date(startDate)));
-    if (endDate) conditions.push(lte(expenses.date, new Date(endDate)));
-    if (minAmount) conditions.push(gte(expenses.amount, minAmount.toString()));
-    if (maxAmount) conditions.push(lte(expenses.amount, maxAmount.toString()));
-    if (paymentMethod)
-      conditions.push(eq(expenses.paymentMethod, paymentMethod));
+  // Apply filters
+  if (filters.category) conditions.push(eq(expenses.categoryId, filters.category));
+  if (filters.paymentMethod) conditions.push(eq(expenses.paymentMethod, filters.paymentMethod));
+  if (filters.status) conditions.push(eq(expenses.status, filters.status));
+  
+  // Apply date range
+  if (dateRange.startDate) conditions.push(gte(expenses.date, dateRange.startDate));
+  if (dateRange.endDate) conditions.push(lte(expenses.date, dateRange.endDate));
 
-    // Add search functionality
-    if (search) {
-      const searchTerm = `%${search.toLowerCase()}%`;
-      conditions.push(
-        sql`(LOWER(${expenses.description}) LIKE ${searchTerm} OR 
-             CAST(${expenses.amount} AS TEXT) LIKE ${searchTerm} OR
-             LOWER(${expenses.paymentMethod}) LIKE ${searchTerm})`
-      );
-    }
-
-    const sortFn = sortOrder === "desc" ? desc : asc;
-    let orderByColumn = expenses.date;
-    if (sortBy === "amount") orderByColumn = expenses.amount;
-    // Add other sort columns as needed
-
-    const queryLimit = parseInt(limit);
-    const queryOffset = (parseInt(page) - 1) * queryLimit;
-
-    const [expensesList, countResult] = await Promise.all([
-      db.query.expenses.findMany({
-        where: and(...conditions),
-        orderBy: [sortFn(orderByColumn)],
-        limit: queryLimit,
-        offset: queryOffset,
-        with: {
-          category: {
-            columns: { name: true, color: true, icon: true },
-          },
-        },
-      }),
-      db
-        .select({ count: sql`count(*)` })
-        .from(expenses)
-        .where(and(...conditions)),
-    ]);
-
-    const total = Number(countResult[0]?.count || 0);
-
-    res.json({
-      success: true,
-      data: {
-        expenses: expensesList,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / queryLimit),
-          totalItems: total,
-          itemsPerPage: queryLimit,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Get expenses error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching expenses",
-    });
+  // Apply search
+  if (search.search) {
+    const searchTerm = `%${search.search.toLowerCase()}%`;
+    conditions.push(
+      sql`(LOWER(${expenses.description}) LIKE ${searchTerm} OR 
+           CAST(${expenses.amount} AS TEXT) LIKE ${searchTerm} OR
+           LOWER(${expenses.paymentMethod}) LIKE ${searchTerm})`
+    );
   }
-});
 
-// @route   GET /api/expenses/:id
-// @desc    Get expense by ID
-// @access  Private
-router.get("/:id", protect, checkOwnership("Expense"), async (req, res) => {
-  try {
-    // req.resource is already the simple object from middleware,
-    // but checkOwnership middleware might not populate category relations
-    // We should fetch afresh with relation if needed or rely on checkOwnership to be simple
-    // Since we want relation, let's fetch it fully
-    const expense = await db.query.expenses.findFirst({
-      where: eq(expenses.id, req.params.id),
+  const sortFn = sorting.sortOrder === "desc" ? desc : asc;
+  let orderByColumn = expenses.date;
+  if (sorting.sortBy === "amount") orderByColumn = expenses.amount;
+  if (sorting.sortBy === "createdAt") orderByColumn = expenses.createdAt;
+
+  const [expensesList, countResult] = await Promise.all([
+    db.query.expenses.findMany({
+      where: and(...conditions),
+      orderBy: [sortFn(orderByColumn)],
+      limit: pagination.limit,
+      offset: pagination.offset,
       with: {
         category: {
           columns: { name: true, color: true, icon: true },
         },
       },
-    });
+    }),
+    db
+      .select({ count: sql`count(*)` })
+      .from(expenses)
+      .where(and(...conditions)),
+  ]);
 
-    res.json({
-      success: true,
-      data: { expense },
-    });
-  } catch (error) {
-    console.error("Get expense error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server error while fetching expense" });
+  const total = Number(countResult[0]?.count || 0);
+  const paginatedData = req.buildPaginatedResponse(expensesList, total);
+
+  return res.paginated(paginatedData.items, paginatedData.pagination, 'Expenses retrieved successfully');
+}));
+
+// @route   GET /api/expenses/:id
+// @desc    Get expense by ID
+// @access  Private
+router.get("/:id", protect, checkOwnership("Expense"), asyncHandler(async (req, res) => {
+  const expense = await db.query.expenses.findFirst({
+    where: eq(expenses.id, req.params.id),
+    with: {
+      category: {
+        columns: { name: true, color: true, icon: true },
+      },
+    },
+  });
+
+  if (!expense) {
+    throw new NotFoundError('Expense not found');
   }
-});
+
+  return res.success(expense, 'Expense retrieved successfully');
+}));
 
 // @route   POST /api/expenses
 // @desc    Create new expense
