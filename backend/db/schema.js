@@ -66,7 +66,10 @@ export const expenses = pgTable('expenses', {
     tags: jsonb('tags').default([]), // Store generic array as JSONB or text[]
     receipt: jsonb('receipt'),
     isRecurring: boolean('is_recurring').default(false),
-    recurringPattern: jsonb('recurring_pattern'),
+    recurringPattern: jsonb('recurring_pattern'), // { frequency: 'daily'|'weekly'|'monthly'|'yearly', interval: 1, endDate?: Date }
+    nextExecutionDate: timestamp('next_execution_date'), // When the next recurring transaction should be created
+    lastExecutedDate: timestamp('last_executed_date'), // When this recurring pattern was last executed
+    recurringSourceId: uuid('recurring_source_id'), // Reference to the original recurring expense (for cloned transactions)
     notes: text('notes'),
     status: text('status').default('completed'),
     metadata: jsonb('metadata').default({
