@@ -6,6 +6,8 @@ import { eq, and } from "drizzle-orm";
 import db from "../config/db.js";
 import { users, categories, deviceSessions } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
+import { uploadProfilePicture, saveUploadedFile } from "../middleware/fileUpload.js";
+import fileStorageService from "../services/fileStorageService.js";
 import { getDefaultCategories } from "../utils/defaults.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
 import { validatePasswordStrength, isCommonPassword } from "../utils/passwordValidator.js";
@@ -125,10 +127,7 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
 
-    return res.json({
-      success: true,
-      exists: !!existingUser,
-    });
+    return res.success({ exists: !!existingUser }, 'Email check completed');
   })
 );
 
@@ -295,14 +294,10 @@ router.post(
     const ipAddress = req.ip || req.connection.remoteAddress;
     const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
 
-    res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: {
-        user: getPublicProfile(newUser),
-        ...tokens,
-      },
-    });
+    res.created({
+      user: getPublicProfile(newUser),
+      ...tokens,
+    }, "User registered successfully");
   })
 );
 
@@ -705,13 +700,100 @@ router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => 
   });
 }));
 
-// Test endpoint
-router.get("/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Auth endpoint is accessible",
-    timestamp: new Date().toISOString(),
-  });
-});
+// @rout   POST /api/auth/upload-profile-picture
+// @desc    Uplod usr profil pictur
+// @acces  Privat
+router.post(
+  "/upload-profile-picture",
+  protect,
+  uploadProfilePicture,
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      throw new ValidationError('No file uploaded');
+    }
+
+    const userId = req.user.id;
+    
+    // Sav fil using secur storag servic
+    const savedFile = await fileStorageService.saveFile(
+      req.file.buffer,
+      req.file.originalname,
+      userId,
+      'profile'
+    );
+    
+    // Updat usr profil with new pictur URL
+    const [updatedUser] = await db
+      .update(users)
+      .set({ 
+        profilePicture: savedFile.url,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    return res.success({
+      profilePicture: savedFile.url,
+      fileInfo: {
+        size: savedFile.size,
+        filename: savedFile.filename
+      }
+    }, 'Profile picture uploaded successfully');
+  })
+);
+
+// @rout   DELETE /api/auth/delete-profile-picture  
+// @desc    Delet usr profil pictur
+// @acces  Privat
+router.delete(
+  "/delete-profile-picture",
+  protect,
+  asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    
+    if (user.profilePicture) {
+      // Extrac fil path from URL
+      const fileName = user.profilePicture.split('/').pop();
+      const filePath = path.join('uploads', 'profiles', fileName);
+      
+      // Delet fil from storag
+      await fileStorageService.deleteFile(filePath, userId);
+    }
+    
+    // Updat usr profil to remov pictur URL
+    await db
+      .update(users)
+      .set({ 
+        profilePicture: '',
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId));
+    
+    return res.success(null, 'Profile picture deleted successfully');
+  })
+);
+
+// @rout   GET /api/auth/storage-usage
+// @desc    Gt usr storag usag informaton
+// @acces  Privat  
+router.get(
+  "/storage-usage",
+  protect,
+  asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const usage = await fileStorageService.getUserStorageUsage(userId);
+    
+    return res.success({
+      usage: {
+        totalSize: usage.totalSize,
+        fileCount: usage.fileCount,
+        quota: USER_STORAGE_QUOTA,
+        remainingSpace: USER_STORAGE_QUOTA - usage.totalSize,
+        usagePercentage: Math.round((usage.totalSize / USER_STORAGE_QUOTA) * 100)
+      }
+    }, 'Storage usage retrieved successfully');
+  })
+);
 
 export default router;

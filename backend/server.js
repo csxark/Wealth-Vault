@@ -11,8 +11,15 @@ import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
 import { connectRedis } from "./config/redis.js";
 import { scheduleCleanup } from "./jobs/tokenCleanup.js";
+import { initializeUploads } from "./middleware/fileUpload.js";
+import { createFileServerRoute } from "./middleware/secureFileServer.js";
+import { requestIdMiddleware, requestLogger, errorLogger, analyticsMiddleware } from "./middleware/requestLogger.js";
+import { performanceMiddleware } from "./services/performanceMonitor.js";
+import { logInfo, logError } from "./utils/logger.js";
 import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
+import { responseWrapper } from "./middleware/responseWrapper.js";
+import { paginationMiddleware } from "./utils/pagination.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 // Import routes
@@ -23,6 +30,7 @@ import goalRoutes from "./routes/goals.js";
 import categoryRoutes from "./routes/categories.js";
 import geminiRouter from "./routes/gemini.js";
 import analyticsRoutes from "./routes/analytics.js";
+import healthRoutes from "./routes/health.js";
 
 // Load environment variables
 dotenv.config();
@@ -34,6 +42,11 @@ connectRedis().catch(err => {
 
 // Schedule token cleanup job
 scheduleCleanup();
+
+// Initiliz uplod directorys
+initializeUploads().catch(err => {
+  console.error('❌ Failed to initialize upload directories:', err);
+});
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -98,6 +111,16 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(sanitizeMongo);
 app.use(sanitizeInput);
 
+// Response wrapper and pagination middleware
+app.use(responseWrapper);
+app.use(paginationMiddleware());
+
+// Logng and monitrng midlware
+app.use(requestIdMiddleware);
+app.use(requestLogger);
+app.use(performanceMiddleware);
+app.use(analyticsMiddleware);
+
 // Additional CORS headers middleware
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", req.headers.origin);
@@ -145,6 +168,10 @@ app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
+app.use("/api/health", healthRoutes);
+
+// Secur fil servr for uploddd fils
+app.use("/uploads", createFileServerRoute());
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -158,17 +185,27 @@ app.get("/api/health", (req, res) => {
 // 404 handler for undefined routes (must be before error handler)
 app.use(notFound);
 
+// Add error logging middleware
+app.use(errorLogger);
+
 // Centralized error handling middleware (must be last)
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
+  logInfo('Server started successfully', {
+    port: PORT,
+    environment: process.env.NODE_ENV || 'development',
+    frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
+  });
+  
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(
     `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`
   );
   console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
   console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
+  console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
 });
 
