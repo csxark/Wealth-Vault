@@ -11,6 +11,7 @@ import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
 import { connectRedis } from "./config/redis.js";
 import { scheduleCleanup } from "./jobs/tokenCleanup.js";
+import { scheduleRecurringExecution } from "./jobs/recurringExecution.js";
 import { initializeUploads } from "./middleware/fileUpload.js";
 import { createFileServerRoute } from "./middleware/secureFileServer.js";
 import {
@@ -47,6 +48,9 @@ connectRedis().catch((err) => {
 
 // Schedule token cleanup job
 scheduleCleanup();
+
+// Schedule recurring expense execution job (runs every 24 hours)
+scheduleRecurringExecution();
 
 // Initiliz uplod directorys
 initializeUploads().catch((err) => {

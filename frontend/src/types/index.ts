@@ -48,28 +48,32 @@ export interface Expense {
     };
   };
   tags?: string[];
-  receipt?: {
-    imageUrl?: string;
-    ocrData?: {
-      merchant?: string;
-      total?: number;
-      items?: Array<{
-        name: string;
-        price: number;
-        quantity: number;
-      }>;
-    };
-  };
-  isRecurring: boolean;
-  recurringPattern?: {
-    frequency?: 'daily' | 'weekly' | 'monthly' | 'yearly';
-    interval?: number;
-    endDate?: string;
-  };
-  notes?: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
+}
+
+// Currency Converter Types
+export interface CurrencyRate {
+  from: string;
+  to: string;
+  rate: number;
+}
+
+export interface CurrencyConverterProps {
+  onRateChange: (rate: CurrencyRate) => void;
+}
+
+// Currency Utility Types
+export interface CurrencyConversionError extends Error {
+  code?: string;
+  status?: number;
+}
+
+export type CurrencyCode = 'USD' | 'EUR' | 'INR' | 'GBP' | 'JPY';
+
+export interface CurrencyApiResponse {
+  amount: number;
+  base: string;
+  date: string;
+  rates: Record<CurrencyCode, number>;
 }
 
 export interface Category {
@@ -224,4 +228,15 @@ export interface RegisterData {
   currency?: string;
   monthlyIncome?: number;
   monthlyBudget?: number;
+}
+
+// Transaction interface for CSV import functionality
+export interface Transaction {
+  id: string;
+  user_id: string;
+  amount: number;
+  description: string;
+  category: SpendingCategory;
+  date: string;
+  created_at: string;
 }
