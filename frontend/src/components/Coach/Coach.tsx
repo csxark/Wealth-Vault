@@ -73,12 +73,14 @@ export const Coach: React.FC = () => {
 
     if (analyticsData) {
       const { summary, categoryBreakdown, monthlyTrend, comparison } = analyticsData;
+      const topCategories = analyticsData?.categoryBreakdown?.slice(0, 3) || [];
+      const recentTrends = analyticsData?.monthlyTrend?.slice(-3) || [];
       contextData += `\nUser's Financial Data:
 - Current month spending: ₹${summary?.totalAmount || 0}
 - Average transaction: ₹${summary?.avgTransaction || 0}
-- Top spending categories: ${categoryBreakdown?.slice(0, 3).map(cat => `${cat.categoryName} (₹${cat.total})`).join(', ')}
+- Top spending categories: ${topCategories.map(cat => `${cat.categoryName} (₹${cat.total})`).join(', ')}
 - Spending trend: ${comparison?.changes?.totalAmount?.trend === 'up' ? 'increasing' : 'decreasing'} by ${Math.abs(comparison?.changes?.totalAmount?.value || 0)}% vs last period
-- Monthly spending trend: ${monthlyTrend?.slice(-3).map(m => `${m.month}: ₹${m.total}`).join(', ')}`;
+- Monthly spending trend: ${recentTrends.map(m => `${m.month}: ₹${m.total}`).join(', ')}`;
     }
 
     if (goalsData && goalsData.goals) {
