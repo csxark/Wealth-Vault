@@ -20,6 +20,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { authAPI } from '../../services/api';
 import { useLoading } from '../../context/LoadingContext';
+import { useToast } from '../../context/ToastContext';
 import type { User } from '../../types';
 
 // Mock dev profile with complete data
@@ -59,14 +60,9 @@ export const Profile: React.FC = () => {
   const [editedProfile, setEditedProfile] = useState<Partial<User>>({});
   const [loading, setLoading] = useState(true);
   const { withLoading } = useLoading();
+  const { showToast } = useToast();
   const [saving, setSaving] = useState(false);
   const [isDevMode, setIsDevMode] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      loadProfile();
-    }
-  }, [user, loadProfile]);
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
@@ -99,7 +95,13 @@ export const Profile: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, withLoading]);
+
+  useEffect(() => {
+    if (user) {
+      loadProfile();
+    }
+  }, [user, loadProfile]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -108,6 +110,7 @@ export const Profile: React.FC = () => {
     if (isDevMode) {
       setProfile(editedProfile as User);
       setIsEditing(false);
+      showToast('Profile updated successfully (dev mode)!', 'success');
       return;
     }
 
@@ -118,11 +121,14 @@ export const Profile: React.FC = () => {
       if (response.success) {
         setProfile(response.data.user);
         setIsEditing(false);
+        showToast('Profile updated successfully!', 'success');
       } else {
         console.error('Error saving profile');
+        showToast('Failed to update profile. Please try again.', 'error');
       }
     } catch (error) {
       console.error('Error saving profile:', error);
+      showToast('An error occurred while saving your profile.', 'error');
     } finally {
       setSaving(false);
     }
