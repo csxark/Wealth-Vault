@@ -30,8 +30,8 @@ export interface User {
 }
 
 export interface Expense {
-  _id: string;
-  user: string;
+  id: string;
+  userId: string;
   amount: number;
   currency: string;
   description: string;
@@ -68,8 +68,8 @@ export interface Expense {
   };
   notes?: string;
   status: string;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Category {
