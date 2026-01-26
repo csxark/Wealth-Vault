@@ -6,6 +6,8 @@ import { expenses, categories, users } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
 import { asyncHandler, ValidationError, NotFoundError } from "../middleware/errorHandler.js";
 import { parseListQuery } from "../utils/pagination.js";
+import { initializeRecurringExpense, disableRecurring } from "../services/expenseService.js";
+import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
 
 const router = express.Router();
 
@@ -266,6 +268,15 @@ router.post(
 
       // Update category stats (async, don't block response necessarily, but good to wait)
       await updateCategoryStats(category);
+
+      // Initialize recurring expense if applicable
+      if (isRecurring && recurringPattern) {
+        await initializeRecurringExpense(
+          newExpense.id,
+          recurringPattern,
+          date ? new Date(date) : new Date()
+        );
+      }
 
       const expenseWithCategory = await db.query.expenses.findFirst({
         where: eq(expenses.id, newExpense.id),
@@ -582,6 +593,136 @@ router.get("/stats/summary", protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error while fetching expense statistics",
+    });
+  }
+});
+
+// @route   GET /api/expenses/recurring/status
+// @desc    Get recurring expense job status
+// @access  Private
+router.get("/recurring/status", protect, async (req, res) => {
+  try {
+    const status = getJobStatus();
+    res.json({
+      success: true,
+      data: { status },
+    });
+  } catch (error) {
+    console.error("Get recurring status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching recurring job status",
+    });
+  }
+});
+
+// @route   POST /api/expenses/recurring/execute
+// @desc    Manually trigger recurring expense execution
+// @access  Private (admin only in production)
+router.post("/recurring/execute", protect, async (req, res) => {
+  try {
+    console.log(`Manual recurring execution triggered by user: ${req.user.id}`);
+    const results = await runManualExecution();
+    
+    // Log the manual execution
+    logAudit(req, {
+      userId: req.user.id,
+      action: 'RECURRING_MANUAL_EXECUTE',
+      resourceType: ResourceTypes.EXPENSE,
+      metadata: {
+        processed: results?.processed || 0,
+        created: results?.created || 0,
+        failed: results?.failed || 0,
+      },
+      status: results ? 'success' : 'failure',
+    });
+
+    res.json({
+      success: true,
+      message: "Recurring expense execution completed",
+      data: { results },
+    });
+  } catch (error) {
+    console.error("Manual recurring execution error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during recurring expense execution",
+    });
+  }
+});
+
+// @route   PUT /api/expenses/:id/recurring
+// @desc    Update recurring settings for an expense
+// @access  Private
+router.put("/:id/recurring", protect, checkOwnership("Expense"), async (req, res) => {
+  try {
+    const { isRecurring, recurringPattern } = req.body;
+    const expenseId = req.params.id;
+
+    if (isRecurring && recurringPattern) {
+      // Enable/update recurring
+      await db
+        .update(expenses)
+        .set({
+          isRecurring: true,
+          recurringPattern,
+          updatedAt: new Date(),
+        })
+        .where(eq(expenses.id, expenseId));
+
+      // Initialize the next execution date
+      const nextDate = await initializeRecurringExpense(expenseId, recurringPattern);
+
+      res.json({
+        success: true,
+        message: "Recurring settings updated",
+        data: { nextExecutionDate: nextDate },
+      });
+    } else {
+      // Disable recurring
+      await disableRecurring(expenseId);
+
+      res.json({
+        success: true,
+        message: "Recurring disabled for this expense",
+      });
+    }
+  } catch (error) {
+    console.error("Update recurring error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating recurring settings",
+    });
+  }
+});
+
+// @route   GET /api/expenses/recurring/list
+// @desc    Get all recurring expenses for the user
+// @access  Private
+router.get("/recurring/list", protect, async (req, res) => {
+  try {
+    const recurringExpenses = await db.query.expenses.findMany({
+      where: and(
+        eq(expenses.userId, req.user.id),
+        eq(expenses.isRecurring, true)
+      ),
+      orderBy: [asc(expenses.nextExecutionDate)],
+      with: {
+        category: {
+          columns: { name: true, color: true, icon: true },
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      data: { expenses: recurringExpenses },
+    });
+  } catch (error) {
+    console.error("Get recurring expenses error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching recurring expenses",
     });
   }
 });
