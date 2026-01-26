@@ -6,6 +6,7 @@ import { expenses, categories, users } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
 import { asyncHandler, ValidationError, NotFoundError } from "../middleware/errorHandler.js";
 import { parseListQuery } from "../utils/pagination.js";
+import { logAudit, AuditActions, ResourceTypes } from "../middleware/auditLogger.js";
 
 const router = express.Router();
 
@@ -267,6 +268,20 @@ router.post(
       // Update category stats (async, don't block response necessarily, but good to wait)
       await updateCategoryStats(category);
 
+      // Log expense creation
+      logAudit(req, {
+        userId: req.user.id,
+        action: AuditActions.EXPENSE_CREATE,
+        resourceType: ResourceTypes.EXPENSE,
+        resourceId: newExpense.id,
+        metadata: {
+          amount: amount,
+          description: description,
+          categoryId: category,
+        },
+        status: 'success',
+      });
+
       const expenseWithCategory = await db.query.expenses.findFirst({
         where: eq(expenses.id, newExpense.id),
         with: {
@@ -358,6 +373,20 @@ router.put("/:id", protect, checkOwnership("Expense"), async (req, res) => {
       }
     }
 
+    // Log expense update
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_UPDATE,
+      resourceType: ResourceTypes.EXPENSE,
+      resourceId: req.params.id,
+      metadata: {
+        updatedFields: Object.keys(updateData),
+        oldAmount: oldExpense.amount,
+        newAmount: updateData.amount,
+      },
+      status: 'success',
+    });
+
     const result = await db.query.expenses.findFirst({
       where: eq(expenses.id, updatedExpense.id),
       with: { category: { columns: { name: true, color: true, icon: true } } },
@@ -387,6 +416,20 @@ router.delete("/:id", protect, checkOwnership("Expense"), async (req, res) => {
     if (expense.categoryId) {
       await updateCategoryStats(expense.categoryId);
     }
+
+    // Log expense deletion
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_DELETE,
+      resourceType: ResourceTypes.EXPENSE,
+      resourceId: req.params.id,
+      metadata: {
+        amount: expense.amount,
+        description: expense.description,
+        categoryId: expense.categoryId,
+      },
+      status: 'success',
+    });
 
     res.json({ success: true, message: "Expense deleted successfully" });
   } catch (error) {
@@ -493,6 +536,18 @@ router.post("/import", protect, async (req, res) => {
       .insert(expenses)
       .values(validExpenses)
       .returning();
+
+    // Log expense import
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_IMPORT,
+      resourceType: ResourceTypes.EXPENSE,
+      metadata: {
+        importedCount: insertedExpenses.length,
+        errorCount: errors.length,
+      },
+      status: 'success',
+    });
 
     // Update category stats for all affected categories
     const affectedCategoryIds = [...new Set(validExpenses.map(exp => exp.categoryId))];
