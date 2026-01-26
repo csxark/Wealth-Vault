@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, Download } from 'lucide-react';
 import Papa from 'papaparse';
 import { useAuth } from '../../hooks/useAuth';
-import { useToast } from '../../context/ToastContext';
+// import { useToast } from '../../context/ToastContext';
 // import { expensesAPI } from '../../services/api';
 
 export const DataImport: React.FC = () => {
@@ -54,7 +54,7 @@ export const DataImport: React.FC = () => {
 
             const transaction: Transaction = {
               id: `import-${Date.now()}-${index}`,
-              user_id: user?.id || '',
+              user_id: user?._id || '',
               amount: amount,
               description: description.toString(),
               category: categorizeTransaction(description.toString(), Math.abs(amount)),
