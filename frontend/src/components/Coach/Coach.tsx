@@ -3,6 +3,7 @@ import { Send, Bot, User, Zap, DollarSign, TrendingDown } from 'lucide-react';
 import type { ChatMessage } from '../../types';
 import { fetchGeminiResponse } from '../../services/gemini';
 import { useLoading } from '../../context/LoadingContext';
+import { analyticsAPI, goalsAPI } from '../../services/api';
 
 const quickReplies = [
   { text: "Help me reduce impulsive spending", icon: TrendingDown },
@@ -14,6 +15,8 @@ export const Coach: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [goalsData, setGoalsData] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { withLoading } = useLoading();
 
@@ -45,12 +48,53 @@ export const Coach: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Fetch analytics and goals data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [analyticsResponse, goalsResponse] = await Promise.all([
+          analyticsAPI.getSpendingSummary(),
+          goalsAPI.getAll()
+        ]);
+        setAnalyticsData(analyticsResponse.data);
+        setGoalsData(goalsResponse.data);
+      } catch (error) {
+        console.error('Error fetching analytics and goals data:', error);
+        // Continue without data - coach can still provide general advice
+      }
+    };
+
+    fetchData();
+  }, []);
+
   // Async Gemini response
   const generateGeminiResponse = async (userMessage: string): Promise<string> => {
+    let contextData = '';
+
+    if (analyticsData) {
+      const { summary, categoryBreakdown, monthlyTrend, comparison } = analyticsData;
+      contextData += `\nUser's Financial Data:
+- Current month spending: ₹${summary?.totalAmount || 0}
+- Average transaction: ₹${summary?.avgTransaction || 0}
+- Top spending categories: ${categoryBreakdown?.slice(0, 3).map(cat => `${cat.categoryName} (₹${cat.total})`).join(', ')}
+- Spending trend: ${comparison?.changes?.totalAmount?.trend === 'up' ? 'increasing' : 'decreasing'} by ${Math.abs(comparison?.changes?.totalAmount?.value || 0)}% vs last period
+- Monthly spending trend: ${monthlyTrend?.slice(-3).map(m => `${m.month}: ₹${m.total}`).join(', ')}`;
+    }
+
+    if (goalsData && goalsData.goals) {
+      const activeGoals = goalsData.goals.filter((goal: any) => goal.status === 'active');
+      if (activeGoals.length > 0) {
+        contextData += `\nActive Goals: ${activeGoals.map((goal: any) => `${goal.title} (₹${goal.currentAmount || 0}/₹${goal.targetAmount})`).join(', ')}`;
+      }
+    }
+
     const prompt = `
-You are an AI Financial Coach.
+You are an AI Financial Coach with access to the user's financial data.
 Answer in a friendly, concise way.
-Give practical tips about budgeting, saving, and financial wellness.
+Provide personalized advice based on their spending patterns, trends, and goals.
+Use predictive analytics to give insights like budget warnings or goal achievement timelines.
+${contextData}
+
 User: ${userMessage}
 Coach:
     `;
