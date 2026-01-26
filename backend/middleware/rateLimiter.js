@@ -15,19 +15,23 @@ const createStore = () => {
   return undefined; // Falls back to memory store
 };
 
+// Helper to get client IP
+const getClientIp = (req) => {
+  return req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.connection?.remoteAddress || 'unknown';
+};
+
 // Enhanced rate limiter with proper headers and user identification
 const createRateLimiter = (options) => {
   return rateLimit({
     store: createStore(),
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req, res) => {
-      // Use user ID if authenticated, otherwise use express-rate-limit's IP helper
+    keyGenerator: (req) => {
+      // Use user ID if authenticated, otherwise use IP
       if (req.user && req.user.id) {
         return `user:${req.user.id}`;
       }
-      // Use the default IP key generator which handles IPv6 properly
-      return rateLimit.defaultKeyGenerator(req, res);
+      return getClientIp(req);
     },
     handler: (req, res, next, options) => {
       res.status(429).json({
@@ -63,7 +67,7 @@ export const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5,
   skipSuccessfulRequests: true,
-  keyGenerator: (req, res) => `auth:${rateLimit.defaultKeyGenerator(req, res)}`, // Always use IP for auth
+  keyGenerator: (req) => `auth:${getClientIp(req)}`, // Always use IP for auth
   message: {
     message: "Too many authentication attempts from this IP, please try again after 15 minutes",
   },
@@ -76,7 +80,7 @@ export const authLimiter = createRateLimiter({
 export const passwordResetLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3,
-  keyGenerator: (req, res) => `reset:${rateLimit.defaultKeyGenerator(req, res)}`,
+  keyGenerator: (req) => `reset:${getClientIp(req)}`,
   message: {
     message: "Too many password reset attempts, please try again after an hour",
   },
