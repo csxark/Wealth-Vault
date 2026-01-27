@@ -48,32 +48,28 @@ export interface Expense {
     };
   };
   tags?: string[];
-}
-
-// Currency Converter Types
-export interface CurrencyRate {
-  from: string;
-  to: string;
-  rate: number;
-}
-
-export interface CurrencyConverterProps {
-  onRateChange: (rate: CurrencyRate) => void;
-}
-
-// Currency Utility Types
-export interface CurrencyConversionError extends Error {
-  code?: string;
-  status?: number;
-}
-
-export type CurrencyCode = 'USD' | 'EUR' | 'INR' | 'GBP' | 'JPY';
-
-export interface CurrencyApiResponse {
-  amount: number;
-  base: string;
-  date: string;
-  rates: Record<CurrencyCode, number>;
+  receipt?: {
+    imageUrl?: string;
+    ocrData?: {
+      merchant?: string;
+      total?: number;
+      items?: Array<{
+        name: string;
+        price: number;
+        quantity: number;
+      }>;
+    };
+  };
+  isRecurring: boolean;
+  recurringPattern?: {
+    frequency?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+    interval?: number;
+    endDate?: string;
+  };
+  notes?: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Category {
