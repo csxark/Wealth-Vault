@@ -1,20 +1,11 @@
-# Enhanced AI Coach Insights with Predictive Analytics - Implementation Plan
+# Backend Integration for CSV Import
 
-## Current Status
-- Analyzed Coach.tsx, analytics.js, goals.js, and api.ts
-- Confirmed API methods exist for fetching analytics and goals data
-
-## Implementation Steps
-- [ ] Modify Coach.tsx to fetch user analytics and goals data on component load
-- [ ] Update Gemini prompt to include historical spending data, trends, and goals
-- [ ] Add loading states for data fetching
-- [ ] Test enhanced coach responses for predictive accuracy
-
-## Files to Edit
-- frontend/src/components/Coach/Coach.tsx: Add data fetching and update prompt
-- frontend/src/services/api.ts: Already has required methods
-
-## Followup Steps
-- Test enhanced coach responses for predictive accuracy
-- Add loading states for data fetching
-- Consider adding a new backend endpoint for advanced predictive calculations if needed
+## Tasks
+- [ ] Modify DataImport.tsx to fetch user categories on component mount
+- [ ] Create mapping from SpendingCategory to actual category IDs
+- [ ] Update processCSV to use expensesAPI.import instead of localStorage
+- [ ] Handle API response and update UI accordingly
+- [ ] Remove localStorage operations
+- [ ] Test CSV import with backend API
+- [ ] Verify category stats are updated
+- [ ] Ensure error handling works properly
