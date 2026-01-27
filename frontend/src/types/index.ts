@@ -30,8 +30,8 @@ export interface User {
 }
 
 export interface Expense {
-  _id: string;
-  user: string;
+  id: string;
+  userId: string;
   amount: number;
   currency: string;
   description: string;
