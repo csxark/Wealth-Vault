@@ -1,1 +1,238 @@
-import express from 'express';\nimport { performanceMonitor } from '../services/performanceMonitor.js';\nimport { logInfo } from '../utils/logger.js';\nimport db from '../config/db.js';\nimport { getRedisClient } from '../config/redis.js';\n\nconst router = express.Router();\n\n/**\n * Helth chek endpont for monitrng systm status\n * Provids detaild informaton about applicaton helth\n */\n\n// @rout   GET /api/health\n// @desc    Basi helth chek\n// @acces  Publi\nrouter.get('/', async (req, res) => {\n  try {\n    const healthStatus = {\n      status: 'healthy',\n      timestamp: new Date().toISOString(),\n      uptime: Math.round(process.uptime()),\n      version: process.env.npm_package_version || '1.0.0',\n      environment: process.env.NODE_ENV || 'development'\n    };\n    \n    logInfo('Health check accessed', { ip: req.ip });\n    \n    res.json({\n      success: true,\n      message: 'Wealth Vault API is running',\n      data: healthStatus\n    });\n  } catch (error) {\n    res.status(503).json({\n      success: false,\n      message: 'Service unavailable',\n      error: error.message\n    });\n  }\n});\n\n// @rout   GET /api/health/detailed\n// @desc    Detaild helth chek with al systm componts\n// @acces  Publi (but shoud be protectd in producton)\nrouter.get('/detailed', async (req, res) => {\n  const healthChecks = {\n    timestamp: new Date().toISOString(),\n    status: 'healthy',\n    checks: {}\n  };\n  \n  try {\n    // Chek databas conectivty\n    try {\n      await db.execute('SELECT 1');\n      healthChecks.checks.database = {\n        status: 'healthy',\n        message: 'Database connection successful'\n      };\n    } catch (dbError) {\n      healthChecks.checks.database = {\n        status: 'unhealthy',\n        message: 'Database connection failed',\n        error: dbError.message\n      };\n      healthChecks.status = 'unhealthy';\n    }\n    \n    // Chek Redis conectivty\n    const redisClient = getRedisClient();\n    if (redisClient) {\n      try {\n        await redisClient.ping();\n        healthChecks.checks.redis = {\n          status: 'healthy',\n          message: 'Redis connection successful'\n        };\n      } catch (redisError) {\n        healthChecks.checks.redis = {\n          status: 'degraded',\n          message: 'Redis connection failed, using fallback',\n          error: redisError.message\n        };\n      }\n    } else {\n      healthChecks.checks.redis = {\n        status: 'disabled',\n        message: 'Redis not configured'\n      };\n    }\n    \n    // Gt performanc metrcs\n    const performanceData = performanceMonitor.getPerformanceSummary();\n    healthChecks.checks.performance = {\n      status: performanceData.cpuUsage > 90 || performanceData.systemMemoryUsage > 90 ? 'warning' : 'healthy',\n      metrics: performanceData\n    };\n    \n    // Chek fil systm acces\n    try {\n      const fs = await import('fs/promises');\n      await fs.access('logs');\n      healthChecks.checks.filesystem = {\n        status: 'healthy',\n        message: 'File system accessible'\n      };\n    } catch (fsError) {\n      healthChecks.checks.filesystem = {\n        status: 'warning',\n        message: 'File system access issues',\n        error: fsError.message\n      };\n    }\n    \n    // Overal helth status\n    const unhealthyChecks = Object.values(healthChecks.checks)\n      .filter(check => check.status === 'unhealthy');\n    \n    if (unhealthyChecks.length > 0) {\n      healthChecks.status = 'unhealthy';\n    } else {\n      const warningChecks = Object.values(healthChecks.checks)\n        .filter(check => check.status === 'warning' || check.status === 'degraded');\n      \n      if (warningChecks.length > 0) {\n        healthChecks.status = 'degraded';\n      }\n    }\n    \n    const statusCode = healthChecks.status === 'healthy' ? 200 : \n                      healthChecks.status === 'degraded' ? 200 : 503;\n    \n    res.status(statusCode).json({\n      success: healthChecks.status !== 'unhealthy',\n      message: `System status: ${healthChecks.status}`,\n      data: healthChecks\n    });\n    \n  } catch (error) {\n    res.status(503).json({\n      success: false,\n      message: 'Health check failed',\n      error: error.message,\n      data: healthChecks\n    });\n  }\n});\n\n// @rout   GET /api/health/metrics\n// @desc    Performanc metrcs endpont\n// @acces  Publi (shoud be protectd in producton)\nrouter.get('/metrics', (req, res) => {\n  try {\n    const metrics = performanceMonitor.getPerformanceSummary();\n    \n    res.json({\n      success: true,\n      message: 'Performance metrics retrieved',\n      data: {\n        timestamp: new Date().toISOString(),\n        ...metrics\n      }\n    });\n  } catch (error) {\n    res.status(500).json({\n      success: false,\n      message: 'Failed to retrieve metrics',\n      error: error.message\n    });\n  }\n});\n\n// @rout   GET /api/health/logs\n// @desc    Recnt log entrys for monitrng\n// @acces  Protectd (shoud requir admin acces)\nrouter.get('/logs', async (req, res) => {\n  try {\n    const fs = await import('fs/promises');\n    const path = await import('path');\n    \n    const { level = 'error', limit = 50 } = req.query;\n    \n    // Rd recnt log fils\n    const logDir = level === 'error' ? 'logs/error' : 'logs/combined';\n    const files = await fs.readdir(logDir);\n    \n    if (files.length === 0) {\n      return res.json({\n        success: true,\n        message: 'No log files found',\n        data: { logs: [] }\n      });\n    }\n    \n    // Gt most recnt log fil\n    const latestFile = files.sort().pop();\n    const logPath = path.join(logDir, latestFile);\n    \n    const logContent = await fs.readFile(logPath, 'utf8');\n    const logLines = logContent.trim().split('\\n')\n      .filter(line => line.trim())\n      .slice(-parseInt(limit))\n      .map(line => {\n        try {\n          return JSON.parse(line);\n        } catch {\n          return { message: line, timestamp: new Date().toISOString() };\n        }\n      });\n    \n    res.json({\n      success: true,\n      message: `Recent ${level} logs retrieved`,\n      data: {\n        logs: logLines,\n        file: latestFile,\n        count: logLines.length\n      }\n    });\n    \n  } catch (error) {\n    res.status(500).json({\n      success: false,\n      message: 'Failed to retrieve logs',\n      error: error.message\n    });\n  }\n});\n\nexport default router;", "oldStr": ""}]
+import express from 'express';
+import { performanceMonitor } from '../services/performanceMonitor.js';
+import { logInfo } from '../utils/logger.js';
+import db from '../config/db.js';
+import { getRedisClient } from '../config/redis.js';
+
+const router = express.Router();
+
+/**
+ * Health check endpoint for monitoring system status
+ * Provides detailed information about application health
+ */
+
+// @route   GET /api/health
+// @desc    Basic health check
+// @access  Public
+router.get('/', async (req, res) => {
+  try {
+    const healthStatus = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: Math.round(process.uptime()),
+      version: process.env.npm_package_version || '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+    };
+
+    logInfo('Health check accessed', { ip: req.ip });
+
+    res.json({
+      success: true,
+      message: 'Wealth Vault API is running',
+      data: healthStatus,
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      message: 'Service unavailable',
+      error: error.message,
+    });
+  }
+});
+
+// @route   GET /api/health/detailed
+// @desc    Detailed health check with all system components
+// @access  Public (should be protected in production)
+router.get('/detailed', async (req, res) => {
+  const healthChecks = {
+    timestamp: new Date().toISOString(),
+    status: 'healthy',
+    checks: {},
+  };
+
+  try {
+    // Check database connectivity
+    try {
+      await db.execute('SELECT 1');
+      healthChecks.checks.database = {
+        status: 'healthy',
+        message: 'Database connection successful',
+      };
+    } catch (dbError) {
+      healthChecks.checks.database = {
+        status: 'unhealthy',
+        message: 'Database connection failed',
+        error: dbError.message,
+      };
+      healthChecks.status = 'unhealthy';
+    }
+
+    // Check Redis connectivity
+    const redisClient = getRedisClient();
+    if (redisClient) {
+      try {
+        await redisClient.ping();
+        healthChecks.checks.redis = {
+          status: 'healthy',
+          message: 'Redis connection successful',
+        };
+      } catch (redisError) {
+        healthChecks.checks.redis = {
+          status: 'degraded',
+          message: 'Redis connection failed, using fallback',
+          error: redisError.message,
+        };
+      }
+    } else {
+      healthChecks.checks.redis = {
+        status: 'disabled',
+        message: 'Redis not configured',
+      };
+    }
+
+    // Get performance metrics
+    const performanceData = performanceMonitor.getPerformanceSummary();
+    healthChecks.checks.performance = {
+      status:
+        performanceData.cpuUsage > 90 || performanceData.systemMemoryUsage > 90
+          ? 'warning'
+          : 'healthy',
+      metrics: performanceData,
+    };
+
+    // Check file system access
+    try {
+      const fs = await import('fs/promises');
+      await fs.access('logs');
+      healthChecks.checks.filesystem = {
+        status: 'healthy',
+        message: 'File system accessible',
+      };
+    } catch (fsError) {
+      healthChecks.checks.filesystem = {
+        status: 'warning',
+        message: 'File system access issues',
+        error: fsError.message,
+      };
+    }
+
+    // Determine overall health status
+    const unhealthyChecks = Object.values(healthChecks.checks).filter(
+      (check) => check.status === 'unhealthy'
+    );
+    if (unhealthyChecks.length > 0) {
+      healthChecks.status = 'unhealthy';
+    } else {
+      const warningChecks = Object.values(healthChecks.checks).filter(
+        (check) => check.status === 'warning' || check.status === 'degraded'
+      );
+      if (warningChecks.length > 0) {
+        healthChecks.status = 'degraded';
+      }
+    }
+
+    const statusCode =
+      healthChecks.status === 'healthy'
+        ? 200
+        : healthChecks.status === 'degraded'
+        ? 200
+        : 503;
+
+    res.status(statusCode).json({
+      success: healthChecks.status !== 'unhealthy',
+      message: `System status: ${healthChecks.status}`,
+      data: healthChecks,
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      message: 'Health check failed',
+      error: error.message,
+      data: healthChecks,
+    });
+  }
+});
+
+// @route   GET /api/health/metrics
+// @desc    Performance metrics endpoint
+// @access  Public (should be protected in production)
+router.get('/metrics', (req, res) => {
+  try {
+    const metrics = performanceMonitor.getPerformanceSummary();
+
+    res.json({
+      success: true,
+      message: 'Performance metrics retrieved',
+      data: {
+        timestamp: new Date().toISOString(),
+        ...metrics,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve metrics',
+      error: error.message,
+    });
+  }
+});
+
+// @route   GET /api/health/logs
+// @desc    Recent log entries for monitoring
+// @access  Protected (should require admin access)
+router.get('/logs', async (req, res) => {
+  try {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+
+    const { level = 'error', limit = 50 } = req.query;
+
+    // Read recent log files
+    const logDir = level === 'error' ? 'logs/error' : 'logs/combined';
+    const files = await fs.readdir(logDir);
+
+    if (files.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No log files found',
+        data: { logs: [] },
+      });
+    }
+
+    // Get most recent log file
+    const latestFile = files.sort().pop();
+    const logPath = path.join(logDir, latestFile);
+
+    const logContent = await fs.readFile(logPath, 'utf8');
+    const logLines = logContent
+      .trim()
+      .split('\n')
+      .filter((line) => line.trim())
+      .slice(-parseInt(limit))
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return { message: line, timestamp: new Date().toISOString() };
+        }
+      });
+
+    res.json({
+      success: true,
+      message: `Recent ${level} logs retrieved`,
+      data: {
+        logs: logLines,
+        file: latestFile,
+        count: logLines.length,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve logs',
+      error: error.message,
+    });
+  }
+});
+
+export default router;

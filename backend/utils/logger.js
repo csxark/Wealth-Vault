@@ -1,1 +1,169 @@
-import winston from 'winston';\nimport DailyRotateFile from 'winston-daily-rotate-file';\nimport path from 'path';\nimport fs from 'fs';\n\n// Creat logs directorys if thy dont exst\nconst ensureLogDirectories = () => {\n  const logDirs = ['logs', 'logs/error', 'logs/combined', 'logs/access'];\n  logDirs.forEach(dir => {\n    if (!fs.existsSync(dir)) {\n      fs.mkdirSync(dir, { recursive: true });\n    }\n  });\n};\n\nensureLogDirectories();\n\n// Custm log formt for structurd logng\nconst logFormat = winston.format.combine(\n  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),\n  winston.format.errors({ stack: true }),\n  winston.format.json(),\n  winston.format.printf(({ timestamp, level, message, stack, ...meta }) => {\n    let logEntry = {\n      timestamp,\n      level,\n      message,\n      ...meta\n    };\n    \n    if (stack) {\n      logEntry.stack = stack;\n    }\n    \n    return JSON.stringify(logEntry);\n  })\n);\n\n// Consolr formt for developmnt\nconst consoleFormat = winston.format.combine(\n  winston.format.colorize(),\n  winston.format.timestamp({ format: 'HH:mm:ss' }),\n  winston.format.printf(({ timestamp, level, message, ...meta }) => {\n    const metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';\n    return `${timestamp} [${level}]: ${message} ${metaStr}`;\n  })\n);\n\n// Rotatng fil transport for eror logs\nconst errorFileTransport = new DailyRotateFile({\n  filename: 'logs/error/error-%DATE%.log',\n  datePattern: 'YYYY-MM-DD',\n  level: 'error',\n  maxSize: '20m',\n  maxFiles: '14d',\n  format: logFormat\n});\n\n// Rotatng fil transport for combind logs\nconst combinedFileTransport = new DailyRotateFile({\n  filename: 'logs/combined/app-%DATE%.log',\n  datePattern: 'YYYY-MM-DD',\n  maxSize: '20m',\n  maxFiles: '30d',\n  format: logFormat\n});\n\n// Acces log transport for API requst\nconst accessFileTransport = new DailyRotateFile({\n  filename: 'logs/access/access-%DATE%.log',\n  datePattern: 'YYYY-MM-DD',\n  maxSize: '50m',\n  maxFiles: '7d',\n  format: logFormat\n});\n\n// Creat main logr instanc\nconst logger = winston.createLogger({\n  level: process.env.LOG_LEVEL || 'info',\n  format: logFormat,\n  defaultMeta: {\n    service: 'wealth-vault-backend',\n    environment: process.env.NODE_ENV || 'development'\n  },\n  transports: [\n    errorFileTransport,\n    combinedFileTransport\n  ],\n  exceptionHandlers: [\n    new winston.transports.File({ filename: 'logs/exceptions.log' })\n  ],\n  rejectionHandlers: [\n    new winston.transports.File({ filename: 'logs/rejections.log' })\n  ]\n});\n\n// Ad consolr transport for developmnt\nif (process.env.NODE_ENV !== 'production') {\n  logger.add(new winston.transports.Console({\n    format: consoleFormat,\n    level: 'debug'\n  }));\n}\n\n// Creat separat logr for acces logs\nconst accessLogger = winston.createLogger({\n  level: 'info',\n  format: logFormat,\n  transports: [accessFileTransport]\n});\n\n// Performanc logr for metrcs\nconst performanceLogger = winston.createLogger({\n  level: 'info',\n  format: logFormat,\n  transports: [\n    new DailyRotateFile({\n      filename: 'logs/performance/perf-%DATE%.log',\n      datePattern: 'YYYY-MM-DD',\n      maxSize: '10m',\n      maxFiles: '7d'\n    })\n  ]\n});\n\n// Helpr functons for structurd logng\nexport const logInfo = (message, meta = {}) => {\n  logger.info(message, meta);\n};\n\nexport const logError = (message, error = null, meta = {}) => {\n  const logData = { ...meta };\n  if (error) {\n    logData.error = {\n      message: error.message,\n      stack: error.stack,\n      name: error.name\n    };\n  }\n  logger.error(message, logData);\n};\n\nexport const logWarn = (message, meta = {}) => {\n  logger.warn(message, meta);\n};\n\nexport const logDebug = (message, meta = {}) => {\n  logger.debug(message, meta);\n};\n\n// API acces logng\nexport const logAccess = (req, res, responseTime) => {\n  accessLogger.info('API Request', {\n    method: req.method,\n    url: req.originalUrl,\n    statusCode: res.statusCode,\n    responseTime: `${responseTime}ms`,\n    userAgent: req.get('User-Agent'),\n    ip: req.ip,\n    userId: req.user?.id || 'anonymous',\n    contentLength: res.get('Content-Length') || 0\n  });\n};\n\n// Performanc metrcs logng\nexport const logPerformance = (metric, value, meta = {}) => {\n  performanceLogger.info('Performance Metric', {\n    metric,\n    value,\n    timestamp: new Date().toISOString(),\n    ...meta\n  });\n};\n\n// Databas query logng\nexport const logDatabaseQuery = (query, duration, meta = {}) => {\n  logger.debug('Database Query', {\n    query: query.substring(0, 200), // Truncat long querys\n    duration: `${duration}ms`,\n    ...meta\n  });\n};\n\n// Secur evnt logng\nexport const logSecurityEvent = (event, severity = 'medium', meta = {}) => {\n  logger.warn('Security Event', {\n    event,\n    severity,\n    timestamp: new Date().toISOString(),\n    ...meta\n  });\n};\n\nexport { logger, accessLogger, performanceLogger };\nexport default logger;", "oldStr": ""}]
+import winston from 'winston';
+import DailyRotateFile from 'winston-daily-rotate-file';
+import path from 'path';
+import fs from 'fs';
+
+// Create logs directories if they don't exist
+const ensureLogDirectories = () => {
+  const logDirs = ['logs', 'logs/error', 'logs/combined', 'logs/access', 'logs/performance'];
+  logDirs.forEach((dir) => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  });
+};
+
+ensureLogDirectories();
+
+// Custom log format for structured logging
+const logFormat = winston.format.combine(
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  winston.format.errors({ stack: true }),
+  winston.format.json(),
+  winston.format.printf(({ timestamp, level, message, stack, ...meta }) => {
+    let logEntry = { timestamp, level, message, ...meta };
+    if (stack) logEntry.stack = stack;
+    return JSON.stringify(logEntry);
+  })
+);
+
+// Console format for development
+const consoleFormat = winston.format.combine(
+  winston.format.colorize(),
+  winston.format.timestamp({ format: 'HH:mm:ss' }),
+  winston.format.printf(({ timestamp, level, message, ...meta }) => {
+    const metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';
+    return `${timestamp} [${level}]: ${message} ${metaStr}`;
+  })
+);
+
+// Rotating file transport for error logs
+const errorFileTransport = new DailyRotateFile({
+  filename: 'logs/error/error-%DATE%.log',
+  datePattern: 'YYYY-MM-DD',
+  level: 'error',
+  maxSize: '20m',
+  maxFiles: '14d',
+  format: logFormat,
+});
+
+// Rotating file transport for combined logs
+const combinedFileTransport = new DailyRotateFile({
+  filename: 'logs/combined/app-%DATE%.log',
+  datePattern: 'YYYY-MM-DD',
+  maxSize: '20m',
+  maxFiles: '30d',
+  format: logFormat,
+});
+
+// Access log transport for API requests
+const accessFileTransport = new DailyRotateFile({
+  filename: 'logs/access/access-%DATE%.log',
+  datePattern: 'YYYY-MM-DD',
+  maxSize: '50m',
+  maxFiles: '7d',
+  format: logFormat,
+});
+
+// Main logger instance
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: logFormat,
+  defaultMeta: {
+    service: 'wealth-vault-backend',
+    environment: process.env.NODE_ENV || 'development',
+  },
+  transports: [errorFileTransport, combinedFileTransport],
+  exceptionHandlers: [new winston.transports.File({ filename: 'logs/exceptions.log' })],
+  rejectionHandlers: [new winston.transports.File({ filename: 'logs/rejections.log' })],
+});
+
+// Add console transport in development
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(
+    new winston.transports.Console({
+      format: consoleFormat,
+      level: 'debug',
+    })
+  );
+}
+
+// Separate logger for access logs
+const accessLogger = winston.createLogger({
+  level: 'info',
+  format: logFormat,
+  transports: [accessFileTransport],
+});
+
+// Performance logger
+const performanceLogger = winston.createLogger({
+  level: 'info',
+  format: logFormat,
+  transports: [
+    new DailyRotateFile({
+      filename: 'logs/performance/perf-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '10m',
+      maxFiles: '7d',
+      format: logFormat,
+    }),
+  ],
+});
+
+// Helper functions
+export const logInfo = (message, meta = {}) => logger.info(message, meta);
+export const logError = (message, error = null, meta = {}) => {
+  const logData = { ...meta };
+  if (error) {
+    logData.error = { message: error.message, stack: error.stack, name: error.name };
+  }
+  logger.error(message, logData);
+};
+export const logWarn = (message, meta = {}) => logger.warn(message, meta);
+export const logDebug = (message, meta = {}) => logger.debug(message, meta);
+
+// API access logging
+export const logAccess = (req, res, responseTime) => {
+  accessLogger.info('API Request', {
+    method: req.method,
+    url: req.originalUrl,
+    statusCode: res.statusCode,
+    responseTime: `${responseTime}ms`,
+    userAgent: req.get('User-Agent'),
+    ip: req.ip,
+    userId: req.user?.id || 'anonymous',
+    contentLength: res.get('Content-Length') || 0,
+  });
+};
+
+// Performance metrics logging
+export const logPerformance = (metric, value, meta = {}) => {
+  performanceLogger.info('Performance Metric', {
+    metric,
+    value,
+    timestamp: new Date().toISOString(),
+    ...meta,
+  });
+};
+
+// Database query logging
+export const logDatabaseQuery = (query, duration, meta = {}) => {
+  logger.debug('Database Query', {
+    query: query.substring(0, 200),
+    duration: `${duration}ms`,
+    ...meta,
+  });
+};
+
+// Security event logging
+export const logSecurityEvent = (event, severity = 'medium', meta = {}) => {
+  logger.warn('Security Event', {
+    event,
+    severity,
+    timestamp: new Date().toISOString(),
+    ...meta,
+  });
+};
+
+export { logger, accessLogger, performanceLogger };
+export default logger;
