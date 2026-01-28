@@ -4,6 +4,10 @@ import { eq, and, gte, lte, asc, desc, sql, like } from "drizzle-orm";
 import db from "../config/db.js";
 import { expenses, categories, users } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
+import { asyncHandler, ValidationError, NotFoundError } from "../middleware/errorHandler.js";
+import { parseListQuery } from "../utils/pagination.js";
+import { initializeRecurringExpense, disableRecurring } from "../services/expenseService.js";
+import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
 
 const router = express.Router();
 
@@ -118,120 +122,85 @@ const updateCategoryStats = async (categoryId) => {
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  */
-router.get("/", protect, async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 20,
-      category,
-      startDate,
-      endDate,
-      minAmount,
-      maxAmount,
-      paymentMethod,
-      sortBy = "date",
-      sortOrder = "desc",
-      search,
-    } = req.query;
+router.get("/", protect, asyncHandler(async (req, res) => {
+  const queryOptions = {
+    allowedSortFields: ['date', 'amount', 'createdAt'],
+    defaultSortField: 'date',
+    allowedFilters: ['category', 'paymentMethod', 'status'],
+    maxLimit: 100,
+  };
 
-    const conditions = [eq(expenses.userId, req.user.id)];
+  const { pagination, sorting, search, filters, dateRange } = parseListQuery(req.query, queryOptions);
+  
+  const conditions = [eq(expenses.userId, req.user.id)];
 
-    if (category) conditions.push(eq(expenses.categoryId, category));
-    if (startDate) conditions.push(gte(expenses.date, new Date(startDate)));
-    if (endDate) conditions.push(lte(expenses.date, new Date(endDate)));
-    if (minAmount) conditions.push(gte(expenses.amount, minAmount.toString()));
-    if (maxAmount) conditions.push(lte(expenses.amount, maxAmount.toString()));
-    if (paymentMethod)
-      conditions.push(eq(expenses.paymentMethod, paymentMethod));
+  // Apply filters
+  if (filters.category) conditions.push(eq(expenses.categoryId, filters.category));
+  if (filters.paymentMethod) conditions.push(eq(expenses.paymentMethod, filters.paymentMethod));
+  if (filters.status) conditions.push(eq(expenses.status, filters.status));
+  
+  // Apply date range
+  if (dateRange.startDate) conditions.push(gte(expenses.date, dateRange.startDate));
+  if (dateRange.endDate) conditions.push(lte(expenses.date, dateRange.endDate));
 
-    // Add search functionality
-    if (search) {
-      const searchTerm = `%${search.toLowerCase()}%`;
-      conditions.push(
-        sql`(LOWER(${expenses.description}) LIKE ${searchTerm} OR 
-             CAST(${expenses.amount} AS TEXT) LIKE ${searchTerm} OR
-             LOWER(${expenses.paymentMethod}) LIKE ${searchTerm})`
-      );
-    }
-
-    const sortFn = sortOrder === "desc" ? desc : asc;
-    let orderByColumn = expenses.date;
-    if (sortBy === "amount") orderByColumn = expenses.amount;
-    // Add other sort columns as needed
-
-    const queryLimit = parseInt(limit);
-    const queryOffset = (parseInt(page) - 1) * queryLimit;
-
-    const [expensesList, countResult] = await Promise.all([
-      db.query.expenses.findMany({
-        where: and(...conditions),
-        orderBy: [sortFn(orderByColumn)],
-        limit: queryLimit,
-        offset: queryOffset,
-        with: {
-          category: {
-            columns: { name: true, color: true, icon: true },
-          },
-        },
-      }),
-      db
-        .select({ count: sql`count(*)` })
-        .from(expenses)
-        .where(and(...conditions)),
-    ]);
-
-    const total = Number(countResult[0]?.count || 0);
-
-    res.json({
-      success: true,
-      data: {
-        expenses: expensesList,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / queryLimit),
-          totalItems: total,
-          itemsPerPage: queryLimit,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Get expenses error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching expenses",
-    });
+  // Apply search
+  if (search.search) {
+    const searchTerm = `%${search.search.toLowerCase()}%`;
+    conditions.push(
+      sql`(LOWER(${expenses.description}) LIKE ${searchTerm} OR 
+           CAST(${expenses.amount} AS TEXT) LIKE ${searchTerm} OR
+           LOWER(${expenses.paymentMethod}) LIKE ${searchTerm})`
+    );
   }
-});
 
-// @route   GET /api/expenses/:id
-// @desc    Get expense by ID
-// @access  Private
-router.get("/:id", protect, checkOwnership("Expense"), async (req, res) => {
-  try {
-    // req.resource is already the simple object from middleware,
-    // but checkOwnership middleware might not populate category relations
-    // We should fetch afresh with relation if needed or rely on checkOwnership to be simple
-    // Since we want relation, let's fetch it fully
-    const expense = await db.query.expenses.findFirst({
-      where: eq(expenses.id, req.params.id),
+  const sortFn = sorting.sortOrder === "desc" ? desc : asc;
+  let orderByColumn = expenses.date;
+  if (sorting.sortBy === "amount") orderByColumn = expenses.amount;
+  if (sorting.sortBy === "createdAt") orderByColumn = expenses.createdAt;
+
+  const [expensesList, countResult] = await Promise.all([
+    db.query.expenses.findMany({
+      where: and(...conditions),
+      orderBy: [sortFn(orderByColumn)],
+      limit: pagination.limit,
+      offset: pagination.offset,
       with: {
         category: {
           columns: { name: true, color: true, icon: true },
         },
       },
-    });
+    }),
+    db
+      .select({ count: sql`count(*)` })
+      .from(expenses)
+      .where(and(...conditions)),
+  ]);
 
-    res.json({
-      success: true,
-      data: { expense },
-    });
-  } catch (error) {
-    console.error("Get expense error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server error while fetching expense" });
+  const total = Number(countResult[0]?.count || 0);
+  const paginatedData = req.buildPaginatedResponse(expensesList, total);
+
+  return res.paginated(paginatedData.items, paginatedData.pagination, 'Expenses retrieved successfully');
+}));
+
+// @route   GET /api/expenses/:id
+// @desc    Get expense by ID
+// @access  Private
+router.get("/:id", protect, checkOwnership("Expense"), asyncHandler(async (req, res) => {
+  const expense = await db.query.expenses.findFirst({
+    where: eq(expenses.id, req.params.id),
+    with: {
+      category: {
+        columns: { name: true, color: true, icon: true },
+      },
+    },
+  });
+
+  if (!expense) {
+    throw new NotFoundError('Expense not found');
   }
-});
+
+  return res.success(expense, 'Expense retrieved successfully');
+}));
 
 // @route   POST /api/expenses
 // @desc    Create new expense
@@ -299,6 +268,15 @@ router.post(
 
       // Update category stats (async, don't block response necessarily, but good to wait)
       await updateCategoryStats(category);
+
+      // Initialize recurring expense if applicable
+      if (isRecurring && recurringPattern) {
+        await initializeRecurringExpense(
+          newExpense.id,
+          recurringPattern,
+          date ? new Date(date) : new Date()
+        );
+      }
 
       const expenseWithCategory = await db.query.expenses.findFirst({
         where: eq(expenses.id, newExpense.id),
@@ -391,6 +369,20 @@ router.put("/:id", protect, checkOwnership("Expense"), async (req, res) => {
       }
     }
 
+    // Log expense update
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_UPDATE,
+      resourceType: ResourceTypes.EXPENSE,
+      resourceId: req.params.id,
+      metadata: {
+        updatedFields: Object.keys(updateData),
+        oldAmount: oldExpense.amount,
+        newAmount: updateData.amount,
+      },
+      status: 'success',
+    });
+
     const result = await db.query.expenses.findFirst({
       where: eq(expenses.id, updatedExpense.id),
       with: { category: { columns: { name: true, color: true, icon: true } } },
@@ -420,6 +412,20 @@ router.delete("/:id", protect, checkOwnership("Expense"), async (req, res) => {
     if (expense.categoryId) {
       await updateCategoryStats(expense.categoryId);
     }
+
+    // Log expense deletion
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_DELETE,
+      resourceType: ResourceTypes.EXPENSE,
+      resourceId: req.params.id,
+      metadata: {
+        amount: expense.amount,
+        description: expense.description,
+        categoryId: expense.categoryId,
+      },
+      status: 'success',
+    });
 
     res.json({ success: true, message: "Expense deleted successfully" });
   } catch (error) {
@@ -527,6 +533,18 @@ router.post("/import", protect, async (req, res) => {
       .values(validExpenses)
       .returning();
 
+    // Log expense import
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_IMPORT,
+      resourceType: ResourceTypes.EXPENSE,
+      metadata: {
+        importedCount: insertedExpenses.length,
+        errorCount: errors.length,
+      },
+      status: 'success',
+    });
+
     // Update category stats for all affected categories
     const affectedCategoryIds = [...new Set(validExpenses.map(exp => exp.categoryId))];
     for (const categoryId of affectedCategoryIds) {
@@ -615,6 +633,136 @@ router.get("/stats/summary", protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error while fetching expense statistics",
+    });
+  }
+});
+
+// @route   GET /api/expenses/recurring/status
+// @desc    Get recurring expense job status
+// @access  Private
+router.get("/recurring/status", protect, async (req, res) => {
+  try {
+    const status = getJobStatus();
+    res.json({
+      success: true,
+      data: { status },
+    });
+  } catch (error) {
+    console.error("Get recurring status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching recurring job status",
+    });
+  }
+});
+
+// @route   POST /api/expenses/recurring/execute
+// @desc    Manually trigger recurring expense execution
+// @access  Private (admin only in production)
+router.post("/recurring/execute", protect, async (req, res) => {
+  try {
+    console.log(`Manual recurring execution triggered by user: ${req.user.id}`);
+    const results = await runManualExecution();
+    
+    // Log the manual execution
+    logAudit(req, {
+      userId: req.user.id,
+      action: 'RECURRING_MANUAL_EXECUTE',
+      resourceType: ResourceTypes.EXPENSE,
+      metadata: {
+        processed: results?.processed || 0,
+        created: results?.created || 0,
+        failed: results?.failed || 0,
+      },
+      status: results ? 'success' : 'failure',
+    });
+
+    res.json({
+      success: true,
+      message: "Recurring expense execution completed",
+      data: { results },
+    });
+  } catch (error) {
+    console.error("Manual recurring execution error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during recurring expense execution",
+    });
+  }
+});
+
+// @route   PUT /api/expenses/:id/recurring
+// @desc    Update recurring settings for an expense
+// @access  Private
+router.put("/:id/recurring", protect, checkOwnership("Expense"), async (req, res) => {
+  try {
+    const { isRecurring, recurringPattern } = req.body;
+    const expenseId = req.params.id;
+
+    if (isRecurring && recurringPattern) {
+      // Enable/update recurring
+      await db
+        .update(expenses)
+        .set({
+          isRecurring: true,
+          recurringPattern,
+          updatedAt: new Date(),
+        })
+        .where(eq(expenses.id, expenseId));
+
+      // Initialize the next execution date
+      const nextDate = await initializeRecurringExpense(expenseId, recurringPattern);
+
+      res.json({
+        success: true,
+        message: "Recurring settings updated",
+        data: { nextExecutionDate: nextDate },
+      });
+    } else {
+      // Disable recurring
+      await disableRecurring(expenseId);
+
+      res.json({
+        success: true,
+        message: "Recurring disabled for this expense",
+      });
+    }
+  } catch (error) {
+    console.error("Update recurring error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating recurring settings",
+    });
+  }
+});
+
+// @route   GET /api/expenses/recurring/list
+// @desc    Get all recurring expenses for the user
+// @access  Private
+router.get("/recurring/list", protect, async (req, res) => {
+  try {
+    const recurringExpenses = await db.query.expenses.findMany({
+      where: and(
+        eq(expenses.userId, req.user.id),
+        eq(expenses.isRecurring, true)
+      ),
+      orderBy: [asc(expenses.nextExecutionDate)],
+      with: {
+        category: {
+          columns: { name: true, color: true, icon: true },
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      data: { expenses: recurringExpenses },
+    });
+  } catch (error) {
+    console.error("Get recurring expenses error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching recurring expenses",
     });
   }
 });

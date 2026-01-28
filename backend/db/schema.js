@@ -66,7 +66,10 @@ export const expenses = pgTable('expenses', {
     tags: jsonb('tags').default([]), // Store generic array as JSONB or text[]
     receipt: jsonb('receipt'),
     isRecurring: boolean('is_recurring').default(false),
-    recurringPattern: jsonb('recurring_pattern'),
+    recurringPattern: jsonb('recurring_pattern'), // { frequency: 'daily'|'weekly'|'monthly'|'yearly', interval: 1, endDate?: Date }
+    nextExecutionDate: timestamp('next_execution_date'), // When the next recurring transaction should be created
+    lastExecutedDate: timestamp('last_executed_date'), // When this recurring pattern was last executed
+    recurringSourceId: uuid('recurring_source_id'), // Reference to the original recurring expense (for cloned transactions)
     notes: text('notes'),
     status: text('status').default('completed'),
     metadata: jsonb('metadata').default({
@@ -139,6 +142,20 @@ export const tokenBlacklist = pgTable('token_blacklist', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Audit Logs Table
+export const auditLogs = pgTable('audit_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    action: text('action').notNull(), // e.g., AUTH_LOGIN, AUTH_LOGOUT, CREATE_EXPENSE, DELETE_EXPENSE, UPDATE_PROFILE
+    resourceType: text('resource_type'), // e.g., 'expense', 'user', 'goal', 'category'
+    resourceId: uuid('resource_id'), // ID of the affected resource
+    metadata: jsonb('metadata').default({}), // { ip, userAgent, oldValue, newValue, etc. }
+    status: text('status').default('success'), // 'success', 'failure'
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -196,6 +213,13 @@ export const deviceSessionsRelations = relations(deviceSessions, ({ one }) => ({
 export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
     user: one(users, {
         fields: [tokenBlacklist.userId],
+        references: [users.id],
+    }),
+}));
+
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+    user: one(users, {
+        fields: [auditLogs.userId],
         references: [users.id],
     }),
 }));

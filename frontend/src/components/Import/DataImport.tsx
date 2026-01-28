@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, Download } from 'lucide-react';
 import Papa from 'papaparse';
 import { useAuth } from '../../hooks/useAuth';
-import { useToast } from '../../context/ToastContext';
-import { expensesAPI, categoriesAPI } from '../../services/api';
-import type { Category, SpendingCategory } from '../../types';
+// import { useToast } from '../../context/ToastContext';
+// import { expensesAPI } from '../../services/api';
 
 export const DataImport: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
@@ -17,7 +16,7 @@ export const DataImport: React.FC = () => {
     anxious: ''
   });
   const { user } = useAuth();
-  const { showToast } = useToast();
+  // const { showToast } = useToast();
 
   // Fetch user categories on component mount
   useEffect(() => {

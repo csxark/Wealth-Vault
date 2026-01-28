@@ -6,6 +6,8 @@ import { eq, and } from "drizzle-orm";
 import db from "../config/db.js";
 import { users, categories, deviceSessions } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
+import { uploadProfilePicture, saveUploadedFile } from "../middleware/fileUpload.js";
+import fileStorageService from "../services/fileStorageService.js";
 import { getDefaultCategories } from "../utils/defaults.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
 import { validatePasswordStrength, isCommonPassword } from "../utils/passwordValidator.js";
@@ -19,6 +21,7 @@ import {
   getUserSessions,
   blacklistToken
 } from "../services/tokenService.js";
+import { logAudit, AuditActions, ResourceTypes } from "../middleware/auditLogger.js";
 
 const router = express.Router();
 
@@ -125,10 +128,7 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
 
-    return res.json({
-      success: true,
-      exists: !!existingUser,
-    });
+    return res.success({ exists: !!existingUser }, 'Email check completed');
   })
 );
 
@@ -193,7 +193,7 @@ router.post(
  */
 router.post(
   "/register",
-  authLimiter,
+  process.env.NODE_ENV === 'test' ? [] : authLimiter,
   [
     body("email")
       .isEmail()
@@ -228,6 +228,14 @@ router.post(
       monthlyIncome,
       monthlyBudget,
     } = req.body;
+
+    // Check for required fields
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required fields: email, password, firstName, and lastName are required.' 
+      });
+    }
 
     const [existingUser] = await db
       .select()
@@ -287,14 +295,20 @@ router.post(
     const ipAddress = req.ip || req.connection.remoteAddress;
     const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
 
-    res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: {
-        user: getPublicProfile(newUser),
-        ...tokens,
-      },
+    // Log successful registration
+    logAudit(req, {
+      userId: newUser.id,
+      action: AuditActions.AUTH_REGISTER,
+      resourceType: ResourceTypes.USER,
+      resourceId: newUser.id,
+      metadata: { email: newUser.email },
+      status: 'success',
     });
+
+    res.created({
+      user: getPublicProfile(newUser),
+      ...tokens,
+    }, "User registered successfully");
   })
 );
 
@@ -345,7 +359,7 @@ router.post(
  */
 router.post(
   "/login",
-  authLimiter,
+  process.env.NODE_ENV === 'test' ? [] : authLimiter,
   [
     body("email")
       .isEmail()
@@ -353,24 +367,31 @@ router.post(
       .normalizeEmail(),
     body("password").notEmpty().withMessage("Password is required"),
   ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation failed", errors.array());
+    }
 
-      const { email, password } = req.body;
+    const { email, password } = req.body;
+
+    // Check for required fields
+    if (!email || !password) {
+      throw new ValidationError("Missing required fields: email and password are required.");
+    }
 
       const [user] = await db
         .select()
         .from(users)
         .where(eq(users.email, email));
       if (!user) {
+        // Log failed login attempt
+        logAudit(req, {
+          action: AuditActions.AUTH_LOGIN_FAILED,
+          resourceType: ResourceTypes.USER,
+          metadata: { email, reason: 'user_not_found' },
+          status: 'failure',
+        });
         return res.status(401).json({
           success: false,
           message: "Invalid credentials",
@@ -386,6 +407,15 @@ router.post(
 
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
+        // Log failed login attempt
+        logAudit(req, {
+          userId: user.id,
+          action: AuditActions.AUTH_LOGIN_FAILED,
+          resourceType: ResourceTypes.USER,
+          resourceId: user.id,
+          metadata: { email, reason: 'invalid_password' },
+          status: 'failure',
+        });
         return res.status(401).json({
           success: false,
           message: "Invalid credentials",
@@ -403,6 +433,16 @@ router.post(
       const ipAddress = req.ip || req.connection.remoteAddress;
       const tokens = await createDeviceSession(user.id, deviceInfo, ipAddress);
 
+      // Log successful login
+      logAudit(req, {
+        userId: user.id,
+        action: AuditActions.AUTH_LOGIN,
+        resourceType: ResourceTypes.USER,
+        resourceId: user.id,
+        metadata: { email: user.email },
+        status: 'success',
+      });
+
       res.json({
         success: true,
         message: "Login successful",
@@ -411,14 +451,7 @@ router.post(
           ...tokens,
         },
       });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Server error during login",
-      });
-    }
-  }
+  })
 );
 
 // @route   GET /api/auth/me
@@ -509,6 +542,16 @@ router.put(
         .set(updateFields)
         .where(eq(users.id, req.user.id))
         .returning();
+
+      // Log profile update
+      logAudit(req, {
+        userId: req.user.id,
+        action: AuditActions.PROFILE_UPDATE,
+        resourceType: ResourceTypes.USER,
+        resourceId: req.user.id,
+        metadata: { updatedFields: Object.keys(updateFields).filter(f => f !== 'updatedAt') },
+        status: 'success',
+      });
 
       res.json({
         success: true,
@@ -604,6 +647,16 @@ router.put(
         }
       }
 
+      // Log password change
+      logAudit(req, {
+        userId: user.id,
+        action: AuditActions.AUTH_PASSWORD_CHANGE,
+        resourceType: ResourceTypes.USER,
+        resourceId: user.id,
+        metadata: { sessionsRevoked: allSessions.length - 1 },
+        status: 'success',
+      });
+
       res.json({
         success: true,
         message: "Password changed successfully. Other sessions have been logged out for security.",
@@ -657,6 +710,15 @@ router.post("/logout", protect, asyncHandler(async (req, res) => {
     await revokeDeviceSession(sessionId, userId, 'logout');
   }
   
+  // Log logout
+  logAudit(req, {
+    userId,
+    action: AuditActions.AUTH_LOGOUT,
+    resourceType: ResourceTypes.SESSION,
+    resourceId: sessionId,
+    status: 'success',
+  });
+  
   res.json({ 
     success: true, 
     message: "Logged out successfully" 
@@ -669,6 +731,15 @@ router.post("/logout", protect, asyncHandler(async (req, res) => {
 router.post("/logout-all", protect, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const revokedCount = await revokeAllUserSessions(userId, 'logout_all');
+  
+  // Log logout from all devices
+  logAudit(req, {
+    userId,
+    action: AuditActions.AUTH_LOGOUT_ALL,
+    resourceType: ResourceTypes.SESSION,
+    metadata: { devicesLoggedOut: revokedCount },
+    status: 'success',
+  });
   
   res.json({ 
     success: true, 
@@ -698,19 +769,134 @@ router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => 
   
   await revokeDeviceSession(sessionId, userId, 'manual_revoke');
   
+  // Log session revocation
+  logAudit(req, {
+    userId,
+    action: AuditActions.AUTH_SESSION_REVOKED,
+    resourceType: ResourceTypes.SESSION,
+    resourceId: sessionId,
+    status: 'success',
+  });
+  
   res.json({
     success: true,
     message: "Session revoked successfully",
   });
 }));
 
-// Test endpoint
-router.get("/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Auth endpoint is accessible",
-    timestamp: new Date().toISOString(),
-  });
-});
+// @rout   POST /api/auth/upload-profile-picture
+// @desc    Uplod usr profil pictur
+// @acces  Privat
+router.post(
+  "/upload-profile-picture",
+  protect,
+  uploadProfilePicture,
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      throw new ValidationError('No file uploaded');
+    }
+
+    const userId = req.user.id;
+    
+    // Sav fil using secur storag servic
+    const savedFile = await fileStorageService.saveFile(
+      req.file.buffer,
+      req.file.originalname,
+      userId,
+      'profile'
+    );
+    
+    // Updat usr profil with new pictur URL
+    const [updatedUser] = await db
+      .update(users)
+      .set({ 
+        profilePicture: savedFile.url,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    // Log profile picture upload
+    logAudit(req, {
+      userId,
+      action: AuditActions.PROFILE_PICTURE_UPLOAD,
+      resourceType: ResourceTypes.USER,
+      resourceId: userId,
+      metadata: { filename: savedFile.filename, size: savedFile.size },
+      status: 'success',
+    });
+    
+    return res.success({
+      profilePicture: savedFile.url,
+      fileInfo: {
+        size: savedFile.size,
+        filename: savedFile.filename
+      }
+    }, 'Profile picture uploaded successfully');
+  })
+);
+
+// @rout   DELETE /api/auth/delete-profile-picture  
+// @desc    Delet usr profil pictur
+// @acces  Privat
+router.delete(
+  "/delete-profile-picture",
+  protect,
+  asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    
+    if (user.profilePicture) {
+      // Extrac fil path from URL
+      const fileName = user.profilePicture.split('/').pop();
+      const filePath = path.join('uploads', 'profiles', fileName);
+      
+      // Delet fil from storag
+      await fileStorageService.deleteFile(filePath, userId);
+    }
+    
+    // Updat usr profil to remov pictur URL
+    await db
+      .update(users)
+      .set({ 
+        profilePicture: '',
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId));
+    
+    // Log profile picture deletion
+    logAudit(req, {
+      userId,
+      action: AuditActions.PROFILE_PICTURE_DELETE,
+      resourceType: ResourceTypes.USER,
+      resourceId: userId,
+      status: 'success',
+    });
+    
+    return res.success(null, 'Profile picture deleted successfully');
+  })
+);
+
+// @rout   GET /api/auth/storage-usage
+// @desc    Gt usr storag usag informaton
+// @acces  Privat  
+router.get(
+  "/storage-usage",
+  protect,
+  asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const usage = await fileStorageService.getUserStorageUsage(userId);
+    
+    return res.success({
+      usage: {
+        totalSize: usage.totalSize,
+        fileCount: usage.fileCount,
+        quota: USER_STORAGE_QUOTA,
+        remainingSpace: USER_STORAGE_QUOTA - usage.totalSize,
+        usagePercentage: Math.round((usage.totalSize / USER_STORAGE_QUOTA) * 100)
+      }
+    }, 'Storage usage retrieved successfully');
+  })
+);
 
 export default router;
