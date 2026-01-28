@@ -18,6 +18,11 @@ export const users = pgTable('users', {
     emergencyFund: numeric('emergency_fund', { precision: 12, scale: 2 }).default('0'),
     isActive: boolean('is_active').default(true),
     lastLogin: timestamp('last_login').defaultNow(),
+    // MFA Fields
+    mfaEnabled: boolean('mfa_enabled').default(false),
+    mfaSecret: text('mfa_secret'),
+    mfaRecoveryCodes: jsonb('mfa_recovery_codes').default([]),
+    mfaBackupCodes: jsonb('mfa_backup_codes').default([]),
     preferences: jsonb('preferences').default({
         notifications: { email: true, push: true, sms: false },
         theme: 'auto',
@@ -139,12 +144,28 @@ export const tokenBlacklist = pgTable('token_blacklist', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Security Events Table
+export const securityEvents = pgTable('security_events', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    eventType: text('event_type').notNull(), // login_success, login_failed, mfa_enabled, mfa_disabled, password_changed, suspicious_activity
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    location: jsonb('location'), // { city, country, latitude, longitude }
+    deviceInfo: jsonb('device_info'), // { deviceId, deviceName, deviceType }
+    status: text('status').default('info'), // info, warning, critical
+    details: jsonb('details').default({}),
+    notified: boolean('notified').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
     expenses: many(expenses),
     goals: many(goals),
     deviceSessions: many(deviceSessions),
+    securityEvents: many(securityEvents),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -196,6 +217,13 @@ export const deviceSessionsRelations = relations(deviceSessions, ({ one }) => ({
 export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
     user: one(users, {
         fields: [tokenBlacklist.userId],
+        references: [users.id],
+    }),
+}));
+
+export const securityEventsRelations = relations(securityEvents, ({ one }) => ({
+    user: one(users, {
+        fields: [securityEvents.userId],
         references: [users.id],
     }),
 }));
