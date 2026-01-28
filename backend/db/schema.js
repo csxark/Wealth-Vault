@@ -142,12 +142,56 @@ export const tokenBlacklist = pgTable('token_blacklist', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Financial Health Scores Table
+export const financialHealthScores = pgTable('financial_health_scores', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    overallScore: doublePrecision('overall_score').notNull(),
+    rating: text('rating').notNull(), // 'Excellent', 'Good', 'Fair', 'Needs Improvement'
+    // Individual component scores
+    dtiScore: doublePrecision('dti_score').default(0),
+    savingsRateScore: doublePrecision('savings_rate_score').default(0),
+    volatilityScore: doublePrecision('volatility_score').default(0),
+    emergencyFundScore: doublePrecision('emergency_fund_score').default(0),
+    budgetAdherenceScore: doublePrecision('budget_adherence_score').default(0),
+    goalProgressScore: doublePrecision('goal_progress_score').default(0),
+    // Raw metrics used in calculation
+    metrics: jsonb('metrics').default({
+        dti: 0,
+        savingsRate: 0,
+        volatility: 0,
+        monthlyIncome: 0,
+        monthlyExpenses: 0,
+        emergencyFundMonths: 0,
+        budgetAdherence: 0,
+        goalProgress: 0,
+    }),
+    // Recommendation and insights
+    recommendation: text('recommendation'),
+    insights: jsonb('insights').default([]),
+    // Prediction data
+    cashFlowPrediction: jsonb('cash_flow_prediction').default({
+        predictedExpenses: 0,
+        predictedIncome: 0,
+        predictedBalance: 0,
+        confidence: 'low',
+        warning: null,
+    }),
+    // Period this score represents
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    // Metadata
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
     expenses: many(expenses),
     goals: many(goals),
     deviceSessions: many(deviceSessions),
+    financialHealthScores: many(financialHealthScores),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -199,6 +243,13 @@ export const deviceSessionsRelations = relations(deviceSessions, ({ one }) => ({
 export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
     user: one(users, {
         fields: [tokenBlacklist.userId],
+        references: [users.id],
+    }),
+}));
+
+export const financialHealthScoresRelations = relations(financialHealthScores, ({ one }) => ({
+    user: one(users, {
+        fields: [financialHealthScores.userId],
         references: [users.id],
     }),
 }));
