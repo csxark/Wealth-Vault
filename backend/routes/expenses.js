@@ -369,6 +369,20 @@ router.put("/:id", protect, checkOwnership("Expense"), async (req, res) => {
       }
     }
 
+    // Log expense update
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_UPDATE,
+      resourceType: ResourceTypes.EXPENSE,
+      resourceId: req.params.id,
+      metadata: {
+        updatedFields: Object.keys(updateData),
+        oldAmount: oldExpense.amount,
+        newAmount: updateData.amount,
+      },
+      status: 'success',
+    });
+
     const result = await db.query.expenses.findFirst({
       where: eq(expenses.id, updatedExpense.id),
       with: { category: { columns: { name: true, color: true, icon: true } } },
@@ -398,6 +412,20 @@ router.delete("/:id", protect, checkOwnership("Expense"), async (req, res) => {
     if (expense.categoryId) {
       await updateCategoryStats(expense.categoryId);
     }
+
+    // Log expense deletion
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_DELETE,
+      resourceType: ResourceTypes.EXPENSE,
+      resourceId: req.params.id,
+      metadata: {
+        amount: expense.amount,
+        description: expense.description,
+        categoryId: expense.categoryId,
+      },
+      status: 'success',
+    });
 
     res.json({ success: true, message: "Expense deleted successfully" });
   } catch (error) {
@@ -504,6 +532,18 @@ router.post("/import", protect, async (req, res) => {
       .insert(expenses)
       .values(validExpenses)
       .returning();
+
+    // Log expense import
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_IMPORT,
+      resourceType: ResourceTypes.EXPENSE,
+      metadata: {
+        importedCount: insertedExpenses.length,
+        errorCount: errors.length,
+      },
+      status: 'success',
+    });
 
     // Update category stats for all affected categories
     const affectedCategoryIds = [...new Set(validExpenses.map(exp => exp.categoryId))];
