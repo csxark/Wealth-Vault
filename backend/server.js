@@ -11,6 +11,7 @@ import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
 import { connectRedis } from "./config/redis.js";
 import { scheduleCleanup } from "./jobs/tokenCleanup.js";
+import { scheduleRatesSync, runImmediateSync } from "./jobs/syncRates.js";
 import { initializeUploads } from "./middleware/fileUpload.js";
 import { createFileServerRoute } from "./middleware/secureFileServer.js";
 import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
@@ -27,6 +28,7 @@ import goalRoutes from "./routes/goals.js";
 import categoryRoutes from "./routes/categories.js";
 import geminiRouter from "./routes/gemini.js";
 import analyticsRoutes from "./routes/analytics.js";
+import currenciesRoutes from "./routes/currencies.js";
 
 // Load environment variables
 dotenv.config();
@@ -38,6 +40,16 @@ connectRedis().catch(err => {
 
 // Schedule token cleanup job
 scheduleCleanup();
+
+// Schedule exchange rates sync job
+scheduleRatesSync();
+
+// Run initial exchange rates sync
+runImmediateSync().then(() => {
+  console.log('✅ Initial exchange rates sync completed');
+}).catch(err => {
+  console.warn('⚠️ Initial exchange rates sync failed:', err.message);
+});
 
 // Initiliz uplod directorys
 initializeUploads().catch(err => {
@@ -158,6 +170,7 @@ app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
+app.use("/api/currencies", userLimiter, currenciesRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());

@@ -128,6 +128,21 @@ export const deviceSessions = pgTable('device_sessions', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Exchange Rates Table
+export const exchangeRates = pgTable('exchange_rates', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    baseCurrency: text('base_currency').notNull(),
+    targetCurrency: text('target_currency').notNull(),
+    rate: doublePrecision('rate').notNull(),
+    source: text('source').default('exchangerate-api'), // API source
+    validFrom: timestamp('valid_from').defaultNow(),
+    validUntil: timestamp('valid_until'),
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Token Blacklist Table
 export const tokenBlacklist = pgTable('token_blacklist', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -199,3 +214,5 @@ export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
         references: [users.id],
     }),
 }));
+
+// No relations needed for exchangeRates as it's a standalone reference table
