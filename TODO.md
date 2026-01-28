@@ -1,11 +1,11 @@
-# Backend Integration for CSV Import
+# TODO: Fix Missing Error Boundaries in Data Fetching for Coach Component
 
 ## Tasks
-- [ ] Modify DataImport.tsx to fetch user categories on component mount
-- [ ] Create mapping from SpendingCategory to actual category IDs
-- [ ] Update processCSV to use expensesAPI.import instead of localStorage
-- [ ] Handle API response and update UI accordingly
-- [ ] Remove localStorage operations
-- [ ] Test CSV import with backend API
-- [ ] Verify category stats are updated
-- [ ] Ensure error handling works properly
+- [x] Add state variables: `dataError` (string | null) and `isLoadingData` (boolean)
+- [x] Modify fetchData function to set loading and error states appropriately
+- [x] Add UI elements to display error message and optional loading indicator
+- [ ] Test error handling and UI display
+
+## Status
+- Implementation completed.
+- Ready for testing.

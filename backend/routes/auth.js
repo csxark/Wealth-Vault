@@ -306,6 +306,16 @@ router.post(
     const ipAddress = req.ip || req.connection.remoteAddress;
     const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
 
+    // Log successful registration
+    logAudit(req, {
+      userId: newUser.id,
+      action: AuditActions.AUTH_REGISTER,
+      resourceType: ResourceTypes.USER,
+      resourceId: newUser.id,
+      metadata: { email: newUser.email },
+      status: 'success',
+    });
+
     res.created({
       user: getPublicProfile(newUser),
       ...tokens,
@@ -537,6 +547,16 @@ router.post(
       // Create device session with enhanced tokens
       const tokens = await createDeviceSession(user.id, deviceInfo, ipAddress);
 
+      // Log successful login
+      logAudit(req, {
+        userId: user.id,
+        action: AuditActions.AUTH_LOGIN,
+        resourceType: ResourceTypes.USER,
+        resourceId: user.id,
+        metadata: { email: user.email },
+        status: 'success',
+      });
+
       res.json({
         success: true,
         message: "Login successful",
@@ -637,6 +657,16 @@ router.put(
         .where(eq(users.id, req.user.id))
         .returning();
 
+      // Log profile update
+      logAudit(req, {
+        userId: req.user.id,
+        action: AuditActions.PROFILE_UPDATE,
+        resourceType: ResourceTypes.USER,
+        resourceId: req.user.id,
+        metadata: { updatedFields: Object.keys(updateFields).filter(f => f !== 'updatedAt') },
+        status: 'success',
+      });
+
       res.json({
         success: true,
         message: "Profile updated successfully",
@@ -731,6 +761,16 @@ router.put(
         }
       }
 
+      // Log password change
+      logAudit(req, {
+        userId: user.id,
+        action: AuditActions.AUTH_PASSWORD_CHANGE,
+        resourceType: ResourceTypes.USER,
+        resourceId: user.id,
+        metadata: { sessionsRevoked: allSessions.length - 1 },
+        status: 'success',
+      });
+
       res.json({
         success: true,
         message: "Password changed successfully. Other sessions have been logged out for security.",
@@ -784,6 +824,15 @@ router.post("/logout", protect, asyncHandler(async (req, res) => {
     await revokeDeviceSession(sessionId, userId, 'logout');
   }
   
+  // Log logout
+  logAudit(req, {
+    userId,
+    action: AuditActions.AUTH_LOGOUT,
+    resourceType: ResourceTypes.SESSION,
+    resourceId: sessionId,
+    status: 'success',
+  });
+  
   res.json({ 
     success: true, 
     message: "Logged out successfully" 
@@ -796,6 +845,15 @@ router.post("/logout", protect, asyncHandler(async (req, res) => {
 router.post("/logout-all", protect, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const revokedCount = await revokeAllUserSessions(userId, 'logout_all');
+  
+  // Log logout from all devices
+  logAudit(req, {
+    userId,
+    action: AuditActions.AUTH_LOGOUT_ALL,
+    resourceType: ResourceTypes.SESSION,
+    metadata: { devicesLoggedOut: revokedCount },
+    status: 'success',
+  });
   
   res.json({ 
     success: true, 
@@ -824,6 +882,15 @@ router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => 
   const userId = req.user.id;
   
   await revokeDeviceSession(sessionId, userId, 'manual_revoke');
+  
+  // Log session revocation
+  logAudit(req, {
+    userId,
+    action: AuditActions.AUTH_SESSION_REVOKED,
+    resourceType: ResourceTypes.SESSION,
+    resourceId: sessionId,
+    status: 'success',
+  });
   
   res.json({
     success: true,
@@ -863,6 +930,16 @@ router.post(
       .where(eq(users.id, userId))
       .returning();
     
+    // Log profile picture upload
+    logAudit(req, {
+      userId,
+      action: AuditActions.PROFILE_PICTURE_UPLOAD,
+      resourceType: ResourceTypes.USER,
+      resourceId: userId,
+      metadata: { filename: savedFile.filename, size: savedFile.size },
+      status: 'success',
+    });
+    
     return res.success({
       profilePicture: savedFile.url,
       fileInfo: {
@@ -900,6 +977,15 @@ router.delete(
         updatedAt: new Date() 
       })
       .where(eq(users.id, userId));
+    
+    // Log profile picture deletion
+    logAudit(req, {
+      userId,
+      action: AuditActions.PROFILE_PICTURE_DELETE,
+      resourceType: ResourceTypes.USER,
+      resourceId: userId,
+      status: 'success',
+    });
     
     return res.success(null, 'Profile picture deleted successfully');
   })

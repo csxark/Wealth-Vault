@@ -30,8 +30,8 @@ export interface User {
 }
 
 export interface Expense {
-  _id: string;
-  user: string;
+  id: string;
+  userId: string;
   amount: number;
   currency: string;
   description: string;
@@ -68,8 +68,8 @@ export interface Expense {
   };
   notes?: string;
   status: string;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Category {
@@ -224,4 +224,15 @@ export interface RegisterData {
   currency?: string;
   monthlyIncome?: number;
   monthlyBudget?: number;
+}
+
+// Transaction interface for CSV import functionality
+export interface Transaction {
+  id: string;
+  user_id: string;
+  amount: number;
+  description: string;
+  category: SpendingCategory;
+  date: string;
+  created_at: string;
 }
