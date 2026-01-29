@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { expensesAPI, categoriesAPI } from '../../services/api';
 import { useLoading } from '../../context/LoadingContext';
+import { useToast } from '../../context/ToastContext';
 import type { UPIData } from './QRScanner';
 
 interface PaymentFormProps {
@@ -31,8 +32,8 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
     description: '',
   });
 
-//loading
   const { withLoading } = useLoading();
+  const { showToast } = useToast();
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -52,7 +53,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
     e.preventDefault();
 
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      alert('Please enter a valid amount');
+      showToast('Please enter a valid amount', 'error');
       return;
     }
 
@@ -63,12 +64,12 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
       const categories = catRes.data.categories;
       const found = categories.find((cat: Category) => cat.name === formData.category);
       if (!found) {
-        alert('Selected category not found in backend.');
+        showToast('Selected category not found. Please try again.', 'error');
         return;
       }
       categoryId = found._id;
     } catch {
-      alert('Failed to fetch categories.');
+      showToast('Failed to fetch categories. Please try again.', 'error');
       return;
     }
 
@@ -86,9 +87,9 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ upiData, onPaymentSubmit, onC
 
     try {
       await withLoading(expensesAPI.create(expensePayload), 'Saving expense...');
-      // Optionally show a success message
+      showToast('Payment recorded successfully!', 'success');
     } catch {
-      alert('Failed to save payment to database.');
+      showToast('Failed to save payment. Please try again.', 'error');
       return;
     }
 

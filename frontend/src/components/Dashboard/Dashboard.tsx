@@ -23,7 +23,7 @@ import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } fr
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useLoading } from '../../context/LoadingContext';
-import CurrencyConverter from '../CurrencyConvert.jsx';
+import CurrencyConverter from '../CurrencyConvert';
 
 interface DashboardProps {
   paymentMade?: boolean;
@@ -314,7 +314,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       description:
         expense.description ||
         (expense.merchantName ? `Paid to ${expense.merchantName}` : "Expense"),
-      category: expense.category.toLowerCase() as "safe" | "impulsive" | "anxious",
+      category: expense.category.toLowerCase(),
       date: new Date().toISOString().slice(0, 10),
       paymentMethod: "other",
       isRecurring: false,
