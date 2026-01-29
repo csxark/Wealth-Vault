@@ -1,14 +1,9 @@
 import express from "express";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories } from "../db/schema.js";
+import { expenses, categories, users } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
-import {
-  calculateUserFinancialHealth,
-  saveFinancialHealthScore,
-  getHealthScoreHistory,
-  compareHealthScores,
-} from "../services/predictionService.js";
+import { convertAmount, getAllRates } from "../services/currencyService.js";
 
 const router = express.Router();
 
@@ -817,3 +812,174 @@ router.get("/export", protect, async (req, res) => {
     });
   }
 });
+
+/**
+ * @swagger
+ * /analytics/normalized-summary:
+ *   get:
+ *     summary: Get spending summary normalized to user's base currency
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Normalized spending analytics
+ */
+router.get("/normalized-summary", protect, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    
+    // Get user's base currency
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const baseCurrency = user?.currency || 'USD';
+
+    const now = new Date();
+    const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = endDate ? new Date(endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // Get all expenses in date range
+    const userExpenses = await db.query.expenses.findMany({
+      where: and(
+        eq(expenses.userId, req.user.id),
+        eq(expenses.status, "completed"),
+        gte(expenses.date, start),
+        lte(expenses.date, end)
+      ),
+      with: {
+        category: {
+          columns: { name: true, color: true, icon: true }
+        }
+      }
+    });
+
+    // Normalize all amounts to base currency
+    const normalizedExpenses = await Promise.all(
+      userExpenses.map(async (expense) => {
+        const normalizedAmount = expense.currency && expense.currency !== baseCurrency
+          ? await convertAmount(Number(expense.amount), expense.currency, baseCurrency)
+          : Number(expense.amount);
+
+        return {
+          ...expense,
+          originalAmount: Number(expense.amount),
+          originalCurrency: expense.currency || baseCurrency,
+          normalizedAmount,
+          normalizedCurrency: baseCurrency
+        };
+      })
+    );
+
+    // Calculate totals
+    const totalNormalized = normalizedExpenses.reduce((sum, exp) => sum + exp.normalizedAmount, 0);
+    const totalOriginal = userExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
+
+    // Category breakdown with normalization
+    const categoryBreakdown = {};
+    normalizedExpenses.forEach(exp => {
+      const catName = exp.category?.name || 'Uncategorized';
+      if (!categoryBreakdown[catName]) {
+        categoryBreakdown[catName] = {
+          category: catName,
+          color: exp.category?.color,
+          icon: exp.category?.icon,
+          total: 0,
+          count: 0
+        };
+      }
+      categoryBreakdown[catName].total += exp.normalizedAmount;
+      categoryBreakdown[catName].count += 1;
+    });
+
+    // Currency breakdown
+    const currencyBreakdown = {};
+    userExpenses.forEach(exp => {
+      const curr = exp.currency || baseCurrency;
+      if (!currencyBreakdown[curr]) {
+        currencyBreakdown[curr] = { currency: curr, total: 0, count: 0 };
+      }
+      currencyBreakdown[curr].total += Number(exp.amount);
+      currencyBreakdown[curr].count += 1;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        baseCurrency,
+        dateRange: { start, end },
+        summary: {
+          totalNormalized: Number(totalNormalized.toFixed(2)),
+          totalOriginal: Number(totalOriginal.toFixed(2)),
+          currency: baseCurrency,
+          expenseCount: normalizedExpenses.length,
+          avgExpense: Number((totalNormalized / normalizedExpenses.length || 0).toFixed(2))
+        },
+        categoryBreakdown: Object.values(categoryBreakdown).sort((a, b) => b.total - a.total),
+        currencyBreakdown: Object.values(currencyBreakdown),
+        expenses: normalizedExpenses
+      }
+    });
+  } catch (error) {
+    console.error("Normalized summary error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error calculating normalized summary",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/exchange-rates:
+ *   get:
+ *     summary: Get current exchange rates for user's base currency
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Exchange rates data
+ */
+router.get("/exchange-rates", protect, async (req, res) => {
+  try {
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const baseCurrency = user?.currency || 'USD';
+
+    const rates = await getAllRates(baseCurrency);
+
+    res.json({
+      success: true,
+      data: {
+        baseCurrency,
+        rates: rates.map(r => ({
+          currency: r.targetCurrency,
+          rate: r.rate,
+          validFrom: r.validFrom,
+          validUntil: r.validUntil,
+          source: r.source
+        })),
+        timestamp: new Date()
+      }
+    });
+  } catch (error) {
+    console.error("Exchange rates error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching exchange rates",
+      error: error.message
+    });
+  }
+});
+
+export default router;
