@@ -145,6 +145,7 @@ app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
+app.use("/api/reports", userLimiter, reportRoutes);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
