@@ -1,3 +1,4 @@
+describe("API Integration: Health Check", () => {
 // Jest setup for integration tests with Supertest
 import request from "supertest";
 import app from "../server.js";
