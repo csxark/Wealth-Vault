@@ -1,11 +1,13 @@
-# TODO: Fix Missing Error Boundaries in Data Fetching for Coach Component
+# TODO: Implement Budget Alerts and Notifications
 
 ## Tasks
-- [x] Add state variables: `dataError` (string | null) and `isLoadingData` (boolean)
-- [x] Modify fetchData function to set loading and error states appropriately
-- [x] Add UI elements to display error message and optional loading indicator
-- [ ] Test error handling and UI display
-
-## Status
-- Implementation completed.
-- Ready for testing.
+- [ ] Add budget_alerts table to database schema
+- [ ] Create notification service for sending alerts
+- [ ] Add budget checking logic in expenses route
+- [ ] Create budget alerts API endpoint
+- [ ] Add budget alert components to dashboard
+- [ ] Update category management to show budget status
+- [ ] Add notification preferences UI
+- [ ] Run database migrations
+- [ ] Test alert triggering with sample expenses
+- [ ] Configure email service for notifications
