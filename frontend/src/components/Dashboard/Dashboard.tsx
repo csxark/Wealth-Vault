@@ -18,6 +18,7 @@ import { TransactionSearch } from './TransactionSearch';
 import AddExpenseButton from './AddExpenseButton';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import SpendingAnalytics from './SpendingAnalytics';
+import { BudgetAlerts } from './BudgetAlerts';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
