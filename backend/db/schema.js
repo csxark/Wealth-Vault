@@ -139,6 +139,28 @@ export const tokenBlacklist = pgTable('token_blacklist', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Budget Alerts Table
+export const budgetAlerts = pgTable('budget_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    alertType: text('alert_type').notNull(), // 'threshold', 'exceeded', 'approaching'
+    threshold: numeric('threshold', { precision: 5, scale: 2 }).notNull(), // percentage (e.g., 80.00 for 80%)
+    currentAmount: numeric('current_amount', { precision: 12, scale: 2 }).notNull(),
+    budgetAmount: numeric('budget_amount', { precision: 12, scale: 2 }).notNull(),
+    message: text('message').notNull(),
+    notificationType: text('notification_type').notNull(), // 'email', 'push', 'in_app'
+    isRead: boolean('is_read').default(false),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'set null' }),
+    metadata: jsonb('metadata').default({
+        period: 'monthly', // monthly, yearly
+        triggeredAt: null,
+        sentAt: null
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -197,5 +219,20 @@ export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
     user: one(users, {
         fields: [tokenBlacklist.userId],
         references: [users.id],
+    }),
+}));
+
+export const budgetAlertsRelations = relations(budgetAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [budgetAlerts.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [budgetAlerts.categoryId],
+        references: [categories.id],
+    }),
+    expense: one(expenses, {
+        fields: [budgetAlerts.expenseId],
+        references: [expenses.id],
     }),
 }));

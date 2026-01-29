@@ -4,6 +4,7 @@ import { eq, and, gte, lte, asc, desc, sql, like } from "drizzle-orm";
 import db from "../config/db.js";
 import { expenses, categories, users } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
+import budgetService from "../services/budgetService.js";
 
 const router = express.Router();
 
@@ -299,6 +300,14 @@ router.post(
 
       // Update category stats (async, don't block response necessarily, but good to wait)
       await updateCategoryStats(category);
+
+      // Check budget alerts after expense creation
+      await budgetService.checkBudgetAfterExpense({
+        id: newExpense.id,
+        userId: req.user.id,
+        categoryId: category,
+        amount: Number(amount)
+      });
 
       const expenseWithCategory = await db.query.expenses.findFirst({
         where: eq(expenses.id, newExpense.id),
