@@ -18,6 +18,8 @@ import { TransactionSearch } from './TransactionSearch';
 import AddExpenseButton from './AddExpenseButton';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import SpendingAnalytics from './SpendingAnalytics';
+import { BudgetAlerts } from './BudgetAlerts';
+import Reports from './Reports';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -28,7 +30,7 @@ interface DashboardProps {
   paymentMade?: boolean;
 }
 
-type TabType = "overview" | "transactions" | "analytics" | "categories";
+type TabType = "overview" | "transactions" | "analytics" | "categories" | "reports";
 
 const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const { showToast } = useToast();
@@ -70,6 +72,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     { id: "transactions" as TabType, label: "Transactions", icon: Receipt },
     { id: "analytics" as TabType, label: "Analytics", icon: BarChart3 },
     { id: "categories" as TabType, label: "Categories", icon: PieChart },
+    { id: "reports" as TabType, label: "Reports", icon: FileText },
   ];
 
   // Format amount
@@ -703,6 +706,13 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Reports Tab */}
+              {activeTab === 'reports' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <Reports />
                 </div>
               )}
             </div>
