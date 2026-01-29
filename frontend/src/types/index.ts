@@ -225,3 +225,14 @@ export interface RegisterData {
   monthlyIncome?: number;
   monthlyBudget?: number;
 }
+
+// Transaction interface for CSV import functionality
+export interface Transaction {
+  id: string;
+  user_id: string;
+  amount: number;
+  description: string;
+  category: SpendingCategory;
+  date: string;
+  created_at: string;
+}

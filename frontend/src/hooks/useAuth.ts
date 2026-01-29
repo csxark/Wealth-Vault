@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
+import { useToast } from '../context/ToastContext';
 import type { User } from '../types';
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { showToast } = useToast();
 
   useEffect(() => {
     // Check current session
@@ -80,12 +82,15 @@ export const useAuth = () => {
       if (result.success && result.data.user) {
         setUser(result.data.user);
         localStorage.setItem('authToken', result.data.token);
+        showToast('Account created successfully! Welcome to Wealth Vault.', 'success');
         return { success: true, user: result.data.user };
       } else {
+        showToast('Registration failed. Please try again.', 'error');
         return { success: false, error: 'Registration failed' };
       }
     } catch (error: unknown) {
       const err = error as Error;
+      showToast(err.message || 'Registration failed. Please try again.', 'error');
       return { success: false, error: err.message || 'Registration failed' };
     } finally {
       setLoading(false);
@@ -100,12 +105,15 @@ export const useAuth = () => {
       if (result.success && result.data.user) {
         setUser(result.data.user);
         localStorage.setItem('authToken', result.data.token);
+        showToast('Welcome back! Successfully logged in.', 'success');
         return { success: true, user: result.data.user };
       } else {
+        showToast('Login failed. Please check your credentials.', 'error');
         return { success: false, error: 'Login failed' };
       }
     } catch (error: unknown) {
       const err = error as Error;
+      showToast(err.message || 'Login failed. Please try again.', 'error');
       return { success: false, error: err.message || 'Login failed' };
     } finally {
       setLoading(false);
@@ -130,12 +138,15 @@ export const useAuth = () => {
       const result = await authAPI.updateProfile(profileData);
       if (result.success && result.data.user) {
         setUser(result.data.user);
+        showToast('Profile updated successfully!', 'success');
         return { success: true, user: result.data.user };
       } else {
+        showToast('Profile update failed. Please try again.', 'error');
         return { success: false, error: 'Profile update failed' };
       }
     } catch (error: unknown) {
       const err = error as Error;
+      showToast(err.message || 'Profile update failed. Please try again.', 'error');
       return { success: false, error: err.message || 'Profile update failed' };
     }
   };
