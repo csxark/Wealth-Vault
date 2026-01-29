@@ -204,8 +204,250 @@ router.get("/spending-summary", protect, async (req, res) => {
     });
   }
 });
+/**
+ * @swagger
+ * /analytics/financial-health:
+ *   get:
+ *     summary: Get comprehensive financial health score and analysis
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date for analysis (defaults to start of current month)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date for analysis (defaults to current date)
+ *       - in: query
+ *         name: save
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Whether to save the score to history
+ *     responses:
+ *       200:
+ *         description: Financial health analysis with score and predictions
+ */
+router.get("/financial-health", protect, async (req, res) => {
+  try {
+    const { startDate, endDate, save = true } = req.query;
+    
+    // Default to current month if no dates provided
+    const now = new Date();
+    const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = endDate ? new Date(endDate) : now;
+
+    // Calculate financial health
+    const healthData = await calculateUserFinancialHealth(req.user.id, start, end);
+
+    // Save to database if requested
+    if (save === true || save === 'true') {
+      await saveFinancialHealthScore(req.user.id, healthData, start, end);
+    }
+
+    // Get comparison with previous period if available
+    const comparison = await compareHealthScores(req.user.id);
+
+    res.json({
+      success: true,
+      data: {
+        ...healthData,
+        period: {
+          start: start.toISOString(),
+          end: end.toISOString(),
+        },
+        comparison,
+      },
+    });
+  } catch (error) {
+    console.error("Financial health calculation error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while calculating financial health",
+      error: error.message,
+    });
+  }
+});
 
 /**
+ * @swagger
+ * /analytics/health-history:
+ *   get:
+ *     summary: Get historical financial health scores
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 12
+ *         description: Number of historical scores to retrieve
+ *     responses:
+ *       200:
+ *         description: Historical health scores
+ */
+router.get("/health-history", protect, async (req, res) => {
+  try {
+    const { limit = 12 } = req.query;
+    
+    const history = await getHealthScoreHistory(req.user.id, parseInt(limit));
+
+    // Calculate trend
+    let trend = 'stable';
+    if (history.length >= 2) {
+      const recent = history.slice(-3); // Last 3 scores
+      const avgRecent = recent.reduce((sum, s) => sum + s.overallScore, 0) / recent.length;
+      const older = history.slice(0, Math.min(3, history.length - 3));
+      
+      if (older.length > 0) {
+        const avgOlder = older.reduce((sum, s) => sum + s.overallScore, 0) / older.length;
+        if (avgRecent > avgOlder + 5) trend = 'improving';
+        else if (avgRecent < avgOlder - 5) trend = 'declining';
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        history: history.map(score => ({
+          id: score.id,
+          overallScore: score.overallScore,
+          rating: score.rating,
+          breakdown: {
+            dti: score.dtiScore,
+            savingsRate: score.savingsRateScore,
+            volatility: score.volatilityScore,
+            emergencyFund: score.emergencyFundScore,
+            budgetAdherence: score.budgetAdherenceScore,
+            goalProgress: score.goalProgressScore,
+          },
+          date: score.calculatedAt,
+          period: {
+            start: score.periodStart,
+            end: score.periodEnd,
+          },
+        })),
+        trend,
+        count: history.length,
+      },
+    });
+  } catch (error) {
+    console.error("Health history error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching health history",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/predictions:
+ *   get:
+ *     summary: Get predictive financial analytics and forecasts
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Financial predictions and forecasts
+ */
+router.get("/predictions", protect, async (req, res) => {
+  try {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = now;
+
+    // Get current health data which includes predictions
+    const healthData = await calculateUserFinancialHealth(req.user.id, start, end);
+
+    res.json({
+      success: true,
+      data: {
+        cashFlowForecast: healthData.cashFlowPrediction,
+        insights: healthData.insights.filter(i => i.category === 'Forecast' || i.type === 'warning'),
+        spendingPatterns: {
+          dayOfWeek: healthData.dayOfWeekAnalysis,
+          categoryConcentration: healthData.concentrationMetrics,
+        },
+        recommendations: [
+          healthData.recommendation,
+          ...healthData.insights.filter(i => i.priority === 'high' || i.priority === 'critical').map(i => i.message),
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("Predictions error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while generating predictions",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/insights:
+ *   get:
+ *     summary: Get AI-powered financial insights and recommendations
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Personalized financial insights
+ */
+router.get("/insights", protect, async (req, res) => {
+  try {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = now;
+
+    const healthData = await calculateUserFinancialHealth(req.user.id, start, end);
+
+    // Categorize insights by priority
+    const categorized = {
+      critical: healthData.insights.filter(i => i.priority === 'critical'),
+      high: healthData.insights.filter(i => i.priority === 'high'),
+      medium: healthData.insights.filter(i => i.priority === 'medium'),
+      low: healthData.insights.filter(i => i.priority === 'low'),
+    };
+
+    res.json({
+      success: true,
+      data: {
+        overallScore: healthData.overallScore,
+        rating: healthData.rating,
+        mainRecommendation: healthData.recommendation,
+        insights: healthData.insights,
+        categorized,
+        summary: {
+          totalInsights: healthData.insights.length,
+          criticalIssues: categorized.critical.length,
+          warnings: categorized.high.length,
+          opportunities: categorized.low.filter(i => i.type === 'success').length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Insights error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while generating insights",
+    });
+  }
+});
+
+export default router;/**
  * @swagger
  * /analytics/category-trends:
  *   get:
