@@ -2,6 +2,7 @@ import db from '../config/db.js';
 import { expenses, categories, budgetAlerts } from '../db/schema.js';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import notificationService from './notificationService.js';
+import budgetRulesService from './budgetRulesService.js';
 
 class BudgetService {
   async checkBudgetAfterExpense(expenseData) {
@@ -15,60 +16,63 @@ class BudgetService {
       });
 
       if (!category || !category.budget) {
-        return; // No budget set for this category
+        // Still check custom rules even without category budget
+      } else {
+        // Calculate current spending for this category in the current period
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        // Get monthly spending
+        const monthStart = new Date(currentYear, currentMonth, 1);
+        const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+
+        const [monthlySpending] = await db
+          .select({ total: sql`sum(${expenses.amount})` })
+          .from(expenses)
+          .where(
+            and(
+              eq(expenses.userId, userId),
+              eq(expenses.categoryId, categoryId),
+              eq(expenses.status, 'completed'),
+              gte(expenses.date, monthStart),
+              lte(expenses.date, monthEnd)
+            )
+          );
+
+        const currentMonthlySpending = Number(monthlySpending?.total || 0);
+        const monthlyBudget = Number(category.budget.monthly || 0);
+
+        // Check monthly budget alerts
+        if (monthlyBudget > 0) {
+          await this.checkAndTriggerAlerts({
+            userId,
+            categoryId,
+            categoryName: category.name,
+            currentAmount: currentMonthlySpending,
+            budgetAmount: monthlyBudget,
+            period: 'monthly',
+            expenseId
+          });
+        }
+
+        // Check spending limit alerts
+        const spendingLimit = Number(category.spendingLimit || 0);
+        if (spendingLimit > 0) {
+          await this.checkAndTriggerAlerts({
+            userId,
+            categoryId,
+            categoryName: category.name,
+            currentAmount: currentMonthlySpending,
+            budgetAmount: spendingLimit,
+            period: 'limit',
+            expenseId
+          });
+        }
       }
 
-      // Calculate current spending for this category in the current period
-      const now = new Date();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-
-      // Get monthly spending
-      const monthStart = new Date(currentYear, currentMonth, 1);
-      const monthEnd = new Date(currentYear, currentMonth + 1, 0);
-
-      const [monthlySpending] = await db
-        .select({ total: sql`sum(${expenses.amount})` })
-        .from(expenses)
-        .where(
-          and(
-            eq(expenses.userId, userId),
-            eq(expenses.categoryId, categoryId),
-            eq(expenses.status, 'completed'),
-            gte(expenses.date, monthStart),
-            lte(expenses.date, monthEnd)
-          )
-        );
-
-      const currentMonthlySpending = Number(monthlySpending?.total || 0);
-      const monthlyBudget = Number(category.budget.monthly || 0);
-
-      // Check monthly budget alerts
-      if (monthlyBudget > 0) {
-        await this.checkAndTriggerAlerts({
-          userId,
-          categoryId,
-          categoryName: category.name,
-          currentAmount: currentMonthlySpending,
-          budgetAmount: monthlyBudget,
-          period: 'monthly',
-          expenseId
-        });
-      }
-
-      // Check spending limit alerts
-      const spendingLimit = Number(category.spendingLimit || 0);
-      if (spendingLimit > 0) {
-        await this.checkAndTriggerAlerts({
-          userId,
-          categoryId,
-          categoryName: category.name,
-          currentAmount: currentMonthlySpending,
-          budgetAmount: spendingLimit,
-          period: 'limit',
-          expenseId
-        });
-      }
+      // Check custom budget rules
+      await budgetRulesService.evaluateRulesForExpense(expenseData);
 
     } catch (error) {
       console.error('Error checking budget after expense:', error);

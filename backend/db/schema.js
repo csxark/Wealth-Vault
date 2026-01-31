@@ -161,6 +161,29 @@ export const budgetAlerts = pgTable('budget_alerts', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Budget Rules Table
+export const budgetRules = pgTable('budget_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    ruleType: text('rule_type').notNull(), // 'percentage', 'amount', 'frequency'
+    condition: jsonb('condition').notNull(), // { operator: '>', value: 500, period: 'week' }
+    threshold: numeric('threshold', { precision: 12, scale: 2 }).notNull(),
+    period: text('period').notNull(), // 'daily', 'weekly', 'monthly', 'yearly'
+    notificationType: text('notification_type').notNull(), // 'email', 'push', 'in_app'
+    isActive: boolean('is_active').default(true),
+    lastTriggered: timestamp('last_triggered'),
+    metadata: jsonb('metadata').default({
+        triggerCount: 0,
+        lastAmount: 0,
+        createdBy: 'user'
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -234,5 +257,16 @@ export const budgetAlertsRelations = relations(budgetAlerts, ({ one }) => ({
     expense: one(expenses, {
         fields: [budgetAlerts.expenseId],
         references: [expenses.id],
+    }),
+}));
+
+export const budgetRulesRelations = relations(budgetRules, ({ one }) => ({
+    user: one(users, {
+        fields: [budgetRules.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [budgetRules.categoryId],
+        references: [categories.id],
     }),
 }));
