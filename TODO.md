@@ -1,26 +1,13 @@
-# Goal Milestones and Progress Tracking Implementation
+# TODO: Implement Budget Alerts and Notifications
 
-## Backend Changes
-- [ ] Add goalMilestones table to schema.js
-- [ ] Extend goals.js route with milestone CRUD endpoints
-- [ ] Update reportService.js to include milestone progress in reports
-- [ ] Integrate geminiservice.js for AI milestone suggestions
-- [ ] Update notificationService.js for milestone completion notifications
-
-## Frontend Changes
-- [ ] Update api.ts with milestone endpoints
-- [ ] Enhance Goals component with milestone management UI
-- [ ] Update GoalCard to show milestone progress bars
-- [ ] Update GoalForm to add/edit milestones
-- [ ] Add milestone completion celebration modals with animations
-
-## Integration
-- [ ] Ensure milestones auto-update goal progress
-- [ ] Trigger notifications on milestone completion
-- [ ] Use analytics for milestone suggestions
-
-## Testing & Migration
-- [ ] Create database migration for new table
-- [ ] Test milestone CRUD operations
-- [ ] Test notifications and reports
-- [ ] Test frontend UI interactions
+## Tasks
+- [ ] Add budget_alerts table to database schema
+- [ ] Create notification service for sending alerts
+- [ ] Add budget checking logic in expenses route
+- [ ] Create budget alerts API endpoint
+- [ ] Add budget alert components to dashboard
+- [ ] Update category management to show budget status
+- [ ] Add notification preferences UI
+- [ ] Run database migrations
+- [ ] Test alert triggering with sample expenses
+- [ ] Configure email service for notifications

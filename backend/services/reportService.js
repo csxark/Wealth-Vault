@@ -1,8 +1,12 @@
 import PDFDocument from 'pdfkit';
+import ExcelJS from 'exceljs';
+import path from 'path';
+import fs from 'fs/promises';
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, goals, goalMilestones } from "../db/schema.js";
+import { expenses, categories, goals, reports, users } from "../db/schema.js";
 import geminiService from './geminiservice.js';
+import emailService from './emailService.js';
 
 class ReportService {
   async generateMonthlyReport(userId, year, month) {
@@ -10,6 +14,11 @@ class ReportService {
       // Calculate date range for the month
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0); // Last day of the month
+      const period = `${year}-${String(month).padStart(2, '0')}`;
+
+      // Fetch user info
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (!user) throw new Error('User not found');
 
       // Fetch analytics data
       const analyticsData = await this.getAnalyticsData(userId, startDate, endDate);
@@ -20,10 +29,57 @@ class ReportService {
       // Generate AI insights
       const aiInsights = await this.generateAIInsights(analyticsData, goalsData, year, month);
 
-      // Generate PDF
+      // Generate PDF and Excel
       const pdfBuffer = await this.createPDF(analyticsData, goalsData, aiInsights, year, month);
+      const excelBuffer = await this.createExcel(analyticsData, goalsData, year, month);
 
-      return pdfBuffer;
+      // Save files to disk
+      const reportsDir = path.join(process.cwd(), 'uploads', 'reports');
+      await fs.mkdir(reportsDir, { recursive: true });
+
+      const pdfFilename = `${userId}_report_${period}.pdf`;
+      const excelFilename = `${userId}_report_${period}.xlsx`;
+
+      const pdfPath = path.join(reportsDir, pdfFilename);
+      const excelPath = path.join(reportsDir, excelFilename);
+
+      await fs.writeFile(pdfPath, pdfBuffer);
+      await fs.writeFile(excelPath, excelBuffer);
+
+      // Archive reports in database
+      const [pdfReport] = await db.insert(reports).values({
+        userId,
+        name: `Monthly Report - ${analyticsData.period.month}`,
+        type: 'monthly_digest',
+        format: 'pdf',
+        url: `/uploads/reports/${pdfFilename}`,
+        period,
+      }).returning();
+
+      await db.insert(reports).values({
+        userId,
+        name: `Monthly Report Data - ${analyticsData.period.month}`,
+        type: 'monthly_digest',
+        format: 'excel',
+        url: `/uploads/reports/${excelFilename}`,
+        period,
+      });
+
+      // Send email notification (if email service supports attachments we'd use them, but let's send a link)
+      await emailService.sendEmail({
+        to: user.email,
+        subject: `📊 Your Financial Digest for ${analyticsData.period.month} is Ready`,
+        html: `
+          <h1>Hi ${user.firstName},</h1>
+          <p>Your monthly financial report for <strong>${analyticsData.period.month}</strong> has been generated.</p>
+          <p>You can view your detailed insights and spending breakdown by logging into Wealth-Vault.</p>
+          <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/reports/${pdfReport.id}">Download PDF Report</a></p>
+          <br>
+          <p>Best regards,<br>The Wealth Vault Team</p>
+        `
+      });
+
+      return pdfReport;
     } catch (error) {
       console.error('Error generating monthly report:', error);
       throw new Error('Failed to generate monthly report');
@@ -182,8 +238,8 @@ Spending Summary:
 
 Top Categories:
 ${analyticsData.categoryBreakdown.slice(0, 5).map(cat =>
-  `- ${cat.categoryName}: ₹${cat.total.toLocaleString()} (${cat.percentage.toFixed(1)}%)`
-).join('\n')}
+        `- ${cat.categoryName}: ₹${cat.total.toLocaleString()} (${cat.percentage.toFixed(1)}%)`
+      ).join('\n')}
 
 Goals Progress:
 - Total goals: ${goalsData.summary.total}
@@ -202,7 +258,6 @@ Please provide actionable insights about spending patterns, goal progress, miles
       return 'AI insights are currently unavailable. Please check your spending patterns manually.';
     }
   }
-
   async createPDF(analyticsData, goalsData, aiInsights, year, month) {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
@@ -284,12 +339,7 @@ Please provide actionable insights about spending patterns, goal progress, miles
       doc.fontSize(12).font('Helvetica');
 
       const insightsText = aiInsights || 'AI insights are currently unavailable.';
-      const lines = doc.heightOfString(insightsText, { width: 500 });
-      if (lines > 200) {
-        doc.text(insightsText.substring(0, 500) + '...', { width: 500 });
-      } else {
-        doc.text(insightsText, { width: 500 });
-      }
+      doc.text(insightsText, { width: 500 });
 
       doc.moveDown(2);
 
@@ -301,6 +351,66 @@ Please provide actionable insights about spending patterns, goal progress, miles
 
       doc.end();
     });
+  }
+
+  async createExcel(analyticsData, goalsData, year, month) {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Spending Summary');
+
+    // Summary Info
+    sheet.columns = [
+      { header: 'Category', key: 'category', width: 25 },
+      { header: 'Amount', key: 'amount', width: 15 },
+      { header: 'Percentage', key: 'percentage', width: 15 },
+      { header: 'Count', key: 'count', width: 10 },
+    ];
+
+    analyticsData.categoryBreakdown.forEach(cat => {
+      sheet.addRow({
+        category: cat.categoryName,
+        amount: cat.total,
+        percentage: `${cat.percentage.toFixed(1)}%`,
+        count: cat.count,
+      });
+    });
+
+    // Add another sheet for Top Expenses
+    const expenseSheet = workbook.addWorksheet('Top Expenses');
+    expenseSheet.columns = [
+      { header: 'Date', key: 'date', width: 15 },
+      { header: 'Description', key: 'description', width: 40 },
+      { header: 'Category', key: 'category', width: 20 },
+      { header: 'Amount', key: 'amount', width: 15 },
+    ];
+
+    analyticsData.topExpenses.forEach(exp => {
+      expenseSheet.addRow({
+        date: new Date(exp.date).toLocaleDateString(),
+        description: exp.description,
+        category: exp.category?.name || 'Uncategorized',
+        amount: exp.amount,
+      });
+    });
+
+    // Add Goals sheet
+    const goalsSheet = workbook.addWorksheet('Goals Progress');
+    goalsSheet.columns = [
+      { header: 'Goal Name', key: 'title', width: 30 },
+      { header: 'Target', key: 'target', width: 15 },
+      { header: 'Current', key: 'current', width: 15 },
+      { header: 'Progress', key: 'progress', width: 15 },
+    ];
+
+    goalsData.goals.forEach(goal => {
+      goalsSheet.addRow({
+        title: goal.title,
+        target: goal.targetAmount,
+        current: goal.currentAmount,
+        progress: `${goal.progress.toFixed(1)}%`,
+      });
+    });
+
+    return await workbook.xlsx.writeBuffer();
   }
 }
 

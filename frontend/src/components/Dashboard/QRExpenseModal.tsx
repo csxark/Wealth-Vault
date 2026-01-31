@@ -113,6 +113,7 @@ const QRExpenseModal: React.FC<QRExpenseModalProps> = ({
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+            aria-label="Close modal"
           >
             ✕
           </button>
