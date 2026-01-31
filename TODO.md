@@ -1,21 +1,13 @@
-# Recurring Expenses Automation Implementation
+# TODO: Implement Budget Alerts and Notifications
 
-## Backend Changes
-- [x] Add recurringExpenses table to schema.js
-- [x] Create recurringExpensesService.js with scheduling logic using node-cron
-- [x] Modify expenses.js route to support recurring expense CRUD operations
-- [x] Add daily cron job in server.js to generate expenses
-- [x] Install node-cron dependency
-
-## Frontend Changes
-- [ ] Add RecurringExpenseForm component for setting up patterns
-- [ ] Update RecurringExpenses component to show patterns and allow editing
-- [x] Update api.ts with new endpoints for recurring expenses
-- [x] Update types/index.ts with new interfaces
-- [ ] Integrate into Dashboard
-
-## Integration & Testing
-- [ ] Set up background job for auto-generation
-- [ ] Add notifications for upcoming recurrences
-- [ ] Test the automation logic
-- [ ] Verify database migrations
+## Tasks
+- [ ] Add budget_alerts table to database schema
+- [ ] Create notification service for sending alerts
+- [ ] Add budget checking logic in expenses route
+- [ ] Create budget alerts API endpoint
+- [ ] Add budget alert components to dashboard
+- [ ] Update category management to show budget status
+- [ ] Add notification preferences UI
+- [ ] Run database migrations
+- [ ] Test alert triggering with sample expenses
+- [ ] Configure email service for notifications

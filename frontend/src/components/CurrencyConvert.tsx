@@ -1,24 +1,28 @@
 import { useEffect, useState } from 'react';
 import { convertCurrency } from '../utils/currency';
+import type { CurrencyConverterProps, CurrencyCode } from '../types';
 
-const currencies = ['USD', 'EUR', 'INR', 'GBP', 'JPY'];
+const currencies: readonly CurrencyCode[] = ['USD', 'EUR', 'INR', 'GBP', 'JPY'] as const;
 
-const CurrencyConverter = ({ onRateChange }) => {
-  const [amount, setAmount] = useState(1);
-  const [from, setFrom] = useState(localStorage.getItem('preferredFrom') || 'INR');
-  const [to, setTo] = useState(localStorage.getItem('preferredTo') || 'USD');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+const CurrencyConverter: React.FC<CurrencyConverterProps> = ({ onRateChange }) => {
+  const [from, setFrom] = useState<CurrencyCode>(
+    (localStorage.getItem('preferredFrom') as CurrencyCode) || 'INR'
+  );
+  const [to, setTo] = useState<CurrencyCode>(
+    (localStorage.getItem('preferredTo') as CurrencyCode) || 'USD'
+  );
+  const [loading, setLoading] = useState<boolean>(false);
+  const [result, setResult] = useState<number | null>(null);
 
   useEffect(() => {
     localStorage.setItem('preferredFrom', from);
     localStorage.setItem('preferredTo', to);
   }, [from, to]);
 
-  const handleConvert = async () => {
+  const handleConvert = async (): Promise<void> => {
     setLoading(true);
     try {
-      const rate = await convertCurrency(1, from, to); // get 1-unit rate
+      const rate: number = await convertCurrency(1, from, to); // get 1-unit rate
       setResult(rate);
       onRateChange({ from, to, rate });
     } finally {
@@ -26,25 +30,41 @@ const CurrencyConverter = ({ onRateChange }) => {
     }
   };
 
+  const handleFromChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+    setFrom(e.target.value as CurrencyCode);
+  };
+
+  const handleToChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+    setTo(e.target.value as CurrencyCode);
+  };
+
   return (
     <div className="bg-white dark:bg-slate-800 p-2 rounded-xl shadow border border-cyan-200 dark:border-cyan-700">
       <div className="flex items-center gap-2">
-        <select 
-          value={from} 
-          onChange={(e) => setFrom(e.target.value)} 
+        <select
+          value={from}
+          onChange={handleFromChange}
           className="flex-1 border border-cyan-200 dark:border-cyan-700 dark:bg-slate-900 dark:text-white rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
         >
-          {currencies.map(c => <option key={c}>{c}</option>)}
+          {currencies.map((currency: CurrencyCode) => (
+            <option key={currency} value={currency}>
+              {currency}
+            </option>
+          ))}
         </select>
 
         <span className="text-sm text-slate-600 dark:text-slate-400">→</span>
 
-        <select 
-          value={to} 
-          onChange={(e) => setTo(e.target.value)} 
+        <select
+          value={to}
+          onChange={handleToChange}
           className="flex-1 border border-cyan-200 dark:border-cyan-700 dark:bg-slate-900 dark:text-white rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
         >
-          {currencies.map(c => <option key={c}>{c}</option>)}
+          {currencies.map((currency: CurrencyCode) => (
+            <option key={currency} value={currency}>
+              {currency}
+            </option>
+          ))}
         </select>
 
         <button
@@ -55,7 +75,7 @@ const CurrencyConverter = ({ onRateChange }) => {
           {loading ? '...' : 'Go'}
         </button>
       </div>
-      {result && (
+      {result !== null && (
         <div className="mt-2 text-xs text-center text-slate-600 dark:text-slate-400">
           1 {from} = {result.toFixed(4)} {to}
         </div>
@@ -63,4 +83,5 @@ const CurrencyConverter = ({ onRateChange }) => {
     </div>
   );
 };
+
 export default CurrencyConverter;
