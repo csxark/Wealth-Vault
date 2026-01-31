@@ -24,7 +24,7 @@ npm run dev
 
 ## 📋 Prerequisites
 
-- **Node.js** (v16 or higher)
+- **Node.js** (v18 or higher)
 - **npm** (v8 or higher)
 - **Git** (for version control)
 
