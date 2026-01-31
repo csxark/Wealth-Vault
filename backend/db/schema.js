@@ -233,6 +233,27 @@ export const exchangeRates = pgTable('exchange_rates', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Forecast Snapshots Table (for Cash Flow Forecasting)
+export const forecastSnapshots = pgTable('forecast_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    forecastDate: timestamp('forecast_date').notNull(), // The date this forecast was generated
+    projectedBalance: numeric('projected_balance', { precision: 12, scale: 2 }).notNull(),
+    confidence: doublePrecision('confidence').default(0), // Confidence score (0-100)
+    predictions: jsonb('predictions').default([]), // Array of daily predictions: [{ date, income, expenses, balance }]
+    anomalies: jsonb('anomalies').default([]), // Detected anomalies: [{ type, description, severity, date }]
+    trends: jsonb('trends').default({}), // { recurringPatterns: [], seasonalTrends: [], growthRate: 0 }
+    dangerZones: jsonb('danger_zones').default([]), // Predicted negative balance periods: [{ startDate, endDate, severity, projectedBalance }]
+    aiInsights: jsonb('ai_insights').default({}), // Gemini AI-generated insights
+    metadata: jsonb('metadata').default({
+        analysisVersion: '1.0',
+        dataPoints: 0,
+        historicalMonths: 0,
+        forecastDays: 30
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Token Blacklist Table
 export const tokenBlacklist = pgTable('token_blacklist', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -283,6 +304,29 @@ export const budgetAlerts = pgTable('budget_alerts', {
     period: text('period').notNull(), // '2023-10'
     triggeredAt: timestamp('triggered_at').defaultNow(),
     metadata: jsonb('metadata').default({}),
+});
+
+// Budget Rules Table
+export const budgetRules = pgTable('budget_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    ruleType: text('rule_type').notNull(), // 'percentage', 'amount', 'frequency'
+    condition: jsonb('condition').notNull(), // { operator: '>', value: 500, period: 'week' }
+    threshold: numeric('threshold', { precision: 12, scale: 2 }).notNull(),
+    period: text('period').notNull(), // 'daily', 'weekly', 'monthly', 'yearly'
+    notificationType: text('notification_type').notNull(), // 'email', 'push', 'in_app'
+    isActive: boolean('is_active').default(true),
+    lastTriggered: timestamp('last_triggered'),
+    metadata: jsonb('metadata').default({
+        triggerCount: 0,
+        lastAmount: 0,
+        createdBy: 'user'
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 // Relations
@@ -415,6 +459,13 @@ export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
         references: [users.id],
     }),
 }));
+export const forecastSnapshotsRelations = relations(forecastSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [forecastSnapshots.userId],
+        references: [users.id],
+    }),
+}));
+
 
 export const vaultBalancesRelations = relations(vaultBalances, ({ one }) => ({
     vault: one(vaults, {
