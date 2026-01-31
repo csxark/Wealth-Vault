@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { User, Expense, Category, Goal } from '../types';
+import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData } from '../types';
 
 // Use environment variable for API URL
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -108,7 +108,7 @@ const generateMockExpenses = (count: number = 20): Expense[] => {
 };
 
 // Generic API request function with enhanced error handling
-const apiRequest = async <T>(endpoint: string, options: Record<string, unknown> = {}): Promise<T> => {
+const apiRequest = async <T>(endpoint: string, options: { method?: string; params?: Record<string, unknown>; data?: unknown } = {}): Promise<T> => {
   // Check if we're in dev mode
   const token = localStorage.getItem('authToken');
   if (token === 'dev-mock-token-123') {
@@ -250,7 +250,7 @@ const apiRequest = async <T>(endpoint: string, options: Record<string, unknown> 
       const newGoal = {
         _id: `mock-goal-${Date.now()}`,
         user: 'dev-user-001',
-        ...options.data,
+        ...(options.data as object),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -563,6 +563,58 @@ export const expensesAPI = {
       method: 'POST',
       data: { expenses: expensesData },
     });
+  },
+
+  // Recurring Expenses API
+  recurringExpenses: {
+    // Get all recurring expenses
+    getAll: async (params?: {
+      isActive?: boolean;
+      category?: string;
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        data: { recurringExpenses: RecurringExpense[] };
+      }>('/expenses/recurring', {
+        method: 'GET',
+        params,
+      });
+    },
+
+    // Get recurring expense by ID
+    getById: async (id: string) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>(`/expenses/recurring/${id}`);
+    },
+
+    // Create new recurring expense
+    create: async (recurringExpenseData: RecurringExpenseFormData) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>('/expenses/recurring', {
+        method: 'POST',
+        data: recurringExpenseData,
+      });
+    },
+
+    // Update recurring expense
+    update: async (id: string, recurringExpenseData: Partial<RecurringExpenseFormData & { isActive?: boolean; isPaused?: boolean }>) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>(`/expenses/recurring/${id}`, {
+        method: 'PUT',
+        data: recurringExpenseData,
+      });
+    },
+
+    // Delete recurring expense
+    delete: async (id: string) => {
+      return apiRequest<{ success: boolean; message: string }>(`/expenses/recurring/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    // Manually trigger recurring expense generation (for testing)
+    triggerGeneration: async () => {
+      return apiRequest<{ success: boolean; message: string; data: { generatedExpenses: Expense[] } }>('/expenses/recurring/trigger', {
+        method: 'POST',
+      });
+    },
   },
 };
 

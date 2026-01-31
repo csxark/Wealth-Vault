@@ -1,6 +1,8 @@
-import React, { useMemo } from 'react';
-import { RotateCcw, Calendar, TrendingUp, AlertCircle, Edit, Trash2 } from 'lucide-react';
-import type { Expense } from '../../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { RotateCcw, Calendar, TrendingUp, AlertCircle, Edit, Trash2, Plus, Settings } from 'lucide-react';
+import type { Expense, RecurringExpense } from '../../types';
+import { expensesAPI } from '../../services/api';
+import { RecurringExpenseForm } from './RecurringExpenseForm';
 
 interface RecurringExpensesProps {
   expenses: Expense[];

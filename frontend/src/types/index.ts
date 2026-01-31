@@ -211,6 +211,54 @@ export interface AuthResponse {
   message?: string;
 }
 
+export interface RecurringExpense {
+  id: string;
+  userId: string;
+  categoryId: string;
+  category?: {
+    name: string;
+    color: string;
+    icon: string;
+  };
+  name: string;
+  description: string;
+  amount: number;
+  currency: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval: number;
+  startDate: string;
+  endDate?: string;
+  nextDueDate: string;
+  lastGeneratedDate?: string;
+  isActive: boolean;
+  isPaused: boolean;
+  paymentMethod: string;
+  tags?: string[];
+  notes?: string;
+  metadata?: {
+    totalGenerated: number;
+    lastAmount: number;
+    createdBy: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecurringExpenseFormData {
+  category: string;
+  name: string;
+  description: string;
+  amount: number;
+  currency?: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval?: number;
+  startDate: string;
+  endDate?: string;
+  paymentMethod?: string;
+  tags?: string[];
+  notes?: string;
+}
+
 export interface LoginCredentials {
   email: string;
   password: string;
