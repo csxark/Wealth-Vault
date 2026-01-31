@@ -1,0 +1,244 @@
+import { eq, and, lte, isNotNull } from 'drizzle-orm';
+import db from '../config/db.js';
+import { expenses } from '../db/schema.js';
+import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
+
+/**
+ * Recurring Transaction Execution Service
+ * Handles the automatic cloning of recurring expenses based on their patterns
+ */
+
+/**
+ * Calculate the next execution date based on the recurring pattern
+ * @param {Date} fromDate - The date to calculate from
+ * @param {Object} pattern - The recurring pattern { frequency, interval, endDate }
+ * @returns {Date|null} - The next execution date or null if pattern has ended
+ */
+export const calculateNextExecutionDate = (fromDate, pattern) => {
+  if (!pattern || !pattern.frequency) {
+    return null;
+  }
+
+  const { frequency, interval = 1, endDate } = pattern;
+  const nextDate = new Date(fromDate);
+
+  switch (frequency.toLowerCase()) {
+    case 'daily':
+      nextDate.setDate(nextDate.getDate() + interval);
+      break;
+    case 'weekly':
+      nextDate.setDate(nextDate.getDate() + (7 * interval));
+      break;
+    case 'monthly':
+      nextDate.setMonth(nextDate.getMonth() + interval);
+      break;
+    case 'yearly':
+      nextDate.setFullYear(nextDate.getFullYear() + interval);
+      break;
+    default:
+      return null;
+  }
+
+  // Check if the pattern has an end date and if we've passed it
+  if (endDate && nextDate > new Date(endDate)) {
+    return null;
+  }
+
+  return nextDate;
+};
+
+/**
+ * Get all recurring expenses that are due for execution
+ * @returns {Promise<Array>} - Array of due recurring expenses
+ */
+export const getDueRecurringExpenses = async () => {
+  const now = new Date();
+  
+  try {
+    const dueExpenses = await db
+      .select()
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.isRecurring, true),
+          isNotNull(expenses.nextExecutionDate),
+          lte(expenses.nextExecutionDate, now)
+        )
+      );
+
+    return dueExpenses;
+  } catch (error) {
+    console.error('Error fetching due recurring expenses:', error);
+    throw error;
+  }
+};
+
+/**
+ * Clone a recurring expense to create a new transaction
+ * @param {Object} sourceExpense - The original recurring expense
+ * @returns {Promise<Object>} - The newly created expense
+ */
+export const cloneRecurringExpense = async (sourceExpense) => {
+  const now = new Date();
+
+  try {
+    // Create a new expense based on the source
+    const [newExpense] = await db
+      .insert(expenses)
+      .values({
+        userId: sourceExpense.userId,
+        categoryId: sourceExpense.categoryId,
+        amount: sourceExpense.amount,
+        currency: sourceExpense.currency,
+        description: sourceExpense.description,
+        subcategory: sourceExpense.subcategory,
+        date: now, // Use current date for the new transaction
+        paymentMethod: sourceExpense.paymentMethod,
+        location: sourceExpense.location,
+        tags: sourceExpense.tags,
+        isRecurring: false, // Cloned expenses are not recurring themselves
+        recurringSourceId: sourceExpense.id, // Link back to the source
+        notes: sourceExpense.notes ? `[Auto-generated] ${sourceExpense.notes}` : '[Auto-generated from recurring transaction]',
+        status: 'completed',
+        metadata: {
+          createdBy: 'recurring_job',
+          sourceExpenseId: sourceExpense.id,
+          generatedAt: now.toISOString(),
+          version: 1,
+          flags: ['auto-generated']
+        },
+      })
+      .returning();
+
+    // Calculate the next execution date for the source expense
+    const nextExecDate = calculateNextExecutionDate(now, sourceExpense.recurringPattern);
+
+    // Update the source expense with the new execution date and last executed timestamp
+    await db
+      .update(expenses)
+      .set({
+        lastExecutedDate: now,
+        nextExecutionDate: nextExecDate,
+        updatedAt: now,
+      })
+      .where(eq(expenses.id, sourceExpense.id));
+
+    // Log the audit event
+    logAuditEventAsync({
+      userId: sourceExpense.userId,
+      action: AuditActions.EXPENSE_CREATE,
+      resourceType: ResourceTypes.EXPENSE,
+      resourceId: newExpense.id,
+      metadata: {
+        source: 'recurring_job',
+        sourceExpenseId: sourceExpense.id,
+        amount: sourceExpense.amount,
+        description: sourceExpense.description,
+      },
+      status: 'success',
+      ipAddress: 'system',
+      userAgent: 'RecurringTransactionJob',
+    });
+
+    return newExpense;
+  } catch (error) {
+    console.error(`Error cloning recurring expense ${sourceExpense.id}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Process all due recurring expenses
+ * This is the main function called by the scheduled job
+ * @returns {Promise<Object>} - Execution results
+ */
+export const processRecurringExpenses = async () => {
+  const startTime = Date.now();
+  const results = {
+    processed: 0,
+    created: 0,
+    failed: 0,
+    errors: [],
+    duration: 0,
+  };
+
+  try {
+    const dueExpenses = await getDueRecurringExpenses();
+    results.processed = dueExpenses.length;
+
+    console.log(`[RecurringJob] Found ${dueExpenses.length} due recurring expenses`);
+
+    for (const expense of dueExpenses) {
+      try {
+        await cloneRecurringExpense(expense);
+        results.created++;
+        console.log(`[RecurringJob] Created expense from recurring source: ${expense.id}`);
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          expenseId: expense.id,
+          error: error.message,
+        });
+        console.error(`[RecurringJob] Failed to process expense ${expense.id}:`, error.message);
+      }
+    }
+
+    results.duration = Date.now() - startTime;
+    console.log(`[RecurringJob] Completed - Created: ${results.created}, Failed: ${results.failed}, Duration: ${results.duration}ms`);
+
+    return results;
+  } catch (error) {
+    results.duration = Date.now() - startTime;
+    console.error('[RecurringJob] Critical error during execution:', error);
+    throw error;
+  }
+};
+
+/**
+ * Initialize the next execution date for a recurring expense
+ * Called when creating or updating a recurring expense
+ * @param {string} expenseId - The expense ID
+ * @param {Object} recurringPattern - The recurring pattern
+ * @param {Date} startDate - The start date for the recurrence
+ * @returns {Promise<Date>} - The calculated next execution date
+ */
+export const initializeRecurringExpense = async (expenseId, recurringPattern, startDate = new Date()) => {
+  const nextExecDate = calculateNextExecutionDate(startDate, recurringPattern);
+
+  if (nextExecDate) {
+    await db
+      .update(expenses)
+      .set({
+        nextExecutionDate: nextExecDate,
+        updatedAt: new Date(),
+      })
+      .where(eq(expenses.id, expenseId));
+  }
+
+  return nextExecDate;
+};
+
+/**
+ * Disable recurring for an expense
+ * @param {string} expenseId - The expense ID
+ * @returns {Promise<void>}
+ */
+export const disableRecurring = async (expenseId) => {
+  await db
+    .update(expenses)
+    .set({
+      isRecurring: false,
+      nextExecutionDate: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(expenses.id, expenseId));
+};
+
+export default {
+  calculateNextExecutionDate,
+  getDueRecurringExpenses,
+  cloneRecurringExpense,
+  processRecurringExpenses,
+  initializeRecurringExpense,
+  disableRecurring,
+};

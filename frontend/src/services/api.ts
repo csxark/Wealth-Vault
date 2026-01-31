@@ -89,15 +89,18 @@ const generateMockExpenses = (count: number = 20): Expense[] => {
     date.setDate(date.getDate() - daysAgo);
     
     expenses.push({
-      _id: `mock-expense-${i}`,
-      user: 'dev-user-001',
+      id: `mock-expense-${i}`,
+      userId: 'dev-user-001',
       amount: Math.floor(Math.random() * 5000) + 100,
+      currency: 'INR',
       category: categories[Math.floor(Math.random() * categories.length)] as 'safe' | 'impulsive' | 'anxious',
       description: descriptions[Math.floor(Math.random() * descriptions.length)],
       date: date.toISOString(),
       paymentMethod: paymentMethods[Math.floor(Math.random() * paymentMethods.length)] as 'cash' | 'card' | 'upi' | 'netbanking',
-      createdAt: date.toISOString(),
-      updatedAt: date.toISOString()
+      isRecurring: false,
+      status: 'completed',
+      created_at: date.toISOString(),
+      updated_at: date.toISOString()
     });
   }
   
@@ -493,7 +496,7 @@ export const expensesAPI = {
   },
 
   // Create new expense
-  create: async (expenseData: Omit<Expense, '_id' | 'user' | 'createdAt' | 'updatedAt'>) => {
+  create: async (expenseData: Omit<Expense, 'id' | 'userId' | 'created_at' | 'updated_at'>) => {
     return apiRequest<{ success: boolean; data: { expense: Expense } }>('/expenses', {
       method: 'POST',
       data: expenseData,

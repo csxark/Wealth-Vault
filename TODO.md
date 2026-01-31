@@ -1,11 +1,13 @@
-# Backend Integration for CSV Import
+# TODO: Implement Budget Alerts and Notifications
 
 ## Tasks
-- [ ] Modify DataImport.tsx to fetch user categories on component mount
-- [ ] Create mapping from SpendingCategory to actual category IDs
-- [ ] Update processCSV to use expensesAPI.import instead of localStorage
-- [ ] Handle API response and update UI accordingly
-- [ ] Remove localStorage operations
-- [ ] Test CSV import with backend API
-- [ ] Verify category stats are updated
-- [ ] Ensure error handling works properly
+- [ ] Add budget_alerts table to database schema
+- [ ] Create notification service for sending alerts
+- [ ] Add budget checking logic in expenses route
+- [ ] Create budget alerts API endpoint
+- [ ] Add budget alert components to dashboard
+- [ ] Update category management to show budget status
+- [ ] Add notification preferences UI
+- [ ] Run database migrations
+- [ ] Test alert triggering with sample expenses
+- [ ] Configure email service for notifications

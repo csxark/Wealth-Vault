@@ -18,6 +18,11 @@ export const users = pgTable('users', {
     emergencyFund: numeric('emergency_fund', { precision: 12, scale: 2 }).default('0'),
     isActive: boolean('is_active').default(true),
     lastLogin: timestamp('last_login').defaultNow(),
+    // MFA Fields
+    mfaEnabled: boolean('mfa_enabled').default(false),
+    mfaSecret: text('mfa_secret'),
+    mfaRecoveryCodes: jsonb('mfa_recovery_codes').default([]),
+    mfaBackupCodes: jsonb('mfa_backup_codes').default([]),
     preferences: jsonb('preferences').default({
         notifications: { email: true, push: true, sms: false },
         theme: 'auto',
@@ -67,7 +72,10 @@ export const expenses = pgTable('expenses', {
     tags: jsonb('tags').default([]), // Store generic array as JSONB or text[]
     receipt: jsonb('receipt'),
     isRecurring: boolean('is_recurring').default(false),
-    recurringPattern: jsonb('recurring_pattern'),
+    recurringPattern: jsonb('recurring_pattern'), // { frequency: 'daily'|'weekly'|'monthly'|'yearly', interval: 1, endDate?: Date }
+    nextExecutionDate: timestamp('next_execution_date'), // When the next recurring transaction should be created
+    lastExecutedDate: timestamp('last_executed_date'), // When this recurring pattern was last executed
+    recurringSourceId: uuid('recurring_source_id'), // Reference to the original recurring expense (for cloned transactions)
     notes: text('notes'),
     status: text('status').default('completed'),
     metadata: jsonb('metadata').default({
@@ -191,6 +199,21 @@ export const tokenBlacklist = pgTable('token_blacklist', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Security Events Table
+export const securityEvents = pgTable('security_events', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    eventType: text('event_type').notNull(), // login_success, login_failed, mfa_enabled, mfa_disabled, password_changed, suspicious_activity
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    location: jsonb('location'), // { city, country, latitude, longitude }
+    deviceInfo: jsonb('device_info'), // { deviceId, deviceName, deviceType }
+    status: text('status').default('info'), // info, warning, critical
+    details: jsonb('details').default({}),
+    notified: boolean('notified').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -199,6 +222,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     deviceSessions: many(deviceSessions),
     vaultMemberships: many(vaultMembers),
     ownedVaults: many(vaults),
+    securityEvents: many(securityEvents),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
