@@ -246,8 +246,10 @@ Goals Progress:
 - Active goals: ${goalsData.summary.active}
 - Completed goals: ${goalsData.summary.completed}
 - Average progress: ${goalsData.summary.averageProgress.toFixed(1)}%
+- Total milestones: ${goalsData.summary.totalMilestones}
+- Completed milestones: ${goalsData.summary.completedMilestones}
 
-Please provide actionable insights about spending patterns, goal progress, and financial health recommendations. Keep it concise and professional.`;
+Please provide actionable insights about spending patterns, goal progress, milestone achievements, and financial health recommendations. Keep it concise and professional.`;
 
       const insights = await geminiService.generateInsights(prompt);
       return insights;
