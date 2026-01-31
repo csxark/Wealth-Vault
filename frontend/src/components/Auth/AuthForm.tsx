@@ -245,6 +245,10 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                   className={`relative z-10 w-1/2 py-2 text-sm font-bold transition-colors duration-300 ${!isSignUp ? 'text-primary' : 'text-gray-500'}`}
 
+                  role="tab"
+
+                  aria-selected={!isSignUp}
+
                 >
 
                   Login
@@ -256,6 +260,10 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
                   onClick={toggleToSignUp}
 
                   className={`relative z-10 w-1/2 py-2 text-sm font-bold transition-colors duration-300 ${isSignUp ? 'text-primary' : 'text-gray-500'}`}
+
+                  role="tab"
+
+                  aria-selected={isSignUp}
 
                 >
 
@@ -323,7 +331,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                           <input value={password} onChange={e => setPassword(e.target.value)} className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 focus:ring-2 focus:ring-primary text-gray-900 dark:text-white outline-none" type={showPassword ? "text" : "password"} placeholder="••••••••" required={!isSignUp} />
 
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400" aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
 
                         </div>
 
@@ -387,7 +395,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                           <input value={password} onChange={e => setPassword(e.target.value)} className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 focus:ring-2 focus:ring-primary text-gray-900 dark:text-white outline-none" type={showPassword ? "text" : "password"} placeholder="Create password" required={isSignUp} />
 
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400" aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
 
                         </div>
 
