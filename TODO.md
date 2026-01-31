@@ -1,21 +1,26 @@
-# Recurring Expenses Automation Implementation
+# Goal Milestones and Progress Tracking Implementation
 
 ## Backend Changes
-- [x] Add recurringExpenses table to schema.js
-- [x] Create recurringExpensesService.js with scheduling logic using node-cron
-- [x] Modify expenses.js route to support recurring expense CRUD operations
-- [x] Add daily cron job in server.js to generate expenses
-- [x] Install node-cron dependency
+- [ ] Add goalMilestones table to schema.js
+- [ ] Extend goals.js route with milestone CRUD endpoints
+- [ ] Update reportService.js to include milestone progress in reports
+- [ ] Integrate geminiservice.js for AI milestone suggestions
+- [ ] Update notificationService.js for milestone completion notifications
 
 ## Frontend Changes
-- [ ] Add RecurringExpenseForm component for setting up patterns
-- [ ] Update RecurringExpenses component to show patterns and allow editing
-- [x] Update api.ts with new endpoints for recurring expenses
-- [x] Update types/index.ts with new interfaces
-- [ ] Integrate into Dashboard
+- [ ] Update api.ts with milestone endpoints
+- [ ] Enhance Goals component with milestone management UI
+- [ ] Update GoalCard to show milestone progress bars
+- [ ] Update GoalForm to add/edit milestones
+- [ ] Add milestone completion celebration modals with animations
 
-## Integration & Testing
-- [ ] Set up background job for auto-generation
-- [ ] Add notifications for upcoming recurrences
-- [ ] Test the automation logic
-- [ ] Verify database migrations
+## Integration
+- [ ] Ensure milestones auto-update goal progress
+- [ ] Trigger notifications on milestone completion
+- [ ] Use analytics for milestone suggestions
+
+## Testing & Migration
+- [ ] Create database migration for new table
+- [ ] Test milestone CRUD operations
+- [ ] Test notifications and reports
+- [ ] Test frontend UI interactions

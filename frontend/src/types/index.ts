@@ -105,6 +105,26 @@ export interface Category {
 // Spending category type for consistency
 export type SpendingCategory = 'safe' | 'impulsive' | 'anxious';
 
+export interface Milestone {
+  id: string;
+  goalId: string;
+  title: string;
+  description?: string;
+  targetAmount: number;
+  currentAmount: number;
+  deadline?: string;
+  isCompleted: boolean;
+  completedDate?: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+  // Virtual fields
+  progressPercentage?: number;
+  remainingAmount?: number;
+  daysRemaining?: number;
+  isOverdue?: boolean;
+}
+
 export interface Goal {
   _id: string;
   user: string;

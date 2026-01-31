@@ -110,6 +110,26 @@ export const goals = pgTable('goals', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Goal Milestones Table
+export const goalMilestones = pgTable('goal_milestones', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    targetAmount: numeric('target_amount', { precision: 12, scale: 2 }).notNull(),
+    currentAmount: numeric('current_amount', { precision: 12, scale: 2 }).default('0'),
+    deadline: timestamp('deadline'),
+    isCompleted: boolean('is_completed').default(false),
+    completedDate: timestamp('completed_date'),
+    order: integer('order').default(0),
+    metadata: jsonb('metadata').default({
+        badgeEarned: false,
+        notificationSent: false
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Device Sessions Table for token management
 export const deviceSessions = pgTable('device_sessions', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -308,5 +328,12 @@ export const budgetRulesRelations = relations(budgetRules, ({ one }) => ({
     category: one(categories, {
         fields: [budgetRules.categoryId],
         references: [categories.id],
+    }),
+}));
+
+export const goalMilestonesRelations = relations(goalMilestones, ({ one }) => ({
+    goal: one(goals, {
+        fields: [goalMilestones.goalId],
+        references: [goals.id],
     }),
 }));

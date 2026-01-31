@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, goals } from "../db/schema.js";
+import { expenses, categories, goals, goalMilestones } from "../db/schema.js";
 import geminiService from './geminiservice.js';
 
 class ReportService {
@@ -190,8 +190,10 @@ Goals Progress:
 - Active goals: ${goalsData.summary.active}
 - Completed goals: ${goalsData.summary.completed}
 - Average progress: ${goalsData.summary.averageProgress.toFixed(1)}%
+- Total milestones: ${goalsData.summary.totalMilestones}
+- Completed milestones: ${goalsData.summary.completedMilestones}
 
-Please provide actionable insights about spending patterns, goal progress, and financial health recommendations. Keep it concise and professional.`;
+Please provide actionable insights about spending patterns, goal progress, milestone achievements, and financial health recommendations. Keep it concise and professional.`;
 
       const insights = await geminiService.generateInsights(prompt);
       return insights;

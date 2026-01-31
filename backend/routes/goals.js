@@ -1,9 +1,10 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
-import { eq, and, sql, desc, asc } from "drizzle-orm";
+import { eq, and, sql, desc, asc, gte } from "drizzle-orm";
 import db from "../config/db.js";
-import { goals, users, categories } from "../db/schema.js";
+import { goals, users, categories, goalMilestones } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
+import notificationService from "../services/notificationService.js";
 
 const router = express.Router();
 
@@ -480,5 +481,251 @@ router.get("/stats/summary", protect, async (req, res) => {
       });
   }
 });
+
+// Milestone CRUD Routes
+
+// @route   GET /api/goals/:goalId/milestones
+// @desc    Get all milestones for a goal
+// @access  Private
+router.get("/:goalId/milestones", protect, checkOwnership("Goal"), async (req, res) => {
+  try {
+    const milestones = await db.query.goalMilestones.findMany({
+      where: eq(goalMilestones.goalId, req.params.goalId),
+      orderBy: [asc(goalMilestones.order), asc(goalMilestones.createdAt)],
+    });
+
+    res.json({
+      success: true,
+      data: { milestones },
+    });
+  } catch (error) {
+    console.error("Get milestones error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error while fetching milestones" });
+  }
+});
+
+// @route   POST /api/goals/:goalId/milestones
+// @desc    Create new milestone for a goal
+// @access  Private
+router.post(
+  "/:goalId/milestones",
+  protect,
+  checkOwnership("Goal"),
+  [
+    body("title").trim().isLength({ min: 1, max: 100 }),
+    body("targetAmount").isFloat({ min: 0.01 }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty())
+        return res.status(400).json({ success: false, errors: errors.array() });
+
+      const { title, description, targetAmount, deadline } = req.body;
+
+      const [newMilestone] = await db
+        .insert(goalMilestones)
+        .values({
+          goalId: req.params.goalId,
+          title,
+          description,
+          targetAmount: targetAmount.toString(),
+          deadline: deadline ? new Date(deadline) : null,
+        })
+        .returning();
+
+      res.status(201).json({
+        success: true,
+        message: "Milestone created successfully",
+        data: { milestone: newMilestone },
+      });
+    } catch (error) {
+      console.error("Create milestone error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Server error while creating milestone" });
+    }
+  }
+);
+
+// @route   PUT /api/goals/:goalId/milestones/:milestoneId
+// @desc    Update milestone
+// @access  Private
+router.put("/:goalId/milestones/:milestoneId", protect, async (req, res) => {
+  try {
+    // Check if milestone belongs to user's goal
+    const [milestone] = await db
+      .select()
+      .from(goalMilestones)
+      .innerJoin(goals, eq(goalMilestones.goalId, goals.id))
+      .where(
+        and(
+          eq(goalMilestones.id, req.params.milestoneId),
+          eq(goals.userId, req.user.id)
+        )
+      );
+
+    if (!milestone) {
+      return res.status(404).json({ success: false, message: "Milestone not found" });
+    }
+
+    const { title, description, targetAmount, deadline, isCompleted } = req.body;
+
+    const updateData = {};
+    if (title) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (targetAmount) updateData.targetAmount = targetAmount.toString();
+    if (deadline !== undefined) updateData.deadline = deadline ? new Date(deadline) : null;
+    if (isCompleted !== undefined) {
+      updateData.isCompleted = isCompleted;
+      if (isCompleted && !milestone.isCompleted) {
+        updateData.completedDate = new Date();
+        // Trigger notification
+        await notificationService.createNotification(req.user.id, {
+          type: 'milestone_completed',
+          title: 'Milestone Achieved! 🎉',
+          message: `Congratulations! You've completed the milestone "${milestone.title}"`,
+          data: { milestoneId: req.params.milestoneId, goalId: req.params.goalId }
+        });
+      }
+    }
+    updateData.updatedAt = new Date();
+
+    const [updatedMilestone] = await db
+      .update(goalMilestones)
+      .set(updateData)
+      .where(eq(goalMilestones.id, req.params.milestoneId))
+      .returning();
+
+    res.json({
+      success: true,
+      message: "Milestone updated successfully",
+      data: { milestone: updatedMilestone },
+    });
+  } catch (error) {
+    console.error("Update milestone error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error while updating milestone" });
+  }
+});
+
+// @route   DELETE /api/goals/:goalId/milestones/:milestoneId
+// @desc    Delete milestone
+// @access  Private
+router.delete("/:goalId/milestones/:milestoneId", protect, async (req, res) => {
+  try {
+    // Check if milestone belongs to user's goal
+    const [milestone] = await db
+      .select()
+      .from(goalMilestones)
+      .innerJoin(goals, eq(goalMilestones.goalId, goals.id))
+      .where(
+        and(
+          eq(goalMilestones.id, req.params.milestoneId),
+          eq(goals.userId, req.user.id)
+        )
+      );
+
+    if (!milestone) {
+      return res.status(404).json({ success: false, message: "Milestone not found" });
+    }
+
+    await db.delete(goalMilestones).where(eq(goalMilestones.id, req.params.milestoneId));
+
+    res.json({ success: true, message: "Milestone deleted successfully" });
+  } catch (error) {
+    console.error("Delete milestone error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error while deleting milestone" });
+  }
+});
+
+// @route   POST /api/goals/:goalId/milestones/:milestoneId/contribute
+// @desc    Add contribution to milestone
+// @access  Private
+router.post(
+  "/:goalId/milestones/:milestoneId/contribute",
+  protect,
+  [body("amount").isFloat({ min: 0.01 })],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty())
+        return res.status(400).json({ success: false, errors: errors.array() });
+
+      const { amount } = req.body;
+
+      // Check if milestone belongs to user's goal
+      const [milestone] = await db
+        .select()
+        .from(goalMilestones)
+        .innerJoin(goals, eq(goalMilestones.goalId, goals.id))
+        .where(
+          and(
+            eq(goalMilestones.id, req.params.milestoneId),
+            eq(goals.userId, req.user.id)
+          )
+        );
+
+      if (!milestone) {
+        return res.status(404).json({ success: false, message: "Milestone not found" });
+      }
+
+      if (milestone.isCompleted) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Cannot contribute to completed milestones" });
+      }
+
+      const currentAmount = parseFloat(milestone.currentAmount || 0) + parseFloat(amount);
+      const targetAmount = parseFloat(milestone.targetAmount);
+
+      let isCompleted = milestone.isCompleted;
+      let completedDate = milestone.completedDate;
+
+      if (currentAmount >= targetAmount && !isCompleted) {
+        isCompleted = true;
+        completedDate = new Date();
+
+        // Trigger notification
+        await notificationService.createNotification(req.user.id, {
+          type: 'milestone_completed',
+          title: 'Milestone Achieved! 🎉',
+          message: `Congratulations! You've completed the milestone "${milestone.title}"`,
+          data: { milestoneId: req.params.milestoneId, goalId: req.params.goalId }
+        });
+      }
+
+      const [updatedMilestone] = await db
+        .update(goalMilestones)
+        .set({
+          currentAmount: currentAmount.toString(),
+          isCompleted,
+          completedDate,
+          updatedAt: new Date(),
+        })
+        .where(eq(goalMilestones.id, req.params.milestoneId))
+        .returning();
+
+      res.json({
+        success: true,
+        message: "Contribution added to milestone successfully",
+        data: { milestone: updatedMilestone },
+      });
+    } catch (error) {
+      console.error("Add milestone contribution error:", error);
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Server error while adding contribution to milestone",
+        });
+    }
+  }
+);
 
 export default router;
