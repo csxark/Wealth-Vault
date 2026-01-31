@@ -28,6 +28,7 @@ import goalRoutes from "./routes/goals.js";
 import categoryRoutes from "./routes/categories.js";
 import geminiRouter from "./routes/gemini.js";
 import analyticsRoutes from "./routes/analytics.js";
+import vaultRoutes from "./routes/vaults.js";
 import currenciesRoutes from "./routes/currencies.js";
 
 // Load environment variables
@@ -169,6 +170,7 @@ app.use("/api/expenses", userLimiter, expenseRoutes);
 app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
+app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
 

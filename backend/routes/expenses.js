@@ -2,9 +2,10 @@ import express from "express";
 import { body, validationResult } from "express-validator";
 import { eq, and, gte, lte, asc, desc, sql, like } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users } from "../db/schema.js";
+import { expenses, categories, users, vaultMembers } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
-import { asyncHandler, ValidationError, NotFoundError } from "../middleware/errorHandler.js";
+import { checkVaultAccess } from "../middleware/vaultAuth.js";
+import { asyncHandler, ValidationError, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
 import { parseListQuery } from "../utils/pagination.js";
 
 const router = express.Router();
@@ -129,14 +130,30 @@ router.get("/", protect, asyncHandler(async (req, res) => {
   };
 
   const { pagination, sorting, search, filters, dateRange } = parseListQuery(req.query, queryOptions);
-  
-  const conditions = [eq(expenses.userId, req.user.id)];
+
+  const conditions = [];
+
+  // Default to personal expenses if no vaultId provided
+  if (req.query.vaultId) {
+    // Check if user is member of the vault
+    const [membership] = await db
+      .select()
+      .from(vaultMembers)
+      .where(and(eq(vaultMembers.vaultId, req.query.vaultId), eq(vaultMembers.userId, req.user.id)));
+
+    if (!membership) {
+      throw new ForbiddenError('You do not have access to this vault');
+    }
+    conditions.push(eq(expenses.vaultId, req.query.vaultId));
+  } else {
+    conditions.push(eq(expenses.userId, req.user.id), sql`${expenses.vaultId} IS NULL`);
+  }
 
   // Apply filters
   if (filters.category) conditions.push(eq(expenses.categoryId, filters.category));
   if (filters.paymentMethod) conditions.push(eq(expenses.paymentMethod, filters.paymentMethod));
   if (filters.status) conditions.push(eq(expenses.status, filters.status));
-  
+
   // Apply date range
   if (dateRange.startDate) conditions.push(gte(expenses.date, dateRange.startDate));
   if (dateRange.endDate) conditions.push(lte(expenses.date, dateRange.endDate));
@@ -222,6 +239,7 @@ router.post(
         amount,
         description,
         category,
+        vaultId,
         date,
         paymentMethod,
         location,
@@ -232,7 +250,7 @@ router.post(
         subcategory,
       } = req.body;
 
-      // Verify category
+      // Verify category (If personal, must be owned by user. If vault, should we allow shared categories? For now, user's categories are personal)
       const [categoryDoc] = await db
         .select()
         .from(categories)
@@ -246,6 +264,18 @@ router.post(
           .json({ success: false, message: "Invalid category" });
       }
 
+      // Verify vault access if provided
+      if (vaultId) {
+        const [membership] = await db
+          .select()
+          .from(vaultMembers)
+          .where(and(eq(vaultMembers.vaultId, vaultId), eq(vaultMembers.userId, req.user.id)));
+
+        if (!membership) {
+          return res.status(403).json({ success: false, message: "Access denied to the specified vault" });
+        }
+      }
+
       const [newExpense] = await db
         .insert(expenses)
         .values({
@@ -253,6 +283,7 @@ router.post(
           amount: amount.toString(),
           description,
           categoryId: category,
+          vaultId: vaultId || null,
           date: date ? new Date(date) : new Date(),
           paymentMethod: paymentMethod || "other",
           location,
