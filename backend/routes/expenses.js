@@ -10,6 +10,7 @@ import { parseListQuery } from "../utils/pagination.js";
 import budgetEngine from "../services/budgetEngine.js";
 import { initializeRecurringExpense, disableRecurring } from "../services/expenseService.js";
 import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
+import { createDebtTransactions } from "../services/settlementService.js";
 
 const router = express.Router();
 
@@ -308,6 +309,19 @@ router.post(
           recurringPattern,
           date ? new Date(date) : new Date()
         );
+      }
+
+      // Create debt transactions if expense belongs to a vault
+      if (vaultId) {
+        const splitDetails = req.body.splitDetails || null; // Array of {userId, splitType, splitValue}
+        const paidById = req.body.paidById || req.user.id; // Who paid for the expense
+        
+        try {
+          await createDebtTransactions(newExpense, paidById, splitDetails);
+        } catch (error) {
+          console.error('Error creating debt transactions:', error);
+          // Don't block expense creation if debt tracking fails
+        }
       }
 
       // Proactively monitor budget thresholds
