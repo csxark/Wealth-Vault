@@ -39,9 +39,9 @@ import analyticsRoutes from "./routes/analytics.js";
 import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
-import settlementsRoutes from "./routes/settlements.js";
+import auditRoutes from "./routes/audit.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
-import { scheduleDebtReminders } from "./jobs/debtReminders.js";
+import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 
 // Load environment variables
 dotenv.config();
@@ -138,6 +138,7 @@ app.use(paginationMiddleware());
 
 // Logng and monitrng midlware
 app.use(requestIdMiddleware);
+app.use(auditRequestIdMiddleware); // Add audit request correlation
 app.use(requestLogger);
 app.use(performanceMiddleware);
 app.use(analyticsMiddleware);
@@ -192,7 +193,7 @@ app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
-app.use("/api/settlements", userLimiter, settlementsRoutes);
+app.use("/api/audit", userLimiter, auditRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());

@@ -280,6 +280,27 @@ export const securityEvents = pgTable('security_events', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+//Audit Logs Table (Enterprise-Grade Security Trail)
+export const auditLogs = pgTable('audit_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    action: text('action').notNull(), // e.g., AUTH_LOGIN, EXPENSE_UPDATE, CATEGORY_DELETE
+    resourceType: text('resource_type'), // user, expense, goal, category, etc.
+    resourceId: uuid('resource_id'),
+    originalState: jsonb('original_state'), // State before change
+    newState: jsonb('new_state'), // State after change
+    delta: jsonb('delta'), // Computed differences
+    deltaHash: text('delta_hash'), // Cryptographic hash of the delta (SHA-256)
+    metadata: jsonb('metadata').default({}),
+    status: text('status').default('success'), // success, failure
+   ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    sessionId: text('session_id'),
+    requestId: text('request_id'), // For correlation
+    performedAt: timestamp('performed_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Reports Table
 export const reports = pgTable('reports', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -340,11 +361,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     securityEvents: many(securityEvents),
     reports: many(reports),
     budgetAlerts: many(budgetAlerts),
-    vaultBalances: many(vaultBalances),
-    settlementsAsPayer: many(settlements, 'payer'),
-    settlementsAsPayee: many(settlements, 'payee'),
-    debtTransactionsPaid: many(debtTransactions, 'paidBy'),
-    debtTransactionsOwed: many(debtTransactions, 'owedBy'),
+    auditLogs: many(auditLogs),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -512,6 +529,13 @@ export const debtTransactionsRelations = relations(debtTransactions, ({ one }) =
     }),
     owedBy: one(users, {
         fields: [debtTransactions.owedById],
+        references: [users.id],
+    }),
+}));
+
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+    user: one(users, {
+        fields: [auditLogs.userId],
         references: [users.id],
     }),
 }));
