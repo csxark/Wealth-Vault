@@ -5,8 +5,14 @@
 
 ## 📊 Badges
 
-![Visitors](https://visitor-badge.glitch.me/badge?page_id=csxark.Wealth-Vault)
-![License](https://img.shields.io/badge/License-MIT-blue.svg)
+
+
+![GitHub stars](https://img.shields.io/github/stars/csxark/Wealth-Vault?style=social)
+![GitHub forks](https://img.shields.io/github/forks/csxark/Wealth-Vault?style=social)
+![Visitors](https://visitor-badge.laobi.icu/badge?page_id=csxark.Wealth-Vault)
+![GitHub issues](https://img.shields.io/github/issues/csxark/Wealth-Vault)
+![License](https://img.shields.io/github/license/csxark/Wealth-Vault)
+
 
 ---
 
