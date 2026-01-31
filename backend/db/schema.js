@@ -188,6 +188,27 @@ export const exchangeRates = pgTable('exchange_rates', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Forecast Snapshots Table (for Cash Flow Forecasting)
+export const forecastSnapshots = pgTable('forecast_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    forecastDate: timestamp('forecast_date').notNull(), // The date this forecast was generated
+    projectedBalance: numeric('projected_balance', { precision: 12, scale: 2 }).notNull(),
+    confidence: doublePrecision('confidence').default(0), // Confidence score (0-100)
+    predictions: jsonb('predictions').default([]), // Array of daily predictions: [{ date, income, expenses, balance }]
+    anomalies: jsonb('anomalies').default([]), // Detected anomalies: [{ type, description, severity, date }]
+    trends: jsonb('trends').default({}), // { recurringPatterns: [], seasonalTrends: [], growthRate: 0 }
+    dangerZones: jsonb('danger_zones').default([]), // Predicted negative balance periods: [{ startDate, endDate, severity, projectedBalance }]
+    aiInsights: jsonb('ai_insights').default({}), // Gemini AI-generated insights
+    metadata: jsonb('metadata').default({
+        analysisVersion: '1.0',
+        dataPoints: 0,
+        historicalMonths: 0,
+        forecastDays: 30
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Token Blacklist Table
 export const tokenBlacklist = pgTable('token_blacklist', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -251,6 +272,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     securityEvents: many(securityEvents),
     reports: many(reports),
     budgetAlerts: many(budgetAlerts),
+    forecastSnapshots: many(forecastSnapshots),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -362,5 +384,12 @@ export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
         references: [users.id],
     }),
 }));
+export const forecastSnapshotsRelations = relations(forecastSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [forecastSnapshots.userId],
+        references: [users.id],
+    }),
+}));
+
 
 // No relations needed for exchangeRates as it's a standalone reference table
