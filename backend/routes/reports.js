@@ -1,102 +1,55 @@
 import express from "express";
-import { body, param, validationResult } from "express-validator";
-import reportService from "../services/reportService.js";
+import { eq, and, desc } from "drizzle-orm";
+import path from "path";
+import fs from "fs";
+import db from "../config/db.js";
+import { reports } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
+import { asyncHandler, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
 
 const router = express.Router();
 
 /**
  * @swagger
- * /reports/generate-monthly:
- *   post:
- *     summary: Generate monthly financial report PDF
+ * /reports:
+ *   get:
+ *     summary: Get all reports for the authenticated user
  *     tags: [Reports]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - year
- *               - month
- *             properties:
- *               year:
- *                 type: integer
- *                 description: Year for the report
- *                 example: 2024
- *               month:
- *                 type: integer
- *                 description: Month for the report (1-12)
- *                 example: 3
- *     responses:
- *       200:
- *         description: PDF report generated successfully
- *         content:
- *           application/pdf:
- *             schema:
- *               type: string
- *               format: binary
- *       400:
- *         description: Invalid request parameters
- *       401:
- *         $ref: '#/components/responses/UnauthorizedError'
- *       500:
- *         description: Server error while generating report
  */
-router.post(
-  "/generate-monthly",
-  protect,
-  [
-    body("year")
-      .isInt({ min: 2020, max: new Date().getFullYear() + 1 })
-      .withMessage("Year must be between 2020 and next year"),
-    body("month")
-      .isInt({ min: 1, max: 12 })
-      .withMessage("Month must be between 1 and 12"),
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
+router.get("/", protect, asyncHandler(async (req, res) => {
+  const userReports = await db
+    .select()
+    .from(reports)
+    .where(eq(reports.userId, req.user.id))
+    .orderBy(desc(reports.createdAt));
 
-      const { year, month } = req.body;
+  res.success(userReports, "Reports retrieved successfully");
+}));
 
-      // Generate the PDF report
-      const pdfBuffer = await reportService.generateMonthlyReport(
-        req.user.id,
-        year,
-        month
-      );
+/**
+ * @swagger
+ * /reports/:reportId:
+ *   get:
+ *     summary: Download a specific report
+ *     tags: [Reports]
+ */
+router.get("/:reportId", protect, asyncHandler(async (req, res) => {
+  const [report] = await db
+    .select()
+    .from(reports)
+    .where(and(eq(reports.id, req.params.reportId), eq(reports.userId, req.user.id)));
 
-      // Set response headers for PDF download
-      const monthName = new Date(year, month - 1, 1).toLocaleDateString('en-US', {
-        month: 'long',
-        year: 'numeric'
-      });
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="wealth-vault-report-${monthName.replace(' ', '-').toLowerCase()}.pdf"`);
-      res.setHeader('Content-Length', pdfBuffer.length);
-
-      // Send the PDF buffer
-      res.send(pdfBuffer);
-    } catch (error) {
-      console.error("Generate monthly report error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Server error while generating monthly report",
-      });
-    }
+  if (!report) {
+    throw new NotFoundError("Report not found");
   }
-);
+
+  const filePath = path.join(process.cwd(), report.url.replace(/^\//, ''));
+
+  if (!fs.existsSync(filePath)) {
+    throw new NotFoundError("Report file not found on server");
+  }
+
+  res.download(filePath, report.name + (report.format === 'pdf' ? '.pdf' : '.xlsx'));
+}));
 
 export default router;

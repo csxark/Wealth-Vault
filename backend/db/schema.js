@@ -61,6 +61,7 @@ export const expenses = pgTable('expenses', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }), // Added for shared vaults
     amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
     currency: text('currency').default('USD'),
     description: text('description').notNull(),
@@ -87,11 +88,47 @@ export const expenses = pgTable('expenses', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Vaults Table (Collaborative Shared Wallets)
+export const vaults = pgTable('vaults', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    description: text('description'),
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    currency: text('currency').default('USD'),
+    metadata: jsonb('metadata').default({}),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Vault Members Junction Table
+export const vaultMembers = pgTable('vault_members', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    role: text('role').notNull().default('member'), // owner, member, viewer
+    joinedAt: timestamp('joined_at').defaultNow(),
+});
+
+// Vault Invites Table
+export const vaultInvites = pgTable('vault_invites', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    inviterId: uuid('inviter_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    email: text('email').notNull(),
+    token: text('token').notNull().unique(),
+    role: text('role').default('member'),
+    status: text('status').default('pending'), // pending, accepted, rejected, expired
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Goals Table
 export const goals = pgTable('goals', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }), // Goals can also belong to vaults
     title: text('title').notNull(),
     description: text('description'),
     targetAmount: numeric('target_amount', { precision: 12, scale: 2 }).notNull(),
@@ -177,13 +214,92 @@ export const securityEvents = pgTable('security_events', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Reports Table
+export const reports = pgTable('reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // 'monthly_digest', 'tax_summary', 'custom'
+    format: text('format').notNull(), // 'pdf', 'excel'
+    url: text('url').notNull(),
+    period: text('period'), // '2023-10'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Budget Alerts Table
+export const budgetAlerts = pgTable('budget_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    threshold: integer('threshold').notNull(), // 50, 80, 100
+    period: text('period').notNull(), // '2023-10'
+    triggeredAt: timestamp('triggered_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
     expenses: many(expenses),
     goals: many(goals),
     deviceSessions: many(deviceSessions),
+    vaultMemberships: many(vaultMembers),
+    ownedVaults: many(vaults),
     securityEvents: many(securityEvents),
+    reports: many(reports),
+    budgetAlerts: many(budgetAlerts),
+}));
+
+export const vaultsRelations = relations(vaults, ({ one, many }) => ({
+    owner: one(users, {
+        fields: [vaults.ownerId],
+        references: [users.id],
+    }),
+    members: many(vaultMembers),
+    expenses: many(expenses),
+    goals: many(goals),
+    invites: many(vaultInvites),
+    reports: many(reports),
+}));
+
+export const reportsRelations = relations(reports, ({ one }) => ({
+    user: one(users, {
+        fields: [reports.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [reports.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const vaultMembersRelations = relations(vaultMembers, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [vaultMembers.vaultId],
+        references: [vaults.id],
+    }),
+    user: one(users, {
+        fields: [vaultMembers.userId],
+        references: [users.id],
+    }),
+}));
+
+export const budgetAlertsRelations = relations(budgetAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [budgetAlerts.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [budgetAlerts.categoryId],
+        references: [categories.id],
+    }),
+    vault: one(vaults, {
+        fields: [budgetAlerts.vaultId],
+        references: [vaults.id],
+    }),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -212,6 +328,10 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
         fields: [expenses.categoryId],
         references: [categories.id],
     }),
+    vault: one(vaults, {
+        fields: [expenses.vaultId],
+        references: [vaults.id],
+    }),
 }));
 
 export const goalsRelations = relations(goals, ({ one }) => ({
@@ -221,7 +341,11 @@ export const goalsRelations = relations(goals, ({ one }) => ({
     }),
     category: one(categories, {
         fields: [goals.categoryId],
-        references: [goals.id],
+        references: [categories.id],
+    }),
+    vault: one(vaults, {
+        fields: [goals.vaultId],
+        references: [vaults.id],
     }),
 }));
 
