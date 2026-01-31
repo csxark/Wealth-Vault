@@ -228,6 +228,18 @@ export const reports = pgTable('reports', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Budget Alerts Table
+export const budgetAlerts = pgTable('budget_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    threshold: integer('threshold').notNull(), // 50, 80, 100
+    period: text('period').notNull(), // '2023-10'
+    triggeredAt: timestamp('triggered_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -238,6 +250,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     ownedVaults: many(vaults),
     securityEvents: many(securityEvents),
     reports: many(reports),
+    budgetAlerts: many(budgetAlerts),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -271,6 +284,21 @@ export const vaultMembersRelations = relations(vaultMembers, ({ one }) => ({
     user: one(users, {
         fields: [vaultMembers.userId],
         references: [users.id],
+    }),
+}));
+
+export const budgetAlertsRelations = relations(budgetAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [budgetAlerts.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [budgetAlerts.categoryId],
+        references: [categories.id],
+    }),
+    vault: one(vaults, {
+        fields: [budgetAlerts.vaultId],
+        references: [vaults.id],
     }),
 }));
 

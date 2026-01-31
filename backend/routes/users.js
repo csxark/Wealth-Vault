@@ -41,7 +41,7 @@ router.get('/', protect, async (req, res) => {
 router.get('/audit-trail', protect, async (req, res) => {
   try {
     const { page = 1, limit = 20, action, startDate, endDate } = req.query;
-    
+
     const result = await getUserAuditTrail(req.user.id, {
       page: parseInt(page, 10),
       limit: Math.min(parseInt(limit, 10), 100), // Max 100 per page
@@ -79,7 +79,7 @@ router.get('/audit-trail', protect, async (req, res) => {
 router.get('/security-events', protect, async (req, res) => {
   try {
     const { limit = 10 } = req.query;
-    
+
     const events = await getRecentSecurityEvents(
       req.user.id,
       Math.min(parseInt(limit, 10), 50) // Max 50 events
@@ -166,6 +166,49 @@ router.get('/:id/stats', protect, checkOwnership('User'), async (req, res) => {
   } catch (error) {
     console.error('Get user stats error:', error);
     res.status(500).json({ success: false, message: 'Server error while fetching user statistics' });
+  }
+});
+
+// @route   PUT /api/users/preferences
+// @desc    Update user preferences (notifications, theme, etc.)
+// @access  Private
+router.put('/preferences', protect, async (req, res) => {
+  try {
+    const { preferences } = req.body;
+
+    if (!preferences) {
+      return res.status(400).json({ success: false, message: 'Preferences object is required' });
+    }
+
+    const [updatedUser] = await db.update(users)
+      .set({
+        preferences: {
+          ...req.user.preferences,
+          ...preferences
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, req.user.id))
+      .returning();
+
+    // Log preference update
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.USER_UPDATE,
+      resourceType: ResourceTypes.USER,
+      resourceId: req.user.id,
+      metadata: { updatedPreferences: Object.keys(preferences) },
+      status: 'success',
+    });
+
+    res.json({
+      success: true,
+      message: 'Preferences updated successfully',
+      data: { preferences: updatedUser.preferences }
+    });
+  } catch (error) {
+    console.error('Update preferences error:', error);
+    res.status(500).json({ success: false, message: 'Server error while updating preferences' });
   }
 });
 

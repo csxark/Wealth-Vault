@@ -7,6 +7,7 @@ import { protect, checkOwnership } from "../middleware/auth.js";
 import { checkVaultAccess } from "../middleware/vaultAuth.js";
 import { asyncHandler, ValidationError, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
 import { parseListQuery } from "../utils/pagination.js";
+import budgetEngine from "../services/budgetEngine.js";
 import { initializeRecurringExpense, disableRecurring } from "../services/expenseService.js";
 import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
 
@@ -309,6 +310,9 @@ router.post(
         );
       }
 
+      // Proactively monitor budget thresholds
+      await budgetEngine.monitorBudget(req.user.id, category);
+
       const expenseWithCategory = await db.query.expenses.findFirst({
         where: eq(expenses.id, newExpense.id),
         with: {
@@ -399,6 +403,9 @@ router.put("/:id", protect, checkOwnership("Expense"), async (req, res) => {
         await updateCategoryStats(updateData.categoryId);
       }
     }
+
+    // Proactively monitor budget thresholds
+    await budgetEngine.monitorBudget(req.user.id, updateData.categoryId || oldExpense.categoryId);
 
     // Log expense update
     logAudit(req, {
@@ -694,7 +701,7 @@ router.post("/recurring/execute", protect, async (req, res) => {
   try {
     console.log(`Manual recurring execution triggered by user: ${req.user.id}`);
     const results = await runManualExecution();
-    
+
     // Log the manual execution
     logAudit(req, {
       userId: req.user.id,
