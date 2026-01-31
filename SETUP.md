@@ -66,21 +66,66 @@ VITE_DEBUG=false
 ```
 Wealth-Vault/
 ├── backend/                 # Node.js/Express API
-│   ├── config/             # Database configuration
-│   ├── middleware/         # Authentication & validation
-│   ├── models/            # Database schemas
-│   ├── routes/            # API endpoints
-│   └── server.js          # Main server file
+│   ├── config/             # Database and service configuration
+│   │   ├── db.js          # Database connection
+│   │   ├── migrate.js     # Migration utilities
+│   │   ├── redis.js       # Redis configuration
+│   │   └── swagger.js     # API documentation
+│   ├── db/                # Database related files
+│   │   ├── schema.js      # Database schema definitions
+│   │   └── migrations/    # Database migration files
+│   ├── drizzle/           # Drizzle ORM files
+│   │   ├── meta/          # Migration metadata
+│   │   └── *.sql          # SQL migration files
+│   ├── jobs/              # Background jobs and cron tasks
+│   │   ├── recurringExecution.js
+│   │   ├── reportGenerator.js
+│   │   ├── syncRates.js
+│   │   └── tokenCleanup.js
+│   ├── middleware/        # Express middleware
+│   │   ├── auth.js        # Authentication middleware
+│   │   ├── errorHandler.js # Error handling
+│   │   ├── rateLimiter.js # Rate limiting
+│   │   └── ...            # Other middleware files
+│   ├── routes/            # API route handlers
+│   │   ├── auth.js        # Authentication routes
+│   │   ├── expenses.js    # Expense management
+│   │   ├── categories.js  # Category management
+│   │   └── ...            # Other route files
+│   ├── services/          # Business logic services
+│   │   ├── auditService.js
+│   │   ├── budgetService.js
+│   │   ├── currencyService.js
+│   │   └── ...            # Other service files
+│   ├── utils/             # Utility functions
+│   ├── __tests__/         # Backend tests
+│   ├── package.json
+│   ├── server.js          # Main server file
+│   └── ...                # Other config files
 ├── frontend/              # React/Vite application
+│   ├── public/            # Static assets
 │   ├── src/
 │   │   ├── components/    # React components
-│   │   ├── services/      # API services
-│   │   ├── types/         # TypeScript interfaces
-│   │   └── utils/         # Utility functions
-│   └── package.json
+│   │   ├── context/       # React context providers
+│   │   ├── hooks/         # Custom React hooks
+│   │   ├── routes/        # Frontend routing
+│   │   ├── services/      # API service functions
+│   │   ├── test/          # Frontend tests
+│   │   ├── types/         # TypeScript type definitions
+│   │   ├── utils/         # Utility functions
+│   │   ├── App.tsx        # Main app component
+│   │   ├── main.tsx       # App entry point
+│   │   └── ...            # Other source files
+│   ├── package.json
+│   └── ...                # Config files (vite.config.ts, etc.)
+├── e2e/                   # End-to-end tests
+│   ├── auth.spec.ts
+│   ├── dashboard.spec.ts
+│   └── user-journey.spec.ts
 ├── setup-env.js           # Environment setup script
 ├── sync-app.js            # Synchronization script
-└── test-api.js            # API testing script
+├── test-api.js            # API testing script
+└── ...                    # Other root files
 ```
 
 ## 🔄 API Synchronization
