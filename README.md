@@ -205,7 +205,7 @@ npm run dev
 **Or start individually:**
 
 ```bash
-#insatll this package first
+#install this package first
 npm install concurrently --save-dev
 # Backend only (runs on port 5000)
 npm run dev:backend
