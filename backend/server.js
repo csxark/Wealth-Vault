@@ -35,6 +35,9 @@ connectRedis().catch(err => {
 // Schedule token cleanup job
 scheduleCleanup();
 
+// Start recurring expenses cron job
+recurringExpensesService.startCronJob();
+
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

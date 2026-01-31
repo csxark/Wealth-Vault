@@ -628,4 +628,266 @@ router.get("/stats/summary", protect, async (req, res) => {
   }
 });
 
+import recurringExpensesService from '../services/recurringExpensesService.js';
+
+// @route   POST /api/expenses/recurring
+// @desc    Create a new recurring expense pattern
+// @access  Private
+router.post('/recurring', protect, async (req, res) => {
+  try {
+    const {
+      category,
+      name,
+      description,
+      amount,
+      currency,
+      frequency,
+      interval,
+      startDate,
+      endDate,
+      paymentMethod,
+      tags,
+      notes
+    } = req.body;
+
+    // Verify category ownership
+    const [categoryDoc] = await db
+      .select()
+      .from(categories)
+      .where(
+        and(eq(categories.id, category), eq(categories.userId, req.user.id))
+      );
+
+    if (!categoryDoc) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category'
+      });
+    }
+
+    const recurringExpense = await recurringExpensesService.createRecurringExpense({
+      userId: req.user.id,
+      categoryId: category,
+      name,
+      description,
+      amount,
+      currency: currency || 'USD',
+      frequency,
+      interval: interval || 1,
+      startDate,
+      endDate,
+      paymentMethod: paymentMethod || 'other',
+      tags: tags || [],
+      notes
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Recurring expense created successfully',
+      data: { recurringExpense }
+    });
+  } catch (error) {
+    console.error('Create recurring expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while creating recurring expense'
+    });
+  }
+});
+
+// @route   GET /api/expenses/recurring
+// @desc    Get all recurring expenses for user
+// @access  Private
+router.get('/recurring', protect, async (req, res) => {
+  try {
+    const { isActive, category } = req.query;
+
+    const filters = {};
+    if (isActive !== undefined) filters.isActive = isActive === 'true';
+    if (category) filters.categoryId = category;
+
+    const recurringExpenses = await recurringExpensesService.getRecurringExpenses(
+      req.user.id,
+      filters
+    );
+
+    res.json({
+      success: true,
+      data: { recurringExpenses }
+    });
+  } catch (error) {
+    console.error('Get recurring expenses error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching recurring expenses'
+    });
+  }
+});
+
+// @route   GET /api/expenses/recurring/:id
+// @desc    Get recurring expense by ID
+// @access  Private
+router.get('/recurring/:id', protect, async (req, res) => {
+  try {
+    const recurringExpense = await recurringExpensesService.getRecurringExpenseById(
+      req.params.id,
+      req.user.id
+    );
+
+    if (!recurringExpense) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recurring expense not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { recurringExpense }
+    });
+  } catch (error) {
+    console.error('Get recurring expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching recurring expense'
+    });
+  }
+});
+
+// @route   PUT /api/expenses/recurring/:id
+// @desc    Update recurring expense
+// @access  Private
+router.put('/recurring/:id', protect, async (req, res) => {
+  try {
+    const {
+      category,
+      name,
+      description,
+      amount,
+      currency,
+      frequency,
+      interval,
+      startDate,
+      endDate,
+      paymentMethod,
+      tags,
+      notes,
+      isActive,
+      isPaused
+    } = req.body;
+
+    // If category is being updated, verify ownership
+    if (category) {
+      const [categoryDoc] = await db
+        .select()
+        .from(categories)
+        .where(
+          and(eq(categories.id, category), eq(categories.userId, req.user.id))
+        );
+
+      if (!categoryDoc) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid category'
+        });
+      }
+    }
+
+    const updatedRecurringExpense = await recurringExpensesService.updateRecurringExpense(
+      req.params.id,
+      req.user.id,
+      {
+        categoryId: category,
+        name,
+        description,
+        amount,
+        currency,
+        frequency,
+        interval,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        paymentMethod,
+        tags,
+        notes,
+        isActive,
+        isPaused
+      }
+    );
+
+    if (!updatedRecurringExpense) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recurring expense not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Recurring expense updated successfully',
+      data: { recurringExpense: updatedRecurringExpense }
+    });
+  } catch (error) {
+    console.error('Update recurring expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating recurring expense'
+    });
+  }
+});
+
+// @route   DELETE /api/expenses/recurring/:id
+// @desc    Delete recurring expense
+// @access  Private
+router.delete('/recurring/:id', protect, async (req, res) => {
+  try {
+    // Check if recurring expense exists and belongs to user
+    const existing = await recurringExpensesService.getRecurringExpenseById(
+      req.params.id,
+      req.user.id
+    );
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recurring expense not found'
+      });
+    }
+
+    await recurringExpensesService.deleteRecurringExpense(req.params.id, req.user.id);
+
+    res.json({
+      success: true,
+      message: 'Recurring expense deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete recurring expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while deleting recurring expense'
+    });
+  }
+});
+
+// @route   POST /api/expenses/recurring/trigger
+// @desc    Manually trigger recurring expense generation (for testing)
+// @access  Private (Admin only - in production)
+router.post('/recurring/trigger', protect, async (req, res) => {
+  try {
+    // In production, add admin check here
+    const generatedExpenses = await recurringExpensesService.triggerGeneration();
+
+    res.json({
+      success: true,
+      message: `Generated ${generatedExpenses.length} recurring expenses`,
+      data: { generatedExpenses }
+    });
+  } catch (error) {
+    console.error('Trigger recurring expenses error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while triggering recurring expenses'
+    });
+  }
+});
+
 export default router;

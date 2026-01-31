@@ -1,34 +1,21 @@
-# Advanced Budget Alerts with Custom Rules - Implementation Plan
+# Recurring Expenses Automation Implementation
 
 ## Backend Changes
-- [ ] Add budgetRules table to backend/db/schema.js
-- [ ] Create backend/services/budgetRulesService.js for rule evaluation logic
-- [ ] Extend backend/services/budgetService.js to integrate custom rules
-- [ ] Modify backend/routes/budgetAlerts.js to handle rule CRUD operations
-- [ ] Update backend/services/notificationService.js to support rule-based triggers
-- [ ] Add middleware to check rules on expense creation
+- [x] Add recurringExpenses table to schema.js
+- [x] Create recurringExpensesService.js with scheduling logic using node-cron
+- [x] Modify expenses.js route to support recurring expense CRUD operations
+- [x] Add daily cron job in server.js to generate expenses
+- [x] Install node-cron dependency
 
 ## Frontend Changes
-- [ ] Add Budget Rules tab to Dashboard component
-- [ ] Create BudgetRules.tsx component with form for creating/editing rules
-- [ ] Add budget rules API calls to frontend/src/services/api.ts
-- [ ] Add BudgetRule types to frontend/src/types/index.ts
-- [ ] Display active rules in a table with toggle switches
+- [ ] Add RecurringExpenseForm component for setting up patterns
+- [ ] Update RecurringExpenses component to show patterns and allow editing
+- [x] Update api.ts with new endpoints for recurring expenses
+- [x] Update types/index.ts with new interfaces
+- [ ] Integrate into Dashboard
 
-## Testing & Validation
-- [ ] Test rule creation and evaluation
-- [ ] Verify notifications are triggered correctly
-- [ ] Test rule validation and conflict prevention
-- [ ] Validate UI integration and user experience
-
-## Files to Create/Modify
-- backend/db/schema.js
-- backend/services/budgetRulesService.js
-- backend/services/budgetService.js
-- backend/routes/budgetAlerts.js
-- backend/services/notificationService.js
-- backend/routes/expenses.js (middleware integration)
-- frontend/src/types/index.ts
-- frontend/src/services/api.ts
-- frontend/src/components/Dashboard/Dashboard.tsx
-- frontend/src/components/Dashboard/BudgetRules.tsx
+## Integration & Testing
+- [ ] Set up background job for auto-generation
+- [ ] Add notifications for upcoming recurrences
+- [ ] Test the automation logic
+- [ ] Verify database migrations

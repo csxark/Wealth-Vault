@@ -30,6 +30,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "node-cron": "^4.2.1",
     "openai": "^6.15.0",
     "pdfkit": "^0.15.0",
     "postgres": "^3.4.7",

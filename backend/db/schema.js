@@ -161,6 +161,35 @@ export const budgetAlerts = pgTable('budget_alerts', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Recurring Expenses Table
+export const recurringExpenses = pgTable('recurring_expenses', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    frequency: text('frequency').notNull(), // 'daily', 'weekly', 'monthly', 'yearly'
+    interval: integer('interval').default(1), // every N days/weeks/months/years
+    startDate: timestamp('start_date').defaultNow().notNull(),
+    endDate: timestamp('end_date'), // optional end date
+    nextDueDate: timestamp('next_due_date').notNull(),
+    lastGeneratedDate: timestamp('last_generated_date'),
+    isActive: boolean('is_active').default(true),
+    isPaused: boolean('is_paused').default(false),
+    paymentMethod: text('payment_method').default('other'),
+    tags: jsonb('tags').default([]),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({
+        totalGenerated: 0,
+        lastAmount: 0,
+        createdBy: 'user'
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Budget Rules Table
 export const budgetRules = pgTable('budget_rules', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -257,6 +286,17 @@ export const budgetAlertsRelations = relations(budgetAlerts, ({ one }) => ({
     expense: one(expenses, {
         fields: [budgetAlerts.expenseId],
         references: [expenses.id],
+    }),
+}));
+
+export const recurringExpensesRelations = relations(recurringExpenses, ({ one }) => ({
+    user: one(users, {
+        fields: [recurringExpenses.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [recurringExpenses.categoryId],
+        references: [categories.id],
     }),
 }));
 
