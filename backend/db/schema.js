@@ -214,6 +214,20 @@ export const securityEvents = pgTable('security_events', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Reports Table
+export const reports = pgTable('reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // 'monthly_digest', 'tax_summary', 'custom'
+    format: text('format').notNull(), // 'pdf', 'excel'
+    url: text('url').notNull(),
+    period: text('period'), // '2023-10'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -223,6 +237,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     vaultMemberships: many(vaultMembers),
     ownedVaults: many(vaults),
     securityEvents: many(securityEvents),
+    reports: many(reports),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -234,6 +249,18 @@ export const vaultsRelations = relations(vaults, ({ one, many }) => ({
     expenses: many(expenses),
     goals: many(goals),
     invites: many(vaultInvites),
+    reports: many(reports),
+}));
+
+export const reportsRelations = relations(reports, ({ one }) => ({
+    user: one(users, {
+        fields: [reports.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [reports.vaultId],
+        references: [vaults.id],
+    }),
 }));
 
 export const vaultMembersRelations = relations(vaultMembers, ({ one }) => ({

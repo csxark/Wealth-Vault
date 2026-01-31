@@ -48,6 +48,7 @@ export const secureFileServer = async (req, res) => {
       ".gif": "image/gif",
       ".webp": "image/webp",
       ".pdf": "application/pdf",
+      ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     };
 
     res.setHeader("Content-Type", mimeTypes[ext] || "application/octet-stream");

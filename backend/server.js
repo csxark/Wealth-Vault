@@ -37,7 +37,9 @@ import categoryRoutes from "./routes/categories.js";
 import geminiRouter from "./routes/gemini.js";
 import analyticsRoutes from "./routes/analytics.js";
 import vaultRoutes from "./routes/vaults.js";
+import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
+import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 
 // Load environment variables
 dotenv.config();
@@ -185,6 +187,7 @@ app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
 app.use("/api/vaults", userLimiter, vaultRoutes);
+app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
 
@@ -217,7 +220,7 @@ app.listen(PORT, () => {
     environment: process.env.NODE_ENV || 'development',
     frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
   });
-  
+
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(
     `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`,
@@ -225,4 +228,7 @@ app.listen(PORT, () => {
   console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
   console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
   console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
+
+  // Start background jobs
+  scheduleMonthlyReports();
 });

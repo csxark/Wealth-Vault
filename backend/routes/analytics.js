@@ -4,6 +4,7 @@ import db from "../config/db.js";
 import { expenses, categories, users } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
+import reportService from "../services/reportService.js";
 
 const router = express.Router();
 
@@ -95,7 +96,7 @@ router.get("/spending-summary", protect, async (req, res) => {
     for (let i = 5; i >= 0; i--) {
       const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-      
+
       const [monthData] = await db
         .select({
           total: sql`sum(${expenses.amount})`,
@@ -238,7 +239,7 @@ router.get("/spending-summary", protect, async (req, res) => {
 router.get("/financial-health", protect, async (req, res) => {
   try {
     const { startDate, endDate, save = true } = req.query;
-    
+
     // Default to current month if no dates provided
     const now = new Date();
     const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
@@ -298,7 +299,7 @@ router.get("/financial-health", protect, async (req, res) => {
 router.get("/health-history", protect, async (req, res) => {
   try {
     const { limit = 12 } = req.query;
-    
+
     const history = await getHealthScoreHistory(req.user.id, parseInt(limit));
 
     // Calculate trend
@@ -307,7 +308,7 @@ router.get("/health-history", protect, async (req, res) => {
       const recent = history.slice(-3); // Last 3 scores
       const avgRecent = recent.reduce((sum, s) => sum + s.overallScore, 0) / recent.length;
       const older = history.slice(0, Math.min(3, history.length - 3));
-      
+
       if (older.length > 0) {
         const avgOlder = older.reduce((sum, s) => sum + s.overallScore, 0) / older.length;
         if (avgRecent > avgOlder + 5) trend = 'improving';
@@ -447,7 +448,8 @@ router.get("/insights", protect, async (req, res) => {
   }
 });
 
-export default router;/**
+
+/**
  * @swagger
  * /analytics/category-trends:
  *   get:
@@ -478,11 +480,11 @@ router.get("/category-trends", protect, async (req, res) => {
     const monthsToAnalyze = parseInt(months);
 
     const trends = [];
-    
+
     for (let i = monthsToAnalyze - 1; i >= 0; i--) {
       const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-      
+
       const conditions = [
         eq(expenses.userId, req.user.id),
         eq(expenses.status, "completed"),
@@ -531,7 +533,8 @@ router.get("/category-trends", protect, async (req, res) => {
   }
 });
 
-export default router;
+
+
 
 /**
  * @swagger
@@ -557,10 +560,10 @@ router.get("/spending-patterns", protect, async (req, res) => {
   try {
     const { period = "month" } = req.query;
     const now = new Date();
-    
+
     // Calculate date ranges for comparison
     let currentStart, currentEnd, previousStart, previousEnd;
-    
+
     switch (period) {
       case "week":
         currentStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
@@ -743,7 +746,7 @@ router.get("/spending-patterns", protect, async (req, res) => {
 router.get("/export", protect, async (req, res) => {
   try {
     const { format = "csv", startDate, endDate } = req.query;
-    
+
     // Default to last 3 months if no dates provided
     const now = new Date();
     const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth() - 3, 1);
@@ -780,12 +783,12 @@ router.get("/export", protect, async (req, res) => {
     if (format === 'csv') {
       // Generate CSV
       const csvHeader = 'Date,Amount,Currency,Description,Category,Subcategory,Payment Method,Notes\n';
-      const csvRows = exportData.map(row => 
+      const csvRows = exportData.map(row =>
         `${row.date},${row.amount},${row.currency},"${row.description}","${row.category}","${row.subcategory}","${row.paymentMethod}","${row.notes}"`
       ).join('\n');
-      
+
       const csvContent = csvHeader + csvRows;
-      
+
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="wealth-vault-expenses-${start.toISOString().split('T')[0]}-to-${end.toISOString().split('T')[0]}.csv"`);
       res.send(csvContent);
@@ -839,7 +842,7 @@ router.get("/export", protect, async (req, res) => {
 router.get("/normalized-summary", protect, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    
+
     // Get user's base currency
     const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
     const baseCurrency = user?.currency || 'USD';
@@ -982,4 +985,27 @@ router.get("/exchange-rates", protect, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /analytics/generate-monthly-report:
+ *   post:
+ *     summary: Manually trigger monthly report generation
+ *     tags: [Analytics]
+ */
+router.post("/generate-monthly-report", protect, async (req, res) => {
+  const { year, month } = req.body;
+  const now = new Date();
+  const targetYear = year || now.getFullYear();
+  const targetMonth = month || now.getMonth() + 1;
+
+  try {
+    const report = await reportService.generateMonthlyReport(req.user.id, targetYear, targetMonth);
+    res.success(report, "Monthly report generated successfully");
+  } catch (error) {
+    console.error("Manual report generation error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;
+
