@@ -39,7 +39,9 @@ import analyticsRoutes from "./routes/analytics.js";
 import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
+import forecastsRoutes from "./routes/forecasts.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
+import { scheduleRecurringExecution } from "./jobs/recurringExecution.js";
 
 // Load environment variables
 dotenv.config();
@@ -190,6 +192,7 @@ app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
+app.use("/api/forecasts", userLimiter, forecastsRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -231,4 +234,5 @@ app.listen(PORT, () => {
 
   // Start background jobs
   scheduleMonthlyReports();
+  scheduleRecurringExecution();
 });
