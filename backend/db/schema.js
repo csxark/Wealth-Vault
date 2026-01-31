@@ -123,6 +123,51 @@ export const vaultInvites = pgTable('vault_invites', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Vault Balances Table (Track internal debts within a vault)
+export const vaultBalances = pgTable('vault_balances', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    balance: numeric('balance', { precision: 12, scale: 2 }).default('0').notNull(), // Positive = they are owed, Negative = they owe
+    currency: text('currency').default('USD'),
+    lastSettlementAt: timestamp('last_settlement_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Settlements Table (Track who owes whom and payment confirmations)
+export const settlements = pgTable('settlements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    payerId: uuid('payer_id').references(() => users.id, { onDelete: 'cascade' }).notNull(), // Who paid
+    payeeId: uuid('payee_id').references(() => users.id, { onDelete: 'cascade' }).notNull(), // Who received
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    description: text('description'),
+    relatedExpenseId: uuid('related_expense_id').references(() => expenses.id, { onDelete: 'set null' }),
+    status: text('status').default('pending'), // pending, confirmed, cancelled
+    confirmedByPayer: boolean('confirmed_by_payer').default(false),
+    confirmedByPayee: boolean('confirmed_by_payee').default(false),
+    settledAt: timestamp('settled_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Debt Transactions Table (History of who paid for what in shared expenses)
+export const debtTransactions = pgTable('debt_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }).notNull(),
+    paidById: uuid('paid_by_id').references(() => users.id, { onDelete: 'cascade' }).notNull(), // Who actually paid
+    owedById: uuid('owed_by_id').references(() => users.id, { onDelete: 'cascade' }).notNull(), // Who owes
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(), // Amount owed
+    splitType: text('split_type').default('equal'), // equal, percentage, exact
+    splitValue: numeric('split_value', { precision: 12, scale: 2 }), // For percentage or exact splits
+    isSettled: boolean('is_settled').default(false),
+    settledAt: timestamp('settled_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Goals Table
 export const goals = pgTable('goals', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -186,6 +231,27 @@ export const exchangeRates = pgTable('exchange_rates', {
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Forecast Snapshots Table (for Cash Flow Forecasting)
+export const forecastSnapshots = pgTable('forecast_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    forecastDate: timestamp('forecast_date').notNull(), // The date this forecast was generated
+    projectedBalance: numeric('projected_balance', { precision: 12, scale: 2 }).notNull(),
+    confidence: doublePrecision('confidence').default(0), // Confidence score (0-100)
+    predictions: jsonb('predictions').default([]), // Array of daily predictions: [{ date, income, expenses, balance }]
+    anomalies: jsonb('anomalies').default([]), // Detected anomalies: [{ type, description, severity, date }]
+    trends: jsonb('trends').default({}), // { recurringPatterns: [], seasonalTrends: [], growthRate: 0 }
+    dangerZones: jsonb('danger_zones').default([]), // Predicted negative balance periods: [{ startDate, endDate, severity, projectedBalance }]
+    aiInsights: jsonb('ai_insights').default({}), // Gemini AI-generated insights
+    metadata: jsonb('metadata').default({
+        analysisVersion: '1.0',
+        dataPoints: 0,
+        historicalMonths: 0,
+        forecastDays: 30
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
 });
 
 // Token Blacklist Table
@@ -261,6 +327,29 @@ export const budgetAlerts = pgTable('budget_alerts', {
     metadata: jsonb('metadata').default({}),
 });
 
+// Budget Rules Table
+export const budgetRules = pgTable('budget_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    ruleType: text('rule_type').notNull(), // 'percentage', 'amount', 'frequency'
+    condition: jsonb('condition').notNull(), // { operator: '>', value: 500, period: 'week' }
+    threshold: numeric('threshold', { precision: 12, scale: 2 }).notNull(),
+    period: text('period').notNull(), // 'daily', 'weekly', 'monthly', 'yearly'
+    notificationType: text('notification_type').notNull(), // 'email', 'push', 'in_app'
+    isActive: boolean('is_active').default(true),
+    lastTriggered: timestamp('last_triggered'),
+    metadata: jsonb('metadata').default({
+        triggerCount: 0,
+        lastAmount: 0,
+        createdBy: 'user'
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -285,6 +374,9 @@ export const vaultsRelations = relations(vaults, ({ one, many }) => ({
     goals: many(goals),
     invites: many(vaultInvites),
     reports: many(reports),
+    balances: many(vaultBalances),
+    settlements: many(settlements),
+    debtTransactions: many(debtTransactions),
 }));
 
 export const reportsRelations = relations(reports, ({ one }) => ({
@@ -384,6 +476,62 @@ export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
         references: [users.id],
     }),
 }));
+export const forecastSnapshotsRelations = relations(forecastSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [forecastSnapshots.userId],
+        references: [users.id],
+    }),
+}));
+
+
+export const vaultBalancesRelations = relations(vaultBalances, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [vaultBalances.vaultId],
+        references: [vaults.id],
+    }),
+    user: one(users, {
+        fields: [vaultBalances.userId],
+        references: [users.id],
+    }),
+}));
+
+export const settlementsRelations = relations(settlements, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [settlements.vaultId],
+        references: [vaults.id],
+    }),
+    payer: one(users, {
+        fields: [settlements.payerId],
+        references: [users.id],
+    }),
+    payee: one(users, {
+        fields: [settlements.payeeId],
+        references: [users.id],
+    }),
+    relatedExpense: one(expenses, {
+        fields: [settlements.relatedExpenseId],
+        references: [expenses.id],
+    }),
+}));
+
+export const debtTransactionsRelations = relations(debtTransactions, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [debtTransactions.vaultId],
+        references: [vaults.id],
+    }),
+    expense: one(expenses, {
+        fields: [debtTransactions.expenseId],
+        references: [expenses.id],
+    }),
+    paidBy: one(users, {
+        fields: [debtTransactions.paidById],
+        references: [users.id],
+    }),
+    owedBy: one(users, {
+        fields: [debtTransactions.owedById],
+        references: [users.id],
+    }),
+}));
 
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
     user: one(users, {
@@ -393,3 +541,4 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 }));
 
 // No relations needed for exchangeRates as it's a standalone reference table
+

@@ -235,4 +235,5 @@ app.listen(PORT, () => {
 
   // Start background jobs
   scheduleMonthlyReports();
+  scheduleDebtReminders();
 });
