@@ -10,6 +10,8 @@ import { parseListQuery } from "../utils/pagination.js";
 import budgetEngine from "../services/budgetEngine.js";
 import { initializeRecurringExpense, disableRecurring } from "../services/expenseService.js";
 import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
+import { securityInterceptor, auditBulkOperation } from "../middleware/auditMiddleware.js";
+import { logAudit, AuditActions, ResourceTypes } from "../services/auditService.js";
 
 const router = express.Router();
 
@@ -338,7 +340,7 @@ router.post(
 // @route   PUT /api/expenses/:id
 // @desc    Update expense
 // @access  Private
-router.put("/:id", protect, checkOwnership("Expense"), async (req, res) => {
+router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), async (req, res) => {
   try {
     const oldExpense = req.resource;
     const {
@@ -442,7 +444,7 @@ router.put("/:id", protect, checkOwnership("Expense"), async (req, res) => {
 // @route   DELETE /api/expenses/:id
 // @desc    Delete expense
 // @access  Private
-router.delete("/:id", protect, checkOwnership("Expense"), async (req, res) => {
+router.delete("/:id", protect, checkOwnership("Expense"), securityInterceptor(), async (req, res) => {
   try {
     const expense = req.resource;
     await db.delete(expenses).where(eq(expenses.id, req.params.id));
@@ -477,7 +479,7 @@ router.delete("/:id", protect, checkOwnership("Expense"), async (req, res) => {
 // @route   POST /api/expenses/import
 // @desc    Import expenses from CSV data
 // @access  Private
-router.post("/import", protect, async (req, res) => {
+router.post("/import", protect, auditBulkOperation('EXPENSE_IMPORT', 'expense'), async (req, res) => {
   try {
     const { expenses: expensesData } = req.body;
 
