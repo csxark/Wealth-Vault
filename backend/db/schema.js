@@ -312,6 +312,27 @@ export const budgetRules = pgTable('budget_rules', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Financial Health Scores Table
+export const financialHealthScores = pgTable('financial_health_scores', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    overallScore: doublePrecision('overall_score').notNull(),
+    rating: text('rating').notNull(),
+    dtiScore: doublePrecision('dti_score').notNull(),
+    savingsRateScore: doublePrecision('savings_rate_score').notNull(),
+    volatilityScore: doublePrecision('volatility_score').notNull(),
+    emergencyFundScore: doublePrecision('emergency_fund_score').notNull(),
+    budgetAdherenceScore: doublePrecision('budget_adherence_score').notNull(),
+    goalProgressScore: doublePrecision('goal_progress_score').notNull(),
+    metrics: jsonb('metrics').notNull(),
+    recommendation: text('recommendation').notNull(),
+    insights: jsonb('insights').notNull(),
+    cashFlowPrediction: jsonb('cash_flow_prediction').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
