@@ -84,6 +84,12 @@ export const expenses = pgTable('expenses', {
         version: 1,
         flags: []
     }),
+    // Tax-related fields
+    isTaxDeductible: boolean('is_tax_deductible').default(false),
+    taxCategoryId: uuid('tax_category_id').references(() => taxCategories.id, { onDelete: 'set null' }),
+    taxDeductibilityConfidence: doublePrecision('tax_deductibility_confidence').default(0), // AI confidence (0-1)
+    taxNotes: text('tax_notes'), // User or AI notes about tax treatment
+    taxYear: integer('tax_year'), // Which tax year this applies to
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -437,6 +443,52 @@ export const habitLogs = pgTable('habit_logs', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Tax Categories Table
+export const taxCategories = pgTable('tax_categories', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    categoryName: text('category_name').notNull().unique(),
+    deductibilityType: text('deductibility_type').notNull(), // 'fully_deductible', 'partially_deductible', 'non_deductible'
+    deductibilityRate: doublePrecision('deductibility_rate').default(0), // 0-1 (e.g., 0.5 = 50% deductible)
+    taxJurisdiction: text('tax_jurisdiction').default('US_FEDERAL'), // 'US_FEDERAL', 'US_STATE', 'UK', 'CA', etc.
+    description: text('description'),
+    applicableExpenseCategories: text('applicable_expense_categories').array(), // Array of expense category names
+    irs_code: text('irs_code'), // IRS tax code reference (e.g., 'Section 162')
+    conditionsForDeductibility: jsonb('conditions_for_deductibility').default({}), // Requirements to qualify
+    exampleExpenses: text('example_expenses').array(),
+    maxDeductionLimit: doublePrecision('max_deduction_limit'), // Annual limit, if any
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// User Tax Profiles Table
+export const userTaxProfiles = pgTable('user_tax_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    filingStatus: text('filing_status').notNull(), // 'single', 'married_jointly', 'married_separately', 'head_of_household'
+    taxJurisdiction: text('tax_jurisdiction').default('US_FEDERAL'),
+    stateOfResidence: text('state_of_residence'),
+    annualIncome: doublePrecision('annual_income').default(0),
+    estimatedTaxBracket: text('estimated_tax_bracket'), // '10%', '12%', '22%', '24%', '32%', '35%', '37%'
+    standardDeduction: doublePrecision('standard_deduction').default(0), // Automatically calculated based on filing status
+    dependents: integer('dependents').default(0),
+    selfEmployed: boolean('self_employed').default(false),
+    businessOwner: boolean('business_owner').default(false),
+    quarterlyTaxPayer: boolean('quarterly_tax_payer').default(false),
+    lastFilingDate: timestamp('last_filing_date'),
+    nextFilingDeadline: timestamp('next_filing_deadline'),
+    taxPreferences: jsonb('tax_preferences').default({}), // { aggressiveDeductions, riskTolerance, auditWorry }
+    witholdingAllowances: integer('witholding_allowances').default(0),
+    estimatedQuarterlyPayments: doublePrecision('estimated_quarterly_payments').default(0),
+    ytdTaxPaid: doublePrecision('ytd_tax_paid').default(0), // Year-to-date tax paid
+    ytdTaxableIncome: doublePrecision('ytd_taxable_income').default(0),
+    ytdDeductions: doublePrecision('ytd_deductions').default(0),
+    aiTaxAdvice: jsonb('ai_tax_advice').default({}), // Gemini AI recommendations
+    lastAIAnalysisDate: timestamp('last_ai_analysis_date'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -452,6 +504,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     userScore: many(userScores),
     badges: many(badges),
     habitLogs: many(habitLogs),
+    taxProfile: many(userTaxProfiles),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -535,6 +588,10 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
     vault: one(vaults, {
         fields: [expenses.vaultId],
         references: [vaults.id],
+    }),
+    taxCategory: one(taxCategories, {
+        fields: [expenses.taxCategoryId],
+        references: [taxCategories.id],
     }),
 }));
 
@@ -659,5 +716,12 @@ export const habitLogsRelations = relations(habitLogs, ({ one }) => ({
     }),
 }));
 
-// No relations needed for exchangeRates as it's a standalone reference table
+export const userTaxProfilesRelations = relations(userTaxProfiles, ({ one }) => ({
+    user: one(users, {
+        fields: [userTaxProfiles.userId],
+        references: [users.id],
+    }),
+}));
+
+// No relations needed for exchangeRates and taxCategories as they are standalone reference tables
 
