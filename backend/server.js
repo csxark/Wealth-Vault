@@ -22,7 +22,6 @@ import {
 import { requestIdMiddleware, requestLogger, errorLogger, analyticsMiddleware } from "./middleware/requestLogger.js";
 import { performanceMiddleware } from "./services/performanceMonitor.js";
 import { logInfo, logError } from "./utils/logger.js";
-import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
 import { responseWrapper } from "./middleware/responseWrapper.js";
 import { paginationMiddleware } from "./utils/pagination.js";
@@ -190,6 +189,7 @@ app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
+app.use("/api/budget-alerts", userLimiter, budgetAlertsRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
