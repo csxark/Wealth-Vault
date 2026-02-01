@@ -38,7 +38,14 @@ import analyticsRoutes from "./routes/analytics.js";
 import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
+import auditRoutes from "./routes/audit.js";
+import habitsRoutes from "./routes/habits.js";
+import taxRoutes from "./routes/tax.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
+import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
+import { scheduleTaxReminders } from "./jobs/taxReminders.js";
+import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
+import { initializeDefaultTaxCategories } from "./services/taxService.js";
 
 // Load environment variables
 dotenv.config();
@@ -60,6 +67,9 @@ runImmediateSync().then(() => {
 }).catch(err => {
   console.warn('⚠️ Initial exchange rates sync failed:', err.message);
 });
+
+// Schedule weekly habit digest job
+scheduleWeeklyHabitDigest();
 
 // Initiliz uplod directorys
 initializeUploads().catch((err) => {
@@ -135,6 +145,7 @@ app.use(paginationMiddleware());
 
 // Logng and monitrng midlware
 app.use(requestIdMiddleware);
+app.use(auditRequestIdMiddleware); // Add audit request correlation
 app.use(requestLogger);
 app.use(performanceMiddleware);
 app.use(analyticsMiddleware);
@@ -189,7 +200,9 @@ app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
-app.use("/api/budget-alerts", userLimiter, budgetAlertsRoutes);
+app.use("/api/audit", userLimiter, auditRoutes);
+app.use("/api/habits", userLimiter, habitsRoutes);
+app.use("/api/tax", userLimiter, taxRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -231,4 +244,11 @@ app.listen(PORT, () => {
 
   // Start background jobs
   scheduleMonthlyReports();
+  scheduleWeeklyHabitDigest();
+  scheduleTaxReminders();
+
+  // Initialize default tax categories (runs once, safe to call multiple times)
+  initializeDefaultTaxCategories().catch(err => {
+    console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
+  });
 });
