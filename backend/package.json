@@ -67,5 +67,8 @@
     "budgeting"
   ],
   "author": "Wealth Vault Team",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
