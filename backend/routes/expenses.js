@@ -12,6 +12,7 @@ import { initializeRecurringExpense, disableRecurring } from "../services/expens
 import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
 import { securityInterceptor, auditBulkOperation } from "../middleware/auditMiddleware.js";
 import { logAudit, AuditActions, ResourceTypes } from "../services/auditService.js";
+import { guardExpenseCreation } from "../middleware/securityGuard.js";
 
 const router = express.Router();
 
@@ -228,6 +229,7 @@ router.get("/:id", protect, checkOwnership("Expense"), asyncHandler(async (req, 
 router.post(
   "/",
   protect,
+  guardExpenseCreation(), // Security guard middleware
   [
     body("amount").isFloat({ min: 0.01 }),
     body("description").trim().isLength({ min: 1, max: 200 }),
