@@ -84,6 +84,12 @@ export const expenses = pgTable('expenses', {
         version: 1,
         flags: []
     }),
+    // Tax-related fields
+    isTaxDeductible: boolean('is_tax_deductible').default(false),
+    taxCategoryId: uuid('tax_category_id').references(() => taxCategories.id, { onDelete: 'set null' }),
+    taxDeductibilityConfidence: doublePrecision('tax_deductibility_confidence').default(0), // AI confidence (0-1)
+    taxNotes: text('tax_notes'), // User or AI notes about tax treatment
+    taxYear: integer('tax_year'), // Which tax year this applies to
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
