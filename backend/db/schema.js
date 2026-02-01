@@ -370,6 +370,73 @@ export const budgetRules = pgTable('budget_rules', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// User Financial Health Scores Table (Behavioral Finance)
+export const userScores = pgTable('user_scores', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    overallScore: integer('overall_score').default(0), // 0-100
+    budgetAdherenceScore: integer('budget_adherence_score').default(0), // 0-100
+    savingsRateScore: integer('savings_rate_score').default(0), // 0-100
+    consistencyScore: integer('consistency_score').default(0), // 0-100
+    impulseControlScore: integer('impulse_control_score').default(0), // 0-100
+    planningScore: integer('planning_score').default(0), // 0-100
+    scoreHistory: jsonb('score_history').default([]), // Array of historical scores: [{ date, overallScore, breakdown }]
+    insights: jsonb('insights').default({}), // AI-generated insights about spending behavior
+    strengths: jsonb('strengths').default([]), // Array of positive behaviors
+    improvements: jsonb('improvements').default([]), // Array of areas to improve
+    currentStreak: integer('current_streak').default(0), // Days of positive financial behavior
+    longestStreak: integer('longest_streak').default(0),
+    level: integer('level').default(1), // Gamification level (1-100)
+    experiencePoints: integer('experience_points').default(0),
+    nextLevelThreshold: integer('next_level_threshold').default(100),
+    lastCalculatedAt: timestamp('last_calculated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Badges Table (Gamification)
+export const badges = pgTable('badges', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    badgeType: text('badge_type').notNull(), // 'budget_master', 'savings_champion', 'consistency_king', etc.
+    badgeName: text('badge_name').notNull(),
+    badgeDescription: text('badge_description').notNull(),
+    badgeIcon: text('badge_icon').default('🏆'),
+    badgeTier: text('badge_tier').default('bronze'), // bronze, silver, gold, platinum, diamond
+    requirement: jsonb('requirement').notNull(), // { type, threshold, description }
+    progress: integer('progress').default(0), // Current progress towards requirement
+    earnedAt: timestamp('earned_at'),
+    isUnlocked: boolean('is_unlocked').default(false),
+    experienceReward: integer('experience_reward').default(50),
+    metadata: jsonb('metadata').default({
+        category: 'general',
+        rarity: 'common',
+        displayOrder: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Habit Logs Table (Behavioral Tracking)
+export const habitLogs = pgTable('habit_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    habitType: text('habit_type').notNull(), // 'impulse_buy', 'weekend_overspend', 'budget_check', 'savings_deposit', etc.
+    habitCategory: text('habit_category').notNull(), // 'positive', 'negative', 'neutral'
+    description: text('description').notNull(),
+    detectedBy: text('detected_by').default('system'), // 'system', 'ai', 'user'
+    confidence: doublePrecision('confidence').default(0.8), // AI confidence in detection (0-1)
+    impactScore: integer('impact_score').default(0), // -100 to +100 (negative = bad habit, positive = good habit)
+    relatedExpenseId: uuid('related_expense_id').references(() => expenses.id, { onDelete: 'set null' }),
+    relatedGoalId: uuid('related_goal_id').references(() => goals.id, { onDelete: 'set null' }),
+    contextData: jsonb('context_data').default({}), // { dayOfWeek, timeOfDay, location, amount, category, trigger }
+    aiAnalysis: jsonb('ai_analysis').default({}), // Gemini's psychological analysis
+    userAcknowledged: boolean('user_acknowledged').default(false),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    correctionAction: text('correction_action'), // What user did to address negative habit
+    loggedAt: timestamp('logged_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -382,6 +449,9 @@ export const usersRelations = relations(users, ({ many }) => ({
     reports: many(reports),
     budgetAlerts: many(budgetAlerts),
     auditLogs: many(auditLogs),
+    userScore: many(userScores),
+    badges: many(badges),
+    habitLogs: many(habitLogs),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -557,6 +627,35 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
     user: one(users, {
         fields: [auditLogs.userId],
         references: [users.id],
+    }),
+}));
+
+export const userScoresRelations = relations(userScores, ({ one }) => ({
+    user: one(users, {
+        fields: [userScores.userId],
+        references: [users.id],
+    }),
+}));
+
+export const badgesRelations = relations(badges, ({ one }) => ({
+    user: one(users, {
+        fields: [badges.userId],
+        references: [users.id],
+    }),
+}));
+
+export const habitLogsRelations = relations(habitLogs, ({ one }) => ({
+    user: one(users, {
+        fields: [habitLogs.userId],
+        references: [users.id],
+    }),
+    relatedExpense: one(expenses, {
+        fields: [habitLogs.relatedExpenseId],
+        references: [expenses.id],
+    }),
+    relatedGoal: one(goals, {
+        fields: [habitLogs.relatedGoalId],
+        references: [goals.id],
     }),
 }));
 

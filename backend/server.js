@@ -40,7 +40,9 @@ import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
 import auditRoutes from "./routes/audit.js";
+import habitsRoutes from "./routes/habits.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
+import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 
 // Load environment variables
@@ -63,6 +65,9 @@ runImmediateSync().then(() => {
 }).catch(err => {
   console.warn('⚠️ Initial exchange rates sync failed:', err.message);
 });
+
+// Schedule weekly habit digest job
+scheduleWeeklyHabitDigest();
 
 // Initiliz uplod directorys
 initializeUploads().catch((err) => {
@@ -194,6 +199,7 @@ app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
 app.use("/api/audit", userLimiter, auditRoutes);
+app.use("/api/habits", userLimiter, habitsRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
