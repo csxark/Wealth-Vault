@@ -40,6 +40,7 @@ import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
 import auditRoutes from "./routes/audit.js";
+import securityRoutes from "./routes/security.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 
@@ -194,6 +195,7 @@ app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
 app.use("/api/audit", userLimiter, auditRoutes);
+app.use("/api/security", userLimiter, securityRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
