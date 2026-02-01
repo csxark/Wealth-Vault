@@ -376,115 +376,52 @@ export const budgetRules = pgTable('budget_rules', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// User Financial Health Scores Table (Behavioral Finance)
-export const userScores = pgTable('user_scores', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
-    overallScore: integer('overall_score').default(0), // 0-100
-    budgetAdherenceScore: integer('budget_adherence_score').default(0), // 0-100
-    savingsRateScore: integer('savings_rate_score').default(0), // 0-100
-    consistencyScore: integer('consistency_score').default(0), // 0-100
-    impulseControlScore: integer('impulse_control_score').default(0), // 0-100
-    planningScore: integer('planning_score').default(0), // 0-100
-    scoreHistory: jsonb('score_history').default([]), // Array of historical scores: [{ date, overallScore, breakdown }]
-    insights: jsonb('insights').default({}), // AI-generated insights about spending behavior
-    strengths: jsonb('strengths').default([]), // Array of positive behaviors
-    improvements: jsonb('improvements').default([]), // Array of areas to improve
-    currentStreak: integer('current_streak').default(0), // Days of positive financial behavior
-    longestStreak: integer('longest_streak').default(0),
-    level: integer('level').default(1), // Gamification level (1-100)
-    experiencePoints: integer('experience_points').default(0),
-    nextLevelThreshold: integer('next_level_threshold').default(100),
-    lastCalculatedAt: timestamp('last_calculated_at').defaultNow(),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-});
-
-// Badges Table (Gamification)
-export const badges = pgTable('badges', {
+// Security Markers Table (Anomaly Detection)
+export const securityMarkers = pgTable('security_markers', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    badgeType: text('badge_type').notNull(), // 'budget_master', 'savings_champion', 'consistency_king', etc.
-    badgeName: text('badge_name').notNull(),
-    badgeDescription: text('badge_description').notNull(),
-    badgeIcon: text('badge_icon').default('🏆'),
-    badgeTier: text('badge_tier').default('bronze'), // bronze, silver, gold, platinum, diamond
-    requirement: jsonb('requirement').notNull(), // { type, threshold, description }
-    progress: integer('progress').default(0), // Current progress towards requirement
-    earnedAt: timestamp('earned_at'),
-    isUnlocked: boolean('is_unlocked').default(false),
-    experienceReward: integer('experience_reward').default(50),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+    markerType: text('marker_type').notNull(), // 'anomaly_detected', 'high_risk_description', 'geo_anomaly', 'rapid_fire', 'unusual_amount'
+    severity: text('severity').notNull().default('medium'), // 'low', 'medium', 'high', 'critical'
+    status: text('status').notNull().default('pending'), // 'pending', 'cleared', 'disputed', 'blocked'
+    detectionMethod: text('detection_method').notNull(), // 'statistical_analysis', 'ai_detection', 'rule_based', 'mixed'
+    anomalyDetails: jsonb('anomaly_details').notNull().default({}), // { reason, baselineValue, currentValue, deviationPercent, patternType }
+    aiAnalysis: jsonb('ai_analysis').default({}), // { risk_score, scam_indicators, recommendation, confidence }
+    requiresMFA: boolean('requires_mfa').default(false),
+    mfaVerifiedAt: timestamp('mfa_verified_at'),
+    reviewedBy: uuid('reviewed_by').references(() => users.id),
+    reviewedAt: timestamp('reviewed_at'),
+    reviewNotes: text('review_notes'),
+    autoResolve: boolean('auto_resolve').default(false), // Auto-clear after N days if no issues
+    autoResolveAt: timestamp('auto_resolve_at'),
     metadata: jsonb('metadata').default({
-        category: 'general',
-        rarity: 'common',
-        displayOrder: 0
+        triggerRules: [],
+        userNotified: false,
+        escalationLevel: 0
     }),
     createdAt: timestamp('created_at').defaultNow(),
-});
-
-// Habit Logs Table (Behavioral Tracking)
-export const habitLogs = pgTable('habit_logs', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    habitType: text('habit_type').notNull(), // 'impulse_buy', 'weekend_overspend', 'budget_check', 'savings_deposit', etc.
-    habitCategory: text('habit_category').notNull(), // 'positive', 'negative', 'neutral'
-    description: text('description').notNull(),
-    detectedBy: text('detected_by').default('system'), // 'system', 'ai', 'user'
-    confidence: doublePrecision('confidence').default(0.8), // AI confidence in detection (0-1)
-    impactScore: integer('impact_score').default(0), // -100 to +100 (negative = bad habit, positive = good habit)
-    relatedExpenseId: uuid('related_expense_id').references(() => expenses.id, { onDelete: 'set null' }),
-    relatedGoalId: uuid('related_goal_id').references(() => goals.id, { onDelete: 'set null' }),
-    contextData: jsonb('context_data').default({}), // { dayOfWeek, timeOfDay, location, amount, category, trigger }
-    aiAnalysis: jsonb('ai_analysis').default({}), // Gemini's psychological analysis
-    userAcknowledged: boolean('user_acknowledged').default(false),
-    acknowledgedAt: timestamp('acknowledged_at'),
-    correctionAction: text('correction_action'), // What user did to address negative habit
-    loggedAt: timestamp('logged_at').defaultNow(),
-    createdAt: timestamp('created_at').defaultNow(),
-});
-
-// Tax Categories Table
-export const taxCategories = pgTable('tax_categories', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    categoryName: text('category_name').notNull().unique(),
-    deductibilityType: text('deductibility_type').notNull(), // 'fully_deductible', 'partially_deductible', 'non_deductible'
-    deductibilityRate: doublePrecision('deductibility_rate').default(0), // 0-1 (e.g., 0.5 = 50% deductible)
-    taxJurisdiction: text('tax_jurisdiction').default('US_FEDERAL'), // 'US_FEDERAL', 'US_STATE', 'UK', 'CA', etc.
-    description: text('description'),
-    applicableExpenseCategories: text('applicable_expense_categories').array(), // Array of expense category names
-    irs_code: text('irs_code'), // IRS tax code reference (e.g., 'Section 162')
-    conditionsForDeductibility: jsonb('conditions_for_deductibility').default({}), // Requirements to qualify
-    exampleExpenses: text('example_expenses').array(),
-    maxDeductionLimit: doublePrecision('max_deduction_limit'), // Annual limit, if any
-    isActive: boolean('is_active').default(true),
-    createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// User Tax Profiles Table
-export const userTaxProfiles = pgTable('user_tax_profiles', {
+// Disputed Transactions Table
+export const disputedTransactions = pgTable('disputed_transactions', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
-    filingStatus: text('filing_status').notNull(), // 'single', 'married_jointly', 'married_separately', 'head_of_household'
-    taxJurisdiction: text('tax_jurisdiction').default('US_FEDERAL'),
-    stateOfResidence: text('state_of_residence'),
-    annualIncome: doublePrecision('annual_income').default(0),
-    estimatedTaxBracket: text('estimated_tax_bracket'), // '10%', '12%', '22%', '24%', '32%', '35%', '37%'
-    standardDeduction: doublePrecision('standard_deduction').default(0), // Automatically calculated based on filing status
-    dependents: integer('dependents').default(0),
-    selfEmployed: boolean('self_employed').default(false),
-    businessOwner: boolean('business_owner').default(false),
-    quarterlyTaxPayer: boolean('quarterly_tax_payer').default(false),
-    lastFilingDate: timestamp('last_filing_date'),
-    nextFilingDeadline: timestamp('next_filing_deadline'),
-    taxPreferences: jsonb('tax_preferences').default({}), // { aggressiveDeductions, riskTolerance, auditWorry }
-    witholdingAllowances: integer('witholding_allowances').default(0),
-    estimatedQuarterlyPayments: doublePrecision('estimated_quarterly_payments').default(0),
-    ytdTaxPaid: doublePrecision('ytd_tax_paid').default(0), // Year-to-date tax paid
-    ytdTaxableIncome: doublePrecision('ytd_taxable_income').default(0),
-    ytdDeductions: doublePrecision('ytd_deductions').default(0),
-    aiTaxAdvice: jsonb('ai_tax_advice').default({}), // Gemini AI recommendations
-    lastAIAnalysisDate: timestamp('last_ai_analysis_date'),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }).notNull(),
+    securityMarkerId: uuid('security_marker_id').references(() => securityMarkers.id, { onDelete: 'set null' }),
+    disputeType: text('dispute_type').notNull(), // 'unauthorized', 'fraudulent', 'incorrect_amount', 'duplicate', 'other'
+    disputeReason: text('dispute_reason').notNull(),
+    disputeStatus: text('dispute_status').notNull().default('open'), // 'open', 'investigating', 'resolved', 'rejected', 'closed'
+    originalAmount: numeric('original_amount', { precision: 12, scale: 2 }).notNull(),
+    disputedAmount: numeric('disputed_amount', { precision: 12, scale: 2 }),
+    evidence: jsonb('evidence').default([]), // Array of evidence items: [{ type, url, description, uploadedAt }]
+    merchantInfo: jsonb('merchant_info').default({}), // { name, category, location, contactInfo }
+    resolutionDetails: jsonb('resolution_details').default({}), // { outcome, refundAmount, resolutionDate, notes }
+    priority: text('priority').default('normal'), // 'low', 'normal', 'high', 'urgent'
+    assignedTo: uuid('assigned_to').references(() => users.id), // For admin/support assignment
+    communicationLog: jsonb('communication_log').default([]), // Timeline of updates
+    isBlocked: boolean('is_blocked').default(true), // Whether transaction is blocked from ledger
+    resolvedAt: timestamp('resolved_at'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -501,10 +438,8 @@ export const usersRelations = relations(users, ({ many }) => ({
     reports: many(reports),
     budgetAlerts: many(budgetAlerts),
     auditLogs: many(auditLogs),
-    userScore: many(userScores),
-    badges: many(badges),
-    habitLogs: many(habitLogs),
-    taxProfile: many(userTaxProfiles),
+    securityMarkers: many(securityMarkers),
+    disputedTransactions: many(disputedTransactions),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -576,7 +511,7 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
     goals: many(goals),
 }));
 
-export const expensesRelations = relations(expenses, ({ one }) => ({
+export const expensesRelations = relations(expenses, ({ one, many }) => ({
     user: one(users, {
         fields: [expenses.userId],
         references: [users.id],
@@ -589,10 +524,8 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
         fields: [expenses.vaultId],
         references: [vaults.id],
     }),
-    taxCategory: one(taxCategories, {
-        fields: [expenses.taxCategoryId],
-        references: [taxCategories.id],
-    }),
+    securityMarkers: many(securityMarkers),
+    disputes: many(disputedTransactions),
 }));
 
 export const goalsRelations = relations(goals, ({ one }) => ({
@@ -687,41 +620,40 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
     }),
 }));
 
-export const userScoresRelations = relations(userScores, ({ one }) => ({
+export const securityMarkersRelations = relations(securityMarkers, ({ one, many }) => ({
     user: one(users, {
-        fields: [userScores.userId],
+        fields: [securityMarkers.userId],
         references: [users.id],
     }),
-}));
-
-export const badgesRelations = relations(badges, ({ one }) => ({
-    user: one(users, {
-        fields: [badges.userId],
-        references: [users.id],
-    }),
-}));
-
-export const habitLogsRelations = relations(habitLogs, ({ one }) => ({
-    user: one(users, {
-        fields: [habitLogs.userId],
-        references: [users.id],
-    }),
-    relatedExpense: one(expenses, {
-        fields: [habitLogs.relatedExpenseId],
+    expense: one(expenses, {
+        fields: [securityMarkers.expenseId],
         references: [expenses.id],
     }),
-    relatedGoal: one(goals, {
-        fields: [habitLogs.relatedGoalId],
-        references: [goals.id],
+    reviewer: one(users, {
+        fields: [securityMarkers.reviewedBy],
+        references: [users.id],
     }),
+    disputes: many(disputedTransactions),
 }));
 
-export const userTaxProfilesRelations = relations(userTaxProfiles, ({ one }) => ({
+export const disputedTransactionsRelations = relations(disputedTransactions, ({ one }) => ({
     user: one(users, {
-        fields: [userTaxProfiles.userId],
+        fields: [disputedTransactions.userId],
+        references: [users.id],
+    }),
+    expense: one(expenses, {
+        fields: [disputedTransactions.expenseId],
+        references: [expenses.id],
+    }),
+    securityMarker: one(securityMarkers, {
+        fields: [disputedTransactions.securityMarkerId],
+        references: [securityMarkers.id],
+    }),
+    assignee: one(users, {
+        fields: [disputedTransactions.assignedTo],
         references: [users.id],
     }),
 }));
 
-// No relations needed for exchangeRates and taxCategories as they are standalone reference tables
+// No relations needed for exchangeRates as it's a standalone reference table
 
