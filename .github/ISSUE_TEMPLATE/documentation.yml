@@ -1,0 +1,44 @@
+name: 📚 Documentation Issue
+description: Report missing or unclear documentation
+title: "[Docs]: "
+labels: ["documentation"]
+
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Where is the issue?
+      description: File path, URL, or section name
+      placeholder: "README.md or specific page"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: What's the issue?
+      options:
+        - Missing information
+        - Incorrect/outdated content
+        - Unclear explanation
+        - Typo or grammar
+        - Broken code example
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the issue
+      description: What's wrong or missing?
+      placeholder: "The documentation should..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots or other helpful details
+      placeholder: You can drag and drop images here...

@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 
 import {
 
-  Vault, User, Mail, Lock, Eye, EyeOff, Shield, TrendingUp, CheckCircle,
+  Vault, User, Mail, Eye, EyeOff, Shield, TrendingUp, CheckCircle,
 
 } from "lucide-react";
 
@@ -30,7 +30,14 @@ import type { UserProfile } from "../../types";
 
  */
 
-const Button = ({ children, className, disabled, ...props }: any) => (
+interface ButtonProps {
+  children: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+  [key: string]: unknown;
+}
+
+const Button = ({ children, className, disabled, ...props }: ButtonProps) => (
 
   <button
 
@@ -130,8 +137,6 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
   const [showPassword, setShowPassword] = useState(false);
 
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-
   const [showProfileSetup, setShowProfileSetup] = useState(false);
 
 
@@ -154,7 +159,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
     e.preventDefault();
 
-    setFieldErrors({});
+    setError('');
 
     if (isSignUp) {
 
@@ -164,7 +169,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
       const result = await signIn(email, password);
 
-      if (!result.success) setFieldErrors({ auth: "Invalid credentials" });
+      if (!result.success) setError("Invalid credentials");
 
     }
 
@@ -240,6 +245,10 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                   className={`relative z-10 w-1/2 py-2 text-sm font-bold transition-colors duration-300 ${!isSignUp ? 'text-primary' : 'text-gray-500'}`}
 
+                  role="tab"
+
+                  aria-selected={!isSignUp}
+
                 >
 
                   Login
@@ -251,6 +260,10 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
                   onClick={toggleToSignUp}
 
                   className={`relative z-10 w-1/2 py-2 text-sm font-bold transition-colors duration-300 ${isSignUp ? 'text-primary' : 'text-gray-500'}`}
+
+                  role="tab"
+
+                  aria-selected={isSignUp}
 
                 >
 
@@ -318,7 +331,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                           <input value={password} onChange={e => setPassword(e.target.value)} className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 focus:ring-2 focus:ring-primary text-gray-900 dark:text-white outline-none" type={showPassword ? "text" : "password"} placeholder="••••••••" required={!isSignUp} />
 
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400" aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
 
                         </div>
 
@@ -382,7 +395,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                           <input value={password} onChange={e => setPassword(e.target.value)} className="block w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-900/50 border border-gray-200 dark:border-slate-600 focus:ring-2 focus:ring-primary text-gray-900 dark:text-white outline-none" type={showPassword ? "text" : "password"} placeholder="Create password" required={isSignUp} />
 
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400" aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
 
                         </div>
 
@@ -486,7 +499,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                 <div className="absolute inset-0 flex items-center justify-center">
 
-                  <div className="relative w-48 h-full bg-slate-900 border-4 border-slate-700 rounded-3xl shadow-2xl transform -rotate-6 translate-y-4 floating-shape" style={{ "--tw-rotate": "-6deg" } as any}>
+                  <div className="relative w-48 h-full bg-slate-900 border-4 border-slate-700 rounded-3xl shadow-2xl transform -rotate-6 translate-y-4 floating-shape" style={{ "--tw-rotate": "-6deg" } as React.CSSProperties}>
 
                     <div className="absolute top-0 left-0 right-0 h-6 bg-slate-800 rounded-t-2xl flex justify-center items-center">
 
@@ -522,7 +535,7 @@ export const AuthForm: React.FC<{ mode?: "login" | "register" }> = ({ mode = "lo
 
                   </div>
 
-                  <div className="relative w-48 h-full bg-white dark:bg-slate-800 border-4 border-gray-200 dark:border-slate-600 rounded-3xl shadow-xl transform rotate-12 translate-x-10 translate-y-[-20px] z-[-1] floating-shape opacity-80" style={{ "--tw-rotate": "12deg" } as any}>
+                  <div className="relative w-48 h-full bg-white dark:bg-slate-800 border-4 border-gray-200 dark:border-slate-600 rounded-3xl shadow-xl transform rotate-12 translate-x-10 translate-y-[-20px] z-[-1] floating-shape opacity-80" style={{ "--tw-rotate": "12deg" } as React.CSSProperties}>
 
                     <div className="absolute top-0 left-0 right-0 h-6 bg-gray-100 dark:bg-slate-700 rounded-t-2xl"></div>
 

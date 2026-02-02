@@ -1,8 +1,10 @@
 import express from "express";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories } from "../db/schema.js";
+import { expenses, categories, users } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
+import { convertAmount, getAllRates } from "../services/currencyService.js";
+import reportService from "../services/reportService.js";
 
 const router = express.Router();
 
@@ -94,7 +96,7 @@ router.get("/spending-summary", protect, async (req, res) => {
     for (let i = 5; i >= 0; i--) {
       const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-      
+
       const [monthData] = await db
         .select({
           total: sql`sum(${expenses.amount})`,
@@ -203,6 +205,249 @@ router.get("/spending-summary", protect, async (req, res) => {
     });
   }
 });
+/**
+ * @swagger
+ * /analytics/financial-health:
+ *   get:
+ *     summary: Get comprehensive financial health score and analysis
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date for analysis (defaults to start of current month)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date for analysis (defaults to current date)
+ *       - in: query
+ *         name: save
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Whether to save the score to history
+ *     responses:
+ *       200:
+ *         description: Financial health analysis with score and predictions
+ */
+router.get("/financial-health", protect, async (req, res) => {
+  try {
+    const { startDate, endDate, save = true } = req.query;
+
+    // Default to current month if no dates provided
+    const now = new Date();
+    const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = endDate ? new Date(endDate) : now;
+
+    // Calculate financial health
+    const healthData = await calculateUserFinancialHealth(req.user.id, start, end);
+
+    // Save to database if requested
+    if (save === true || save === 'true') {
+      await saveFinancialHealthScore(req.user.id, healthData, start, end);
+    }
+
+    // Get comparison with previous period if available
+    const comparison = await compareHealthScores(req.user.id);
+
+    res.json({
+      success: true,
+      data: {
+        ...healthData,
+        period: {
+          start: start.toISOString(),
+          end: end.toISOString(),
+        },
+        comparison,
+      },
+    });
+  } catch (error) {
+    console.error("Financial health calculation error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while calculating financial health",
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/health-history:
+ *   get:
+ *     summary: Get historical financial health scores
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 12
+ *         description: Number of historical scores to retrieve
+ *     responses:
+ *       200:
+ *         description: Historical health scores
+ */
+router.get("/health-history", protect, async (req, res) => {
+  try {
+    const { limit = 12 } = req.query;
+
+    const history = await getHealthScoreHistory(req.user.id, parseInt(limit));
+
+    // Calculate trend
+    let trend = 'stable';
+    if (history.length >= 2) {
+      const recent = history.slice(-3); // Last 3 scores
+      const avgRecent = recent.reduce((sum, s) => sum + s.overallScore, 0) / recent.length;
+      const older = history.slice(0, Math.min(3, history.length - 3));
+
+      if (older.length > 0) {
+        const avgOlder = older.reduce((sum, s) => sum + s.overallScore, 0) / older.length;
+        if (avgRecent > avgOlder + 5) trend = 'improving';
+        else if (avgRecent < avgOlder - 5) trend = 'declining';
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        history: history.map(score => ({
+          id: score.id,
+          overallScore: score.overallScore,
+          rating: score.rating,
+          breakdown: {
+            dti: score.dtiScore,
+            savingsRate: score.savingsRateScore,
+            volatility: score.volatilityScore,
+            emergencyFund: score.emergencyFundScore,
+            budgetAdherence: score.budgetAdherenceScore,
+            goalProgress: score.goalProgressScore,
+          },
+          date: score.calculatedAt,
+          period: {
+            start: score.periodStart,
+            end: score.periodEnd,
+          },
+        })),
+        trend,
+        count: history.length,
+      },
+    });
+  } catch (error) {
+    console.error("Health history error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching health history",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/predictions:
+ *   get:
+ *     summary: Get predictive financial analytics and forecasts
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Financial predictions and forecasts
+ */
+router.get("/predictions", protect, async (req, res) => {
+  try {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = now;
+
+    // Get current health data which includes predictions
+    const healthData = await calculateUserFinancialHealth(req.user.id, start, end);
+
+    res.json({
+      success: true,
+      data: {
+        cashFlowForecast: healthData.cashFlowPrediction,
+        insights: healthData.insights.filter(i => i.category === 'Forecast' || i.type === 'warning'),
+        spendingPatterns: {
+          dayOfWeek: healthData.dayOfWeekAnalysis,
+          categoryConcentration: healthData.concentrationMetrics,
+        },
+        recommendations: [
+          healthData.recommendation,
+          ...healthData.insights.filter(i => i.priority === 'high' || i.priority === 'critical').map(i => i.message),
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("Predictions error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while generating predictions",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/insights:
+ *   get:
+ *     summary: Get AI-powered financial insights and recommendations
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Personalized financial insights
+ */
+router.get("/insights", protect, async (req, res) => {
+  try {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = now;
+
+    const healthData = await calculateUserFinancialHealth(req.user.id, start, end);
+
+    // Categorize insights by priority
+    const categorized = {
+      critical: healthData.insights.filter(i => i.priority === 'critical'),
+      high: healthData.insights.filter(i => i.priority === 'high'),
+      medium: healthData.insights.filter(i => i.priority === 'medium'),
+      low: healthData.insights.filter(i => i.priority === 'low'),
+    };
+
+    res.json({
+      success: true,
+      data: {
+        overallScore: healthData.overallScore,
+        rating: healthData.rating,
+        mainRecommendation: healthData.recommendation,
+        insights: healthData.insights,
+        categorized,
+        summary: {
+          totalInsights: healthData.insights.length,
+          criticalIssues: categorized.critical.length,
+          warnings: categorized.high.length,
+          opportunities: categorized.low.filter(i => i.type === 'success').length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Insights error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while generating insights",
+    });
+  }
+});
+
 
 /**
  * @swagger
@@ -235,11 +480,11 @@ router.get("/category-trends", protect, async (req, res) => {
     const monthsToAnalyze = parseInt(months);
 
     const trends = [];
-    
+
     for (let i = monthsToAnalyze - 1; i >= 0; i--) {
       const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-      
+
       const conditions = [
         eq(expenses.userId, req.user.id),
         eq(expenses.status, "completed"),
@@ -288,4 +533,479 @@ router.get("/category-trends", protect, async (req, res) => {
   }
 });
 
+
+
+
+/**
+ * @swagger
+ * /analytics/spending-patterns:
+ *   get:
+ *     summary: Get advanced spending pattern analysis
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [week, month, quarter, year]
+ *           default: month
+ *         description: Analysis period
+ *     responses:
+ *       200:
+ *         description: Spending pattern analysis
+ */
+router.get("/spending-patterns", protect, async (req, res) => {
+  try {
+    const { period = "month" } = req.query;
+    const now = new Date();
+
+    // Calculate date ranges for comparison
+    let currentStart, currentEnd, previousStart, previousEnd;
+
+    switch (period) {
+      case "week":
+        currentStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+        currentEnd = now;
+        previousStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 14);
+        previousEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+        break;
+      case "quarter":
+        const currentQuarter = Math.floor(now.getMonth() / 3);
+        currentStart = new Date(now.getFullYear(), currentQuarter * 3, 1);
+        currentEnd = new Date(now.getFullYear(), currentQuarter * 3 + 3, 0);
+        previousStart = new Date(now.getFullYear(), (currentQuarter - 1) * 3, 1);
+        previousEnd = new Date(now.getFullYear(), currentQuarter * 3, 0);
+        break;
+      case "year":
+        currentStart = new Date(now.getFullYear(), 0, 1);
+        currentEnd = new Date(now.getFullYear(), 11, 31);
+        previousStart = new Date(now.getFullYear() - 1, 0, 1);
+        previousEnd = new Date(now.getFullYear() - 1, 11, 31);
+        break;
+      default: // month
+        currentStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        currentEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        previousStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        previousEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    }
+
+    // Current period data
+    const [currentPeriod] = await db
+      .select({
+        totalAmount: sql`sum(${expenses.amount})`,
+        totalCount: sql`count(*)`,
+        avgTransaction: sql`avg(${expenses.amount})`,
+      })
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.userId, req.user.id),
+          eq(expenses.status, "completed"),
+          gte(expenses.date, currentStart),
+          lte(expenses.date, currentEnd)
+        )
+      );
+
+    // Previous period data for comparison
+    const [previousPeriod] = await db
+      .select({
+        totalAmount: sql`sum(${expenses.amount})`,
+        totalCount: sql`count(*)`,
+        avgTransaction: sql`avg(${expenses.amount})`,
+      })
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.userId, req.user.id),
+          eq(expenses.status, "completed"),
+          gte(expenses.date, previousStart),
+          lte(expenses.date, previousEnd)
+        )
+      );
+
+    // Daily spending pattern (last 30 days)
+    const dailyPattern = [];
+    for (let i = 29; i >= 0; i--) {
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+      const dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+
+      const [dayData] = await db
+        .select({
+          total: sql`sum(${expenses.amount})`,
+          count: sql`count(*)`,
+        })
+        .from(expenses)
+        .where(
+          and(
+            eq(expenses.userId, req.user.id),
+            eq(expenses.status, "completed"),
+            gte(expenses.date, dayStart),
+            lte(expenses.date, dayEnd)
+          )
+        );
+
+      dailyPattern.push({
+        date: dayStart.toISOString().split('T')[0],
+        total: Number(dayData?.total || 0),
+        count: Number(dayData?.count || 0),
+        dayOfWeek: dayStart.getDay(),
+        dayName: dayStart.toLocaleDateString('en-US', { weekday: 'short' }),
+      });
+    }
+
+    // Calculate percentage changes
+    const currentTotal = Number(currentPeriod?.totalAmount || 0);
+    const previousTotal = Number(previousPeriod?.totalAmount || 0);
+    const totalChange = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : 0;
+
+    const currentCount = Number(currentPeriod?.totalCount || 0);
+    const previousCount = Number(previousPeriod?.totalCount || 0);
+    const countChange = previousCount > 0 ? ((currentCount - previousCount) / previousCount) * 100 : 0;
+
+    const currentAvg = Number(currentPeriod?.avgTransaction || 0);
+    const previousAvg = Number(previousPeriod?.avgTransaction || 0);
+    const avgChange = previousAvg > 0 ? ((currentAvg - previousAvg) / previousAvg) * 100 : 0;
+
+    res.json({
+      success: true,
+      data: {
+        period: {
+          current: { start: currentStart.toISOString(), end: currentEnd.toISOString() },
+          previous: { start: previousStart.toISOString(), end: previousEnd.toISOString() },
+          type: period,
+        },
+        comparison: {
+          current: {
+            totalAmount: currentTotal,
+            totalCount: currentCount,
+            avgTransaction: currentAvg,
+          },
+          previous: {
+            totalAmount: previousTotal,
+            totalCount: previousCount,
+            avgTransaction: previousAvg,
+          },
+          changes: {
+            totalAmount: { value: totalChange, trend: totalChange > 0 ? 'up' : totalChange < 0 ? 'down' : 'stable' },
+            totalCount: { value: countChange, trend: countChange > 0 ? 'up' : countChange < 0 ? 'down' : 'stable' },
+            avgTransaction: { value: avgChange, trend: avgChange > 0 ? 'up' : avgChange < 0 ? 'down' : 'stable' },
+          },
+        },
+        dailyPattern,
+        insights: {
+          highestSpendingDay: dailyPattern.reduce((max, day) => day.total > max.total ? day : max, dailyPattern[0]),
+          averageDailySpending: dailyPattern.reduce((sum, day) => sum + day.total, 0) / dailyPattern.length,
+          spendingFrequency: dailyPattern.filter(day => day.count > 0).length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Spending patterns error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while analyzing spending patterns",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/export:
+ *   get:
+ *     summary: Export analytics data
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, json]
+ *           default: csv
+ *         description: Export format
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date for export
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date for export
+ *     responses:
+ *       200:
+ *         description: Exported data
+ */
+router.get("/export", protect, async (req, res) => {
+  try {
+    const { format = "csv", startDate, endDate } = req.query;
+
+    // Default to last 3 months if no dates provided
+    const now = new Date();
+    const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth() - 3, 1);
+    const end = endDate ? new Date(endDate) : now;
+
+    // Get detailed expense data
+    const expenseData = await db.query.expenses.findMany({
+      where: and(
+        eq(expenses.userId, req.user.id),
+        eq(expenses.status, "completed"),
+        gte(expenses.date, start),
+        lte(expenses.date, end)
+      ),
+      with: {
+        category: {
+          columns: { name: true, color: true, icon: true },
+        },
+      },
+      orderBy: [desc(expenses.date)],
+    });
+
+    const exportData = expenseData.map((expense) => ({
+      id: expense.id,
+      date: expense.date.toISOString().split('T')[0],
+      amount: Number(expense.amount),
+      currency: expense.currency,
+      description: expense.description,
+      category: expense.category?.name || 'Uncategorized',
+      subcategory: expense.subcategory || '',
+      paymentMethod: expense.paymentMethod,
+      notes: expense.notes || '',
+    }));
+
+    if (format === 'csv') {
+      // Generate CSV
+      const csvHeader = 'Date,Amount,Currency,Description,Category,Subcategory,Payment Method,Notes\n';
+      const csvRows = exportData.map(row =>
+        `${row.date},${row.amount},${row.currency},"${row.description}","${row.category}","${row.subcategory}","${row.paymentMethod}","${row.notes}"`
+      ).join('\n');
+
+      const csvContent = csvHeader + csvRows;
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="wealth-vault-expenses-${start.toISOString().split('T')[0]}-to-${end.toISOString().split('T')[0]}.csv"`);
+      res.send(csvContent);
+    } else {
+      // Return JSON
+      res.json({
+        success: true,
+        data: {
+          exportInfo: {
+            startDate: start.toISOString(),
+            endDate: end.toISOString(),
+            totalRecords: exportData.length,
+            exportedAt: new Date().toISOString(),
+          },
+          expenses: exportData,
+        },
+      });
+    }
+  } catch (error) {
+    console.error("Export error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while exporting data",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/normalized-summary:
+ *   get:
+ *     summary: Get spending summary normalized to user's base currency
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Normalized spending analytics
+ */
+router.get("/normalized-summary", protect, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    // Get user's base currency
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const baseCurrency = user?.currency || 'USD';
+
+    const now = new Date();
+    const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = endDate ? new Date(endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // Get all expenses in date range
+    const userExpenses = await db.query.expenses.findMany({
+      where: and(
+        eq(expenses.userId, req.user.id),
+        eq(expenses.status, "completed"),
+        gte(expenses.date, start),
+        lte(expenses.date, end)
+      ),
+      with: {
+        category: {
+          columns: { name: true, color: true, icon: true }
+        }
+      }
+    });
+
+    // Normalize all amounts to base currency
+    const normalizedExpenses = await Promise.all(
+      userExpenses.map(async (expense) => {
+        const normalizedAmount = expense.currency && expense.currency !== baseCurrency
+          ? await convertAmount(Number(expense.amount), expense.currency, baseCurrency)
+          : Number(expense.amount);
+
+        return {
+          ...expense,
+          originalAmount: Number(expense.amount),
+          originalCurrency: expense.currency || baseCurrency,
+          normalizedAmount,
+          normalizedCurrency: baseCurrency
+        };
+      })
+    );
+
+    // Calculate totals
+    const totalNormalized = normalizedExpenses.reduce((sum, exp) => sum + exp.normalizedAmount, 0);
+    const totalOriginal = userExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
+
+    // Category breakdown with normalization
+    const categoryBreakdown = {};
+    normalizedExpenses.forEach(exp => {
+      const catName = exp.category?.name || 'Uncategorized';
+      if (!categoryBreakdown[catName]) {
+        categoryBreakdown[catName] = {
+          category: catName,
+          color: exp.category?.color,
+          icon: exp.category?.icon,
+          total: 0,
+          count: 0
+        };
+      }
+      categoryBreakdown[catName].total += exp.normalizedAmount;
+      categoryBreakdown[catName].count += 1;
+    });
+
+    // Currency breakdown
+    const currencyBreakdown = {};
+    userExpenses.forEach(exp => {
+      const curr = exp.currency || baseCurrency;
+      if (!currencyBreakdown[curr]) {
+        currencyBreakdown[curr] = { currency: curr, total: 0, count: 0 };
+      }
+      currencyBreakdown[curr].total += Number(exp.amount);
+      currencyBreakdown[curr].count += 1;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        baseCurrency,
+        dateRange: { start, end },
+        summary: {
+          totalNormalized: Number(totalNormalized.toFixed(2)),
+          totalOriginal: Number(totalOriginal.toFixed(2)),
+          currency: baseCurrency,
+          expenseCount: normalizedExpenses.length,
+          avgExpense: Number((totalNormalized / normalizedExpenses.length || 0).toFixed(2))
+        },
+        categoryBreakdown: Object.values(categoryBreakdown).sort((a, b) => b.total - a.total),
+        currencyBreakdown: Object.values(currencyBreakdown),
+        expenses: normalizedExpenses
+      }
+    });
+  } catch (error) {
+    console.error("Normalized summary error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error calculating normalized summary",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/exchange-rates:
+ *   get:
+ *     summary: Get current exchange rates for user's base currency
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Exchange rates data
+ */
+router.get("/exchange-rates", protect, async (req, res) => {
+  try {
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const baseCurrency = user?.currency || 'USD';
+
+    const rates = await getAllRates(baseCurrency);
+
+    res.json({
+      success: true,
+      data: {
+        baseCurrency,
+        rates: rates.map(r => ({
+          currency: r.targetCurrency,
+          rate: r.rate,
+          validFrom: r.validFrom,
+          validUntil: r.validUntil,
+          source: r.source
+        })),
+        timestamp: new Date()
+      }
+    });
+  } catch (error) {
+    console.error("Exchange rates error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching exchange rates",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/generate-monthly-report:
+ *   post:
+ *     summary: Manually trigger monthly report generation
+ *     tags: [Analytics]
+ */
+router.post("/generate-monthly-report", protect, async (req, res) => {
+  const { year, month } = req.body;
+  const now = new Date();
+  const targetYear = year || now.getFullYear();
+  const targetMonth = month || now.getMonth() + 1;
+
+  try {
+    const report = await reportService.generateMonthlyReport(req.user.id, targetYear, targetMonth);
+    res.success(report, "Monthly report generated successfully");
+  } catch (error) {
+    console.error("Manual report generation error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;
+

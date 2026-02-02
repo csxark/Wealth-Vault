@@ -3,6 +3,17 @@
 > **Take control of your money. Build healthier financial habits.**  
 > Wealth Vault is a modern financial wellness platform that helps users understand spending behavior, set meaningful goals, and make smarter financial decisions using **AI-powered insights**.
 
+## 📊 Badges
+
+
+
+![GitHub stars](https://img.shields.io/github/stars/csxark/Wealth-Vault?style=social)
+![GitHub forks](https://img.shields.io/github/forks/csxark/Wealth-Vault?style=social)
+![Visitors](https://visitor-badge.laobi.icu/badge?page_id=csxark.Wealth-Vault)
+![GitHub issues](https://img.shields.io/github/issues/csxark/Wealth-Vault)
+![License](https://img.shields.io/github/license/csxark/Wealth-Vault)
+
+
 ---
 
 ## 🌐 Website Flow
@@ -200,7 +211,7 @@ npm run dev
 **Or start individually:**
 
 ```bash
-#insatll this package first
+#install this package first
 npm install concurrently --save-dev
 # Backend only (runs on port 5000)
 npm run dev:backend

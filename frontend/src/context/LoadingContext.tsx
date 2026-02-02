@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode } fr
 interface LoadingContextType {
   isLoading: boolean;
   loadingMessage: string;
+  loadingCount: number;
   startLoading: (message?: string) => void;
   stopLoading: () => void;
   withLoading: <T>(promise: Promise<T>, message?: string) => Promise<T>;
@@ -23,24 +24,18 @@ interface LoadingProviderProps {
 }
 
 export const LoadingProvider: React.FC<LoadingProviderProps> = ({ children }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState('Loading...');
   const [loadingCount, setLoadingCount] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('Loading...');
+
+  const isLoading = loadingCount > 0;
 
   const startLoading = useCallback((message: string = 'Loading...') => {
-    setLoadingCount((prev) => prev + 1);
     setLoadingMessage(message);
-    setIsLoading(true);
+    setLoadingCount(prev => prev + 1);
   }, []);
 
   const stopLoading = useCallback(() => {
-    setLoadingCount((prev) => {
-      const newCount = Math.max(0, prev - 1);
-      if (newCount === 0) {
-        setIsLoading(false);
-      }
-      return newCount;
-    });
+    setLoadingCount(prev => Math.max(0, prev - 1));
   }, []);
 
   const withLoading = useCallback(
@@ -59,6 +54,7 @@ export const LoadingProvider: React.FC<LoadingProviderProps> = ({ children }) =>
   const value: LoadingContextType = {
     isLoading,
     loadingMessage,
+    loadingCount,
     startLoading,
     stopLoading,
     withLoading,

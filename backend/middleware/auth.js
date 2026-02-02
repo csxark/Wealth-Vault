@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import db from '../config/db.js';
-import { users } from '../db/schema.js';
+import { users, deviceSessions } from '../db/schema.js';
 import * as schema from '../db/schema.js';
+import { verifyAccessToken, isTokenBlacklisted } from '../services/tokenService.js';
 
 // Helper to map model names to schema tables
 const getTable = (modelName) => {
@@ -15,18 +16,9 @@ const getTable = (modelName) => {
   return map[modelName];
 };
 
-// Middleware to protect routes
+// Enhanced middleware to protect routes with session validation
 export const protect = async (req, res, next) => {
   try {
-    // Check if JWT_SECRET is configured
-    if (!process.env.JWT_SECRET) {
-      console.error('JWT_SECRET is not configured');
-      return res.status(500).json({
-        success: false,
-        message: 'Server configuration error'
-      });
-    }
-
     let token;
 
     // Check if token exists in headers
@@ -37,82 +29,128 @@ export const protect = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Access denied. No token provided.'
+        message: 'Access denied. No token provided.',
+        code: 'NO_TOKEN'
       });
     }
 
     try {
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      // Verify token using enhanced token service
+      const decoded = await verifyAccessToken(token);
 
       if (!decoded || !decoded.id) {
         return res.status(401).json({
           success: false,
-          message: 'Invalid token format.'
+          message: 'Invalid token format.',
+          code: 'INVALID_TOKEN'
         });
       }
 
+      // Verify session exists and is active
+      if (decoded.sessionId) {
+        const [session] = await db
+          .select()
+          .from(deviceSessions)
+          .where(
+            and(
+              eq(deviceSessions.id, decoded.sessionId),
+              eq(deviceSessions.userId, decoded.id),
+              eq(deviceSessions.isActive, true)
+            )
+          );
+
+        if (!session) {
+          return res.status(401).json({
+            success: false,
+            message: 'Session not found or expired.',
+            code: 'SESSION_EXPIRED'
+          });
+        }
+
+        // Update last activity
+        await db.update(deviceSessions)
+          .set({ lastActivity: new Date() })
+          .where(eq(deviceSessions.id, session.id));
+      }
+
       // Get user from token
-      // Note: We select all fields except password by excluding it essentially
       const [user] = await db.select().from(users).where(eq(users.id, decoded.id));
 
       if (!user) {
         return res.status(401).json({
           success: false,
-          message: 'User not found or token expired.'
+          message: 'User not found or token expired.',
+          code: 'USER_NOT_FOUND'
         });
       }
 
       if (!user.isActive) {
         return res.status(401).json({
           success: false,
-          message: 'Account is deactivated.'
+          message: 'Account is deactivated.',
+          code: 'ACCOUNT_DEACTIVATED'
         });
       }
 
       // Remove password from user object
       delete user.password;
 
-      // Add user to request object
+      // Add user and session info to request object
       req.user = user;
+      req.sessionId = decoded.sessionId;
+      req.tokenExp = decoded.exp;
+
       next();
     } catch (error) {
       console.error('Token verification error:', error);
 
+      if (error.message.includes('revoked')) {
+        return res.status(401).json({
+          success: false,
+          message: 'Token has been revoked.',
+          code: 'TOKEN_REVOKED'
+        });
+      }
+
       if (error.name === 'JsonWebTokenError') {
         return res.status(401).json({
           success: false,
-          message: 'Invalid token.'
+          message: 'Invalid token.',
+          code: 'INVALID_TOKEN'
         });
       }
 
       if (error.name === 'TokenExpiredError') {
         return res.status(401).json({
           success: false,
-          message: 'Token has expired.'
+          message: 'Token has expired.',
+          code: 'TOKEN_EXPIRED',
+          shouldRefresh: true
         });
       }
 
       return res.status(401).json({
         success: false,
-        message: 'Authentication failed.'
+        message: 'Authentication failed.',
+        code: 'AUTH_FAILED'
       });
     }
   } catch (error) {
     console.error('Auth middleware error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Internal server error in authentication.'
+      message: 'Internal server error in authentication.',
+      code: 'SERVER_ERROR'
     });
   }
 };
 
-// Middleware to check if user is the owner of the resource
+// Middleware to check if user is the owner of the resource or has access via vault
 export const checkOwnership = (modelName) => {
   return async (req, res, next) => {
     try {
-      const resourceId = req.params.id;
-      const userId = req.user.id; // Drizzle user object has 'id', not '_id'
+      const resourceId = req.params.id || req.params.expenseId || req.params.goalId;
+      const userId = req.user.id;
 
       const table = getTable(modelName);
       if (!table) {
@@ -129,16 +167,34 @@ export const checkOwnership = (modelName) => {
         });
       }
 
-      // Check if user owns the resource
-      if (resource.userId !== userId) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. You can only access your own resources.'
-        });
+      // Check if user owns the resource personaly
+      if (resource.userId === userId) {
+        req.resource = resource;
+        return next();
       }
 
-      req.resource = resource;
-      next();
+      // Check if resource belongs to a vault and user is a member
+      if (resource.vaultId) {
+        const [membership] = await db
+          .select()
+          .from(schema.vaultMembers)
+          .where(
+            and(
+              eq(schema.vaultMembers.vaultId, resource.vaultId),
+              eq(schema.vaultMembers.userId, userId)
+            )
+          );
+
+        if (membership) {
+          req.resource = resource;
+          return next();
+        }
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have permission to access this resource.'
+      });
     } catch (error) {
       console.error('Ownership check error:', error);
       return res.status(500).json({
@@ -194,35 +250,4 @@ export const optionalAuth = async (req, res, next) => {
     console.error('Optional auth error:', error);
     next();
   }
-};
-
-// Rate limiting helper (basic implementation)
-export const rateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
-  const requests = new Map();
-
-  return (req, res, next) => {
-    const ip = req.ip || req.connection.remoteAddress;
-    const now = Date.now();
-    const windowStart = now - windowMs;
-
-    // Clean old entries
-    if (requests.has(ip)) {
-      const userRequests = requests.get(ip).filter(timestamp => timestamp > windowStart);
-      requests.set(ip, userRequests);
-    }
-
-    const userRequests = requests.get(ip) || [];
-
-    if (userRequests.length >= maxRequests) {
-      return res.status(429).json({
-        success: false,
-        message: 'Too many requests. Please try again later.'
-      });
-    }
-
-    userRequests.push(now);
-    requests.set(ip, userRequests);
-
-    next();
-  };
 };

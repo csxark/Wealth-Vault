@@ -1,0 +1,37 @@
+name: 💡 Feature Request
+description: Suggest a new feature for Wealth Vault
+title: "[Feature]: "
+labels: ["enhancement"]
+
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the problem or use case
+      placeholder: "I would like to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What's your proposed solution?
+      description: Describe what you'd like to see
+      placeholder: "It should work like..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Any alternative ideas?
+      description: Other approaches you've considered
+      placeholder: "Another option could be..."
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, mockups, or examples
+      placeholder: You can drag and drop images here...

@@ -1,17 +1,25 @@
 import React from 'react';
-import { Target, TrendingUp, Calendar, Edit3, Trash2 } from 'lucide-react';
-import type { Goal } from '../../types';
+import { Target, TrendingUp, Calendar, Edit3, Trash2, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import type { Goal, Milestone } from '../../types';
+import { MilestoneCard } from './MilestoneCard';
 
 interface GoalCardProps {
   goal: Goal;
   onEdit: (goal: Goal) => void;
   onDelete: (goalId: string) => void;
+  onToggleExpand?: (goalId: string) => void;
+  isExpanded?: boolean;
+  milestones?: Milestone[];
+  onAddMilestone?: (goalId: string) => void;
+  onEditMilestone?: (milestone: Milestone) => void;
+  onDeleteMilestone?: (goalId: string, milestoneId: string) => void;
+  onContributeToMilestone?: (goalId: string, milestoneId: string, amount: number) => void;
 }
 
 export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) => {
-  const progress = goal.target_amount > 0 ? (goal.current_amount / goal.target_amount) * 100 : 0;
-  const remainingAmount = goal.target_amount - goal.current_amount;
-  const daysUntilTarget = Math.ceil((new Date(goal.target_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
+  const remainingAmount = goal.targetAmount - goal.currentAmount;
+  const daysUntilTarget = Math.ceil((new Date(goal.deadline || goal.targetDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
   
   const getMotivationalMessage = () => {
     if (progress >= 100) return "🎉 Goal achieved! You're amazing!";
@@ -36,25 +44,34 @@ export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) =>
         
         <div className="flex space-x-1">
           <button
+            onClick={() => onToggleExpand?.(goal._id)}
+            className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            title={isExpanded ? "Collapse milestones" : "Expand milestones"}
+          >
+            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+          <button
             onClick={() => onEdit(goal)}
             className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            aria-label="Edit goal"
           >
             <Edit3 className="h-4 w-4" />
           </button>
           <button
-            onClick={() => onDelete(goal.id)}
+            onClick={() => onDelete(goal._id)}
             className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-          >
-            <Trash2 className="h-4 w-4" />
+<<<<<<< HEAD
+            title="Delete goal"
+=======
+            aria-label="Delete goal"
           </button>
-        </div>
       </div>
 
       <div className="space-y-4">
         <div className="flex justify-between items-center text-sm">
           <span className="text-slate-600 dark:text-slate-400">Progress</span>
           <span className="font-medium text-slate-900 dark:text-white">
-            ₹{goal.current_amount.toLocaleString()} / ₹{goal.target_amount.toLocaleString()}
+            ₹{goal.currentAmount.toLocaleString()} / ₹{goal.targetAmount.toLocaleString()}
           </span>
         </div>
 
@@ -84,6 +101,42 @@ export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) =>
         <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 p-3 rounded-lg">
           <p className="text-sm font-medium text-cyan-800 dark:text-cyan-200">{getMotivationalMessage()}</p>
         </div>
+
+        {/* Milestones Section */}
+        {isExpanded && (
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium text-slate-900 dark:text-white">Milestones</h4>
+              <button
+                onClick={() => onAddMilestone?.(goal._id)}
+                className="flex items-center px-3 py-1 text-xs bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:from-cyan-600 hover:to-blue-700 transition-colors"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add Milestone
+              </button>
+            </div>
+
+            {milestones && milestones.length > 0 ? (
+              <div className="space-y-3">
+                {milestones.map((milestone) => (
+                  <MilestoneCard
+                    key={milestone.id}
+                    milestone={milestone}
+                    onEdit={() => onEditMilestone?.(milestone)}
+                    onDelete={() => onDeleteMilestone?.(goal._id, milestone.id)}
+                    onContribute={(amount) => onContributeToMilestone?.(goal._id, milestone.id, amount)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-4 text-slate-500 dark:text-slate-400">
+                <Target className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No milestones yet</p>
+                <p className="text-xs">Break your goal into smaller, achievable steps</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

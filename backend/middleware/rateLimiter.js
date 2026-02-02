@@ -1,82 +1,114 @@
 import rateLimit from "express-rate-limit";
+import { RedisStore } from "rate-limit-redis";
+import { getRedisClient, isRedisAvailable } from "../config/redis.js";
+
+// Create store function with fallback (only check Redis once)
+const createStore = () => {
+  if (isRedisAvailable()) {
+    const redisClient = getRedisClient();
+    if (redisClient && redisClient.isReady) {
+      return new RedisStore({
+        sendCommand: (...args) => redisClient.sendCommand(args),
+      });
+    }
+  }
+  return undefined; // fallback to memory store
+};
+
+// ✅ SAFE key generator (no deprecated API)
+const ipKey = (req) => req.ip || req.connection?.remoteAddress || "unknown";
+
+// Enhanced rate limiter factory
+const createRateLimiter = (options) => {
+  return rateLimit({
+    store: createStore(),
+    standardHeaders: true,
+    legacyHeaders: false,
+
+    keyGenerator: (req) => {
+      // Prefer authenticated user
+      if (req.user?.id) {
+        return `user:${req.user.id}`;
+      }
+      // Fallback to IP
+      return `ip:${ipKey(req)}`;
+    },
+
+    handler: (req, res, _next, options) => {
+      res.status(429).json({
+        success: false,
+        message: options.message?.message || options.message,
+        retryAfter: Math.ceil(options.windowMs / 1000),
+        limit: options.max,
+        remaining: 0,
+        resetTime: new Date(Date.now() + options.windowMs).toISOString(),
+      });
+    },
+
+    ...options,
+  });
+};
 
 /**
  * General API rate limiter
- * Limits each IP to 100 requests per 15 minutes
  */
-export const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+export const generalLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: {
-    success: false,
-    message:
-      "Too many requests from this IP, please try again after 15 minutes",
-    retryAfter: 15,
-  },
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  handler: (req, res, next, options) => {
-    res.status(429).json(options.message);
+    message: "Too many requests, please try again after 15 minutes",
   },
 });
 
 /**
- * Strict rate limiter for authentication routes
- * Limits each IP to 5 requests per 15 minutes
- * Helps prevent brute force attacks
+ * Auth limiter (IP-based only)
  */
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login/register attempts per windowMs
-  message: {
-    success: false,
-    message:
-      "Too many authentication attempts from this IP, please try again after 15 minutes",
-    retryAfter: 15,
-  },
+  windowMs: 15 * 60 * 1000,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: true, // Don't count successful requests
-  handler: (req, res, next, options) => {
-    res.status(429).json(options.message);
+  keyGenerator: (req) => `auth:${ipKey(req)}`,
+  message: {
+    message:
+      "Too many authentication attempts, please try again after 15 minutes",
   },
 });
 
 /**
- * Rate limiter for password reset
- * Limits each IP to 3 requests per hour
+ * Password reset limiter
  */
 export const passwordResetLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // Limit each IP to 3 password reset requests per hour
-  message: {
-    success: false,
-    message: "Too many password reset attempts, please try again after an hour",
-    retryAfter: 60,
-  },
+  windowMs: 60 * 60 * 1000,
+  max: 3,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res, next, options) => {
-    res.status(429).json(options.message);
+  keyGenerator: (req) => `reset:${ipKey(req)}`,
+  message: {
+    message: "Too many password reset attempts, please try again after an hour",
   },
 });
 
 /**
- * Rate limiter for AI/Gemini endpoints
- * Limits each IP to 20 requests per 15 minutes
+ * AI / Gemini limiter
  */
-export const aiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Limit AI requests to prevent API abuse
+export const aiLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
   message: {
-    success: false,
-    message: "Too many AI requests, please try again after 15 minutes",
-    retryAfter: 15,
+    message: "Too many AI requests, please try again later",
   },
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res, next, options) => {
-    res.status(429).json(options.message);
+});
+
+/**
+ * User-specific limiter
+ */
+export const userLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  skip: (req) => !req.user,
+  message: {
+    message: "You have exceeded the request limit. Please try again later.",
   },
 });
 
@@ -85,4 +117,5 @@ export default {
   authLimiter,
   passwordResetLimiter,
   aiLimiter,
+  userLimiter,
 };

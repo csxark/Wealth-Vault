@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { User, Expense, Category, Goal } from '../types';
+import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData } from '../types';
 
 // Use environment variable for API URL
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -89,15 +89,18 @@ const generateMockExpenses = (count: number = 20): Expense[] => {
     date.setDate(date.getDate() - daysAgo);
     
     expenses.push({
-      _id: `mock-expense-${i}`,
-      user: 'dev-user-001',
+      id: `mock-expense-${i}`,
+      userId: 'dev-user-001',
       amount: Math.floor(Math.random() * 5000) + 100,
+      currency: 'INR',
       category: categories[Math.floor(Math.random() * categories.length)] as 'safe' | 'impulsive' | 'anxious',
       description: descriptions[Math.floor(Math.random() * descriptions.length)],
       date: date.toISOString(),
       paymentMethod: paymentMethods[Math.floor(Math.random() * paymentMethods.length)] as 'cash' | 'card' | 'upi' | 'netbanking',
-      createdAt: date.toISOString(),
-      updatedAt: date.toISOString()
+      isRecurring: false,
+      status: 'completed',
+      created_at: date.toISOString(),
+      updated_at: date.toISOString()
     });
   }
   
@@ -105,7 +108,7 @@ const generateMockExpenses = (count: number = 20): Expense[] => {
 };
 
 // Generic API request function with enhanced error handling
-const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> => {
+const apiRequest = async <T>(endpoint: string, options: { method?: string; params?: Record<string, unknown>; data?: unknown } = {}): Promise<T> => {
   // Check if we're in dev mode
   const token = localStorage.getItem('authToken');
   if (token === 'dev-mock-token-123') {
@@ -136,6 +139,175 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       } as T;
     }
     
+    // Handle analytics endpoints in dev mode
+    if (endpoint.startsWith('/analytics/')) {
+      if (endpoint === '/analytics/spending-summary') {
+        const mockCategories = [
+          { categoryId: '1', categoryName: 'Food & Dining', categoryColor: '#ef4444', categoryIcon: 'utensils', total: 15000, count: 25, avgAmount: 600, percentage: 35 },
+          { categoryId: '2', categoryName: 'Transportation', categoryColor: '#3b82f6', categoryIcon: 'car', total: 8000, count: 15, avgAmount: 533, percentage: 18.6 },
+          { categoryId: '3', categoryName: 'Shopping', categoryColor: '#10b981', categoryIcon: 'shopping-bag', total: 12000, count: 20, avgAmount: 600, percentage: 27.9 },
+          { categoryId: '4', categoryName: 'Entertainment', categoryColor: '#f59e0b', categoryIcon: 'film', total: 5000, count: 10, avgAmount: 500, percentage: 11.6 },
+          { categoryId: '5', categoryName: 'Bills & Utilities', categoryColor: '#8b5cf6', categoryIcon: 'receipt', total: 3000, count: 5, avgAmount: 600, percentage: 7 }
+        ];
+
+        const mockMonthlyTrend = [
+          { month: 'Aug 24', total: 35000, count: 65, date: '2024-08-01T00:00:00.000Z' },
+          { month: 'Sep 24', total: 42000, count: 78, date: '2024-09-01T00:00:00.000Z' },
+          { month: 'Oct 24', total: 38000, count: 72, date: '2024-10-01T00:00:00.000Z' },
+          { month: 'Nov 24', total: 45000, count: 85, date: '2024-11-01T00:00:00.000Z' },
+          { month: 'Dec 24', total: 40000, count: 75, date: '2024-12-01T00:00:00.000Z' },
+          { month: 'Jan 25', total: 43000, count: 80, date: '2025-01-01T00:00:00.000Z' }
+        ];
+
+        return {
+          success: true,
+          data: {
+            period: { start: '2025-01-01T00:00:00.000Z', end: '2025-01-31T23:59:59.999Z', type: 'month' },
+            summary: {
+              totalAmount: 43000,
+              totalCount: 75,
+              avgTransaction: 573,
+              maxTransaction: 2500,
+              minTransaction: 50
+            },
+            categoryBreakdown: mockCategories,
+            monthlyTrend: mockMonthlyTrend,
+            topExpenses: [
+              { id: '1', amount: 2500, description: 'Grocery Shopping', date: '2025-01-20T00:00:00.000Z', category: { name: 'Food & Dining', color: '#ef4444' } },
+              { id: '2', amount: 1800, description: 'Restaurant Dinner', date: '2025-01-18T00:00:00.000Z', category: { name: 'Food & Dining', color: '#ef4444' } },
+              { id: '3', amount: 1500, description: 'Fuel', date: '2025-01-15T00:00:00.000Z', category: { name: 'Transportation', color: '#3b82f6' } }
+            ],
+            paymentMethods: [
+              { method: 'card', total: 25000, count: 45, percentage: 58.1 },
+              { method: 'upi', total: 15000, count: 25, percentage: 34.9 },
+              { method: 'cash', total: 3000, count: 5, percentage: 7 }
+            ]
+          }
+        } as T;
+      }
+
+      if (endpoint === '/analytics/spending-patterns') {
+        const mockDailyPattern = [];
+        const now = new Date();
+        for (let i = 29; i >= 0; i--) {
+          const date = new Date(now);
+          date.setDate(date.getDate() - i);
+          mockDailyPattern.push({
+            date: date.toISOString().split('T')[0],
+            total: Math.floor(Math.random() * 3000) + 500,
+            count: Math.floor(Math.random() * 5) + 1,
+            dayOfWeek: date.getDay(),
+            dayName: date.toLocaleDateString('en-US', { weekday: 'short' })
+          });
+        }
+
+        return {
+          success: true,
+          data: {
+            period: {
+              current: { start: '2025-01-01T00:00:00.000Z', end: '2025-01-31T23:59:59.999Z' },
+              previous: { start: '2024-12-01T00:00:00.000Z', end: '2024-12-31T23:59:59.999Z' },
+              type: 'month'
+            },
+            comparison: {
+              current: { totalAmount: 43000, totalCount: 75, avgTransaction: 573 },
+              previous: { totalAmount: 40000, totalCount: 70, avgTransaction: 571 },
+              changes: {
+                totalAmount: { value: 7.5, trend: 'up' },
+                totalCount: { value: 7.1, trend: 'up' },
+                avgTransaction: { value: 0.4, trend: 'up' }
+              }
+            },
+            dailyPattern: mockDailyPattern,
+            insights: {
+              highestSpendingDay: mockDailyPattern.reduce((max, day) => day.total > max.total ? day : max, mockDailyPattern[0]),
+              averageDailySpending: mockDailyPattern.reduce((sum, day) => sum + day.total, 0) / mockDailyPattern.length,
+              spendingFrequency: mockDailyPattern.filter(day => day.count > 0).length
+            }
+          }
+        } as T;
+      }
+
+      if (endpoint === '/analytics/export') {
+        // Mock export response
+        return {
+          success: true,
+          data: {
+            exportInfo: {
+              startDate: '2024-10-01T00:00:00.000Z',
+              endDate: '2025-01-23T23:59:59.999Z',
+              totalRecords: 150,
+              exportedAt: new Date().toISOString()
+            },
+            expenses: generateMockExpenses(150)
+          }
+        } as T;
+      }
+    }
+    if (endpoint === '/goals' && options.method === 'POST') {
+      // Create new goal
+      const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
+      const newGoal = {
+        _id: `mock-goal-${Date.now()}`,
+        user: 'dev-user-001',
+        ...(options.data as object),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockGoals.push(newGoal);
+      localStorage.setItem('mockGoals', JSON.stringify(mockGoals));
+      return {
+        success: true,
+        data: { goal: newGoal },
+        message: 'Goal created successfully'
+      } as T;
+    }
+    
+    if (endpoint === '/goals' || endpoint.startsWith('/goals?')) {
+      // Get all goals
+      const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
+      return {
+        success: true,
+        data: {
+          goals: mockGoals,
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: mockGoals.length,
+            itemsPerPage: 20
+          }
+        }
+      } as T;
+    }
+    
+    if (endpoint.startsWith('/goals/') && options.method === 'PUT') {
+      // Update goal
+      const goalId = endpoint.split('/')[2];
+      const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
+      const index = mockGoals.findIndex((g: { _id: string }) => g._id === goalId);
+      if (index !== -1) {
+        mockGoals[index] = { ...mockGoals[index], ...options.data, updatedAt: new Date().toISOString() };
+        localStorage.setItem('mockGoals', JSON.stringify(mockGoals));
+        return {
+          success: true,
+          data: { goal: mockGoals[index] },
+          message: 'Goal updated successfully'
+        } as T;
+      }
+    }
+    
+    if (endpoint.startsWith('/goals/') && options.method === 'DELETE') {
+      // Delete goal
+      const goalId = endpoint.split('/')[2];
+      const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
+      const filtered = mockGoals.filter((g: { _id: string }) => g._id !== goalId);
+      localStorage.setItem('mockGoals', JSON.stringify(filtered));
+      return {
+        success: true,
+        message: 'Goal deleted successfully'
+      } as T;
+    }
+    
     // Default mock response
     return {
       success: true,
@@ -150,7 +322,7 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       ...options,
     });
     return response.data;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Additional error processing
     if (axios.isAxiosError(error)) {
       // Extract meaningful error message
@@ -170,10 +342,14 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       console.error('API Request Failed:', errorDetails);
 
       // Create a more informative error object
-      const enhancedError = new Error(errorMessage);
-      (enhancedError as any).status = error.response?.status;
-      (enhancedError as any).response = error.response;
-      (enhancedError as any).details = errorDetails;
+      const enhancedError = new Error(errorMessage) as Error & {
+        status?: number;
+        response?: unknown;
+        details?: unknown;
+      };
+      enhancedError.status = error.response?.status;
+      enhancedError.response = error.response;
+      enhancedError.details = errorDetails;
       
       throw enhancedError;
     }
@@ -320,7 +496,7 @@ export const expensesAPI = {
   },
 
   // Create new expense
-  create: async (expenseData: Omit<Expense, '_id' | 'user' | 'createdAt' | 'updatedAt'>) => {
+  create: async (expenseData: Omit<Expense, 'id' | 'userId' | 'created_at' | 'updated_at'>) => {
     return apiRequest<{ success: boolean; data: { expense: Expense } }>('/expenses', {
       method: 'POST',
       data: expenseData,
@@ -359,6 +535,86 @@ export const expensesAPI = {
       method: 'GET',
       params,
     });
+  },
+
+  // Import expenses from CSV data
+  import: async (expensesData: Array<{
+    amount: number;
+    description: string;
+    category: string;
+    date?: string;
+    paymentMethod?: string;
+    location?: string;
+    tags?: string[];
+    isRecurring?: boolean;
+    recurringPattern?: string;
+    notes?: string;
+    subcategory?: string;
+  }>) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      data: {
+        imported: number;
+        errors: number;
+        errorDetails: string[];
+      };
+    }>('/expenses/import', {
+      method: 'POST',
+      data: { expenses: expensesData },
+    });
+  },
+
+  // Recurring Expenses API
+  recurringExpenses: {
+    // Get all recurring expenses
+    getAll: async (params?: {
+      isActive?: boolean;
+      category?: string;
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        data: { recurringExpenses: RecurringExpense[] };
+      }>('/expenses/recurring', {
+        method: 'GET',
+        params,
+      });
+    },
+
+    // Get recurring expense by ID
+    getById: async (id: string) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>(`/expenses/recurring/${id}`);
+    },
+
+    // Create new recurring expense
+    create: async (recurringExpenseData: RecurringExpenseFormData) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>('/expenses/recurring', {
+        method: 'POST',
+        data: recurringExpenseData,
+      });
+    },
+
+    // Update recurring expense
+    update: async (id: string, recurringExpenseData: Partial<RecurringExpenseFormData & { isActive?: boolean; isPaused?: boolean }>) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>(`/expenses/recurring/${id}`, {
+        method: 'PUT',
+        data: recurringExpenseData,
+      });
+    },
+
+    // Delete recurring expense
+    delete: async (id: string) => {
+      return apiRequest<{ success: boolean; message: string }>(`/expenses/recurring/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    // Manually trigger recurring expense generation (for testing)
+    triggerGeneration: async () => {
+      return apiRequest<{ success: boolean; message: string; data: { generatedExpenses: Expense[] } }>('/expenses/recurring/trigger', {
+        method: 'POST',
+      });
+    },
   },
 };
 
@@ -545,7 +801,7 @@ export const analyticsAPI = {
           amount: number;
           description: string;
           date: string;
-          category: any;
+          category: { name: string; color: string; icon?: string } | null;
         }>;
         paymentMethods: Array<{
           method: string;
@@ -560,29 +816,119 @@ export const analyticsAPI = {
     });
   },
 
-  // Get category trends
-  getCategoryTrends: async (params?: {
-    categoryId?: string;
-    months?: number;
+  // Get spending patterns analysis
+  getSpendingPatterns: async (params?: {
+    period?: 'week' | 'month' | 'quarter' | 'year';
   }) => {
     return apiRequest<{
       success: boolean;
       data: {
-        trends: Array<{
-          month: string;
+        period: {
+          current: { start: string; end: string };
+          previous: { start: string; end: string };
+          type: string;
+        };
+        comparison: {
+          current: {
+            totalAmount: number;
+            totalCount: number;
+            avgTransaction: number;
+          };
+          previous: {
+            totalAmount: number;
+            totalCount: number;
+            avgTransaction: number;
+          };
+          changes: {
+            totalAmount: { value: number; trend: 'up' | 'down' | 'stable' };
+            totalCount: { value: number; trend: 'up' | 'down' | 'stable' };
+            avgTransaction: { value: number; trend: 'up' | 'down' | 'stable' };
+          };
+        };
+        dailyPattern: Array<{
           date: string;
-          categories: Array<{
-            categoryId: string;
-            categoryName: string;
+          total: number;
+          count: number;
+          dayOfWeek: number;
+          dayName: string;
+        }>;
+        insights: {
+          highestSpendingDay: {
+            date: string;
             total: number;
             count: number;
-          }>;
-        }>;
+            dayName: string;
+          };
+          averageDailySpending: number;
+          spendingFrequency: number;
+        };
       };
-    }>('/analytics/category-trends', {
+    }>('/analytics/spending-patterns', {
       method: 'GET',
       params,
     });
+  },
+
+  // Export analytics data
+  exportData: async (params?: {
+    format?: 'csv' | 'json';
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const token = localStorage.getItem('authToken');
+    
+    // Handle dev mode
+    if (token === 'dev-mock-token-123') {
+      const mockData = generateMockExpenses(100);
+      
+      if (params?.format === 'csv') {
+        const csvHeader = 'Date,Amount,Currency,Description,Category,Payment Method\n';
+        const csvRows = mockData.map(expense => 
+          `${expense.date.split('T')[0]},${expense.amount},INR,"${expense.description}","${expense.category}","${expense.paymentMethod}"`
+        ).join('\n');
+        
+        const csvContent = csvHeader + csvRows;
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        
+        // Create a mock response that mimics the fetch API
+        return {
+          blob: () => Promise.resolve(blob),
+          json: () => Promise.resolve({ data: mockData })
+        } as Response;
+      } else {
+        const jsonData = {
+          exportInfo: {
+            startDate: '2024-10-01T00:00:00.000Z',
+            endDate: new Date().toISOString(),
+            totalRecords: mockData.length,
+            exportedAt: new Date().toISOString()
+          },
+          expenses: mockData
+        };
+        
+        return {
+          blob: () => Promise.resolve(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' })),
+          json: () => Promise.resolve(jsonData)
+        } as Response;
+      }
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params?.format) queryParams.append('format', params.format);
+    if (params?.startDate) queryParams.append('startDate', params.startDate);
+    if (params?.endDate) queryParams.append('endDate', params.endDate);
+
+    const response = await fetch(`${API_BASE_URL}/analytics/export?${queryParams}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+
+    return response;
   },
 };
 

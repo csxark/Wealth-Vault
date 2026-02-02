@@ -113,6 +113,7 @@ const QRExpenseModal: React.FC<QRExpenseModalProps> = ({
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+            aria-label="Close modal"
           >
             ✕
           </button>
@@ -163,6 +164,7 @@ const QRExpenseModal: React.FC<QRExpenseModalProps> = ({
                 step="0.01"
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                placeholder="Enter amount in ₹"
                 className="mt-1 block w-full rounded-lg border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-4 py-2"
               />
             </div>
@@ -177,6 +179,7 @@ const QRExpenseModal: React.FC<QRExpenseModalProps> = ({
                 onChange={(e) => setFormData({ ...formData, category: e.target.value as Category })}
                 className="mt-1 block w-full rounded-lg border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-4 py-2"
               >
+                <option value="" disabled>Select a category</option>
                 {CATEGORIES.map((category) => (
                   <option key={category} value={category}>
                     {category}
@@ -194,6 +197,7 @@ const QRExpenseModal: React.FC<QRExpenseModalProps> = ({
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Describe this expense"
                 className="mt-1 block w-full rounded-lg border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-4 py-2"
               />
             </div>
