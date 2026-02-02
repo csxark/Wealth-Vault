@@ -12,6 +12,7 @@ import { initializeRecurringExpense, disableRecurring } from "../services/expens
 import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
 import { securityInterceptor, auditBulkOperation } from "../middleware/auditMiddleware.js";
 import { logAudit, AuditActions, ResourceTypes } from "../services/auditService.js";
+import { logStateDelta } from "../middleware/auditLogger.js";
 import { guardExpenseCreation } from "../middleware/securityGuard.js";
 
 const router = express.Router();
@@ -318,7 +319,7 @@ router.post(
       if (vaultId) {
         const splitDetails = req.body.splitDetails || null; // Array of {userId, splitType, splitValue}
         const paidById = req.body.paidById || req.user.id; // Who paid for the expense
-        
+
         try {
           await createDebtTransactions(newExpense, paidById, splitDetails);
         } catch (error) {
@@ -329,6 +330,19 @@ router.post(
 
       // Proactively monitor budget thresholds
       await budgetEngine.monitorBudget(req.user.id, category);
+
+      // Log state delta for forensic tracking
+      await logStateDelta({
+        userId: req.user.id,
+        resourceType: 'expense',
+        resourceId: newExpense.id,
+        operation: 'CREATE',
+        beforeState: null,
+        afterState: newExpense,
+        triggeredBy: 'user',
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
 
       const expenseWithCategory = await db.query.expenses.findFirst({
         where: eq(expenses.id, newExpense.id),
@@ -424,6 +438,19 @@ router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), as
     // Proactively monitor budget thresholds
     await budgetEngine.monitorBudget(req.user.id, updateData.categoryId || oldExpense.categoryId);
 
+    // Log state delta for forensic tracking
+    await logStateDelta({
+      userId: req.user.id,
+      resourceType: 'expense',
+      resourceId: req.params.id,
+      operation: 'UPDATE',
+      beforeState: oldExpense,
+      afterState: updatedExpense,
+      triggeredBy: 'user',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     // Log expense update
     logAudit(req, {
       userId: req.user.id,
@@ -467,6 +494,19 @@ router.delete("/:id", protect, checkOwnership("Expense"), securityInterceptor(),
     if (expense.categoryId) {
       await updateCategoryStats(expense.categoryId);
     }
+
+    // Log state delta for forensic tracking
+    await logStateDelta({
+      userId: req.user.id,
+      resourceType: 'expense',
+      resourceId: req.params.id,
+      operation: 'DELETE',
+      beforeState: expense,
+      afterState: null,
+      triggeredBy: 'user',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     // Log expense deletion
     logAudit(req, {
