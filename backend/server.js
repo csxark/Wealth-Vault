@@ -41,7 +41,9 @@ import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
 import auditRoutes from "./routes/audit.js";
 import securityRoutes from "./routes/security.js";
+import subscriptionRoutes from "./routes/subscriptions.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
+import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
@@ -202,6 +204,7 @@ app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
 app.use("/api/audit", userLimiter, auditRoutes);
 app.use("/api/security", userLimiter, securityRoutes);
+app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -245,6 +248,7 @@ app.listen(PORT, () => {
   scheduleMonthlyReports();
   scheduleWeeklyHabitDigest();
   scheduleTaxReminders();
+  subscriptionMonitor.initialize();
 
   // Initialize default tax categories (runs once, safe to call multiple times)
   initializeDefaultTaxCategories().catch(err => {
