@@ -11,3 +11,16 @@
 - [ ] Run database migrations
 - [ ] Test alert triggering with sample expenses
 - [ ] Configure email service for notifications
+
+## Completed Features
+- [x] Multi-Currency Engine & FX Normalization
+  - [x] exchangeRates table added to database schema
+  - [x] currencyService.js with caching and fallback mechanisms
+  - [x] syncRates.js for daily background sync
+  - [x] currencies.js REST API endpoints
+  - [x] Database migration applied
+  - [x] Currency routes registered in server.js
+  - [x] Currency conversion integrated in analytics.js
+  - [x] EXCHANGE_RATE_API_KEY environment variable configured
+  - [x] Currency conversion tested (POST /api/currencies/convert)
+  - [x] Daily sync job verified (POST /api/currencies/sync)

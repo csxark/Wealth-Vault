@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData } from '../types';
+import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert } from '../types';
 
 // Use environment variable for API URL
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -876,20 +876,20 @@ export const analyticsAPI = {
     endDate?: string;
   }) => {
     const token = localStorage.getItem('authToken');
-    
+
     // Handle dev mode
     if (token === 'dev-mock-token-123') {
       const mockData = generateMockExpenses(100);
-      
+
       if (params?.format === 'csv') {
         const csvHeader = 'Date,Amount,Currency,Description,Category,Payment Method\n';
-        const csvRows = mockData.map(expense => 
+        const csvRows = mockData.map(expense =>
           `${expense.date.split('T')[0]},${expense.amount},INR,"${expense.description}","${expense.category}","${expense.paymentMethod}"`
         ).join('\n');
-        
+
         const csvContent = csvHeader + csvRows;
         const blob = new Blob([csvContent], { type: 'text/csv' });
-        
+
         // Create a mock response that mimics the fetch API
         return {
           blob: () => Promise.resolve(blob),
@@ -905,7 +905,7 @@ export const analyticsAPI = {
           },
           expenses: mockData
         };
-        
+
         return {
           blob: () => Promise.resolve(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' })),
           json: () => Promise.resolve(jsonData)
@@ -929,6 +929,68 @@ export const analyticsAPI = {
     }
 
     return response;
+  },
+};
+
+// Budget Alerts API
+export const budgetAlertsAPI = {
+  // Get all budget alerts
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
+    categoryId?: string;
+    threshold?: number;
+    period?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        alerts: BudgetAlert[];
+        pagination: {
+          currentPage: number;
+          totalPages: number;
+          totalItems: number;
+          itemsPerPage: number;
+        };
+      };
+    }>('/budget-alerts', {
+      method: 'GET',
+      params,
+    });
+  },
+
+  // Get budget alert by ID
+  getById: async (id: string) => {
+    return apiRequest<{ success: boolean; data: { alert: BudgetAlert } }>(`/budget-alerts/${id}`);
+  },
+
+  // Delete budget alert
+  delete: async (id: string) => {
+    return apiRequest<{ success: boolean; message: string }>(`/budget-alerts/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Get budget alerts statistics
+  getStats: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        summary: { total: number };
+        byThreshold: Array<{ threshold: number; count: number }>;
+        byCategory: Array<{ categoryName: string; count: number }>;
+      };
+    }>('/budget-alerts/stats/summary');
+  },
+
+  // Test budget alert triggering
+  test: async (data: { categoryId: string; amount: number }) => {
+    return apiRequest<{ success: boolean; message: string }>('/budget-alerts/test', {
+      method: 'POST',
+      data,
+    });
   },
 };
 

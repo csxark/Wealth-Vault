@@ -1,390 +1,226 @@
-/**  
- * Audit Routes
- * API endpoints for security audit trail and forensics
- */
-
 import express from 'express';
 import { protect } from '../middleware/auth.js';
-import { query, param, validationResult } from 'express-validator';
-import {
-  getUserAuditTrail,
-  getRecentSecurityEvents,
-  detectSuspiciousActivity,
-  getAuditAnalytics,
-  verifyDeltaIntegrity,
-  getResourceAuditHistory,
-  AuditActions
-} from '../services/auditService.js';
-import PDFDocument from 'pdfkit';
-import { db } from '../config/db.js';
-import { auditLogs } from '../db/schema.js';
-import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import replayEngine from '../services/replayEngine.js';
+import forensicAI from '../services/forensicAI.js';
+import db from '../config/db.js';
+import { forensicQueries, auditSnapshots, stateDeltas } from '../db/schema.js';
+import { eq, desc, and } from 'drizzle-orm';
 
 const router = express.Router();
 
 /**
- * @route   GET /api/audit/my-activity
- * @desc    Get current user's audit trail
+ * @route   GET /api/audit/snapshots
+ * @desc    Get user's audit snapshots
  * @access  Private
  */
-router.get(
-  '/my-activity',
-  protect,
-  [
-    query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-    query('action').optional().isString(),
-    query('startDate').optional().isISO8601(),
-    query('endDate').optional().isISO8601()
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
-      }
+router.get('/snapshots', protect, asyncHandler(async (req, res) => {
+  const { limit = 10 } = req.query;
 
-      const { page = 1, limit = 20, action, startDate, endDate } = req.query;
-      
-      const result = await getUserAuditTrail(req.user.id, {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        action,
-        startDate,
-        endDate
-      });
+  const snapshots = await db
+    .select({
+      id: auditSnapshots.id,
+      snapshotDate: auditSnapshots.snapshotDate,
+      totalBalance: auditSnapshots.totalBalance,
+      transactionCount: auditSnapshots.transactionCount,
+      metadata: auditSnapshots.metadata,
+      createdAt: auditSnapshots.createdAt,
+    })
+    .from(auditSnapshots)
+    .where(eq(auditSnapshots.userId, req.user.id))
+    .orderBy(desc(auditSnapshots.snapshotDate))
+    .limit(parseInt(limit));
 
-      res.json({
-        success: true,
-        data: result.logs,
-        pagination: result.pagination
-      });
-    } catch (error) {
-      console.error('Error fetching user audit trail:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch audit trail',
-        error: error.message
-      });
-    }
-  }
-);
+  res.success(snapshots, 'Snapshots retrieved successfully');
+}));
 
 /**
- * @route   GET /api/audit/security-events
- * @desc    Get recent security events for current user
+ * @route   POST /api/audit/replay
+ * @desc    Replay financial state at a specific date (Time Machine)
  * @access  Private
  */
-router.get(
-  '/security-events',
-  protect,
-  [query('limit').optional().isInt({ min: 1, max: 50 })],
-  async (req, res) => {
-    try {
-      const { limit = 10 } = req.query;
-      
-      const events = await getRecentSecurityEvents(req.user.id, parseInt(limit));
+router.post('/replay', protect, asyncHandler(async (req, res) => {
+  const { targetDate } = req.body;
 
-      res.json({
-        success: true,
-        data: events,
-        count: events.length
-      });
-    } catch (error) {
-      console.error('Error fetching security events:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch security events',
-        error: error.message
-      });
-    }
+  if (!targetDate) {
+    return res.status(400).json({ success: false, message: 'targetDate is required' });
   }
-);
 
-/**
- * @route   GET /api/audit/suspicious-activity
- * @desc    Detect suspicious activity for current user
- * @access  Private
- */
-router.get(
-  '/suspicious-activity',
-  protect,
-  [
-    query('timeWindowMinutes').optional().isInt({ min: 1, max: 60 }),
-    query('deleteThreshold').optional().isInt({ min: 1 }),
-    query('failedAuthThreshold').optional().isInt({ min: 1 })
-  ],
-  async (req, res) => {
-    try {
-      const { 
-        timeWindowMinutes = 5,
-        deleteThreshold = 5,
-        failedAuthThreshold = 3 
-      } = req.query;
-      
-      const report = await detectSuspiciousActivity(req.user.id, {
-        timeWindowMinutes: parseInt(timeWindowMinutes),
-        deleteThreshold: parseInt(deleteThreshold),
-        failedAuthThreshold: parseInt(failedAuthThreshold)
-      });
-
-      res.json({
-        success: true,
-        data: report
-      });
-    } catch (error) {
-      console.error('Error detecting suspicious activity:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to analyze suspicious activity',
-        error: error.message
-      });
-    }
+  const date = new Date(targetDate);
+  if (isNaN(date.getTime())) {
+    return res.status(400).json({ success: false, message: 'Invalid date format' });
   }
-);
 
-/**
- * @route   GET /api/audit/analytics
- * @desc    Get audit analytics for current user
- * @access  Private
- */
-router.get(
-  '/analytics',
-  protect,
-  [
-    query('startDate').optional().isISO8601(),
-    query('endDate').optional().isISO8601(),
-    query('resourceType').optional().isString()
-  ],
-  async (req, res) => {
-    try {
-      const { startDate, endDate, resourceType } = req.query;
-      
-      const analytics = await getAuditAnalytics({
-        userId: req.user.id,
-        startDate,
-        endDate,
-        resourceType
-      });
+  const result = await replayEngine.replayToDate(req.user.id, date);
 
-      res.json({
-        success: true,
-        data: analytics
-      });
-    } catch (error) {
-      console.error('Error generating audit analytics:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to generate analytics',
-        error: error.message
-      });
-    }
-  }
-);
-
-/**
- * @route   GET /api/audit/resource/:resourceType/:resourceId/history
- * @desc    Get audit history for a specific resource
- * @access  Private
- */
-router.get(
-  '/resource/:resourceType/:resourceId/history',
-  protect,
-  [
-    param('resourceType').isString(),
-    param('resourceId').isUUID(),
-    query('limit').optional().isInt({ min: 1, max: 100 }),
-    query('includeDeltas').optional().isBoolean()
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
-      }
-
-      const { resourceType, resourceId } = req.params;
-      const { limit = 50, includeDeltas = true } = req.query;
-      
-      const history = await getResourceAuditHistory(resourceType, resourceId, {
-        limit: parseInt(limit),
-        includeDeltas: includeDeltas === 'true' || includeDeltas === true
-      });
-
-      res.json({
-        success: true,
-        data: history,
-        count: history.length
-      });
-    } catch (error) {
-      console.error('Error fetching resource audit history:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch resource history',
-        error: error.message
-      });
-    }
-  }
-);
-
-/**
- * @route   GET /api/audit/verify/:auditLogId
- * @desc    Verify delta integrity for an audit log
- * @access  Private
- */
-router.get(
-  '/verify/:auditLogId',
-  protect,
-  param('auditLogId').isUUID(),
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
-      }
-
-      const { auditLogId } = req.params;
-      
-      const verification = await verifyDeltaIntegrity(auditLogId);
-
-      res.json({
-        success: true,
-        data: verification
-      });
-    } catch (error) {
-      console.error('Error verifying delta integrity:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to verify integrity',
-        error: error.message
-      });
-    }
-  }
-);
-
-/**
- * @route   GET /api/audit/export/pdf
- * @desc    Export audit logs to protected PDF
- * @access  Private
- */
-router.get(
-  '/export/pdf',
-  protect,
-  [
-    query('startDate').optional().isISO8601(),
-    query('endDate').optional().isISO8601(),
-    query('action').optional().isString()
-  ],
-  async (req, res) => {
-    try {
-      const { startDate, endDate, action } = req.query;
-      
-      // Fetch audit logs
-      const conditions = [eq(auditLogs.userId, req.user.id)];
-      if (action) conditions.push(eq(auditLogs.action, action));
-      if (startDate) conditions.push(gte(auditLogs.performedAt, new Date(startDate)));
-      if (endDate) conditions.push(lte(auditLogs.performedAt, new Date(endDate)));
-
-      const logs = await db
-        .select()
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.performedAt))
-        .limit(500); // Limit to prevent huge PDFs
-
-      // Create PDF
-      const doc = new PDFDocument({ size: 'A4', margin: 50 });
-      
-      // Set response headers
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="audit-log-${Date.now()}.pdf"`);
-      
-      // Pipe PDF to response
-      doc.pipe(res);
-
-      // Add header
-      doc.fontSize(20).text('Security Audit Log', { align: 'center' });
-      doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
-      doc.fontSize(10).text(`User: ${req.user.email}`, { align: 'center' });
-      doc.moveDown();
-
-      if (startDate || endDate) {
-        doc.fontSize(10).text(
-          `Period: ${startDate ? new Date(startDate).toLocaleDateString() : 'Beginning'} to ${endDate ? new Date(endDate).toLocaleDateString() : 'Now'}`,
-          { align: 'center' }
-        );
-        doc.moveDown();
-      }
-
-      doc.fontSize(10).text(`Total Events: ${logs.length}`, { align: 'center' });
-      doc.moveDown(2);
-
-      // Add watermark
-      doc.fontSize(8).fillColor('gray')
-        .text('CONFIDENTIAL - AUDIT TRAIL REPORT', { align: 'center' });
-      doc.fillColor('black');
-      doc.moveDown();
-
-      // Add logs
-      logs.forEach((log, index) => {
-        if (doc.y > 700) {
-          doc.addPage();
-        }
-
-        doc.fontSize(10).font('Helvetica-Bold')
-          .text(`${index + 1}. ${log.action}`, { continued: false });
-        
-        doc.fontSize(9).font('Helvetica')
-          .text(`   Time: ${new Date(log.performedAt).toLocaleString()}`)
-          .text(`   Status: ${log.status}`)
-          .text(`   Resource: ${log.resourceType || 'N/A'} ${log.resourceId ? `(${log.resourceId})` : ''}`)
-          .text(`   IP Address: ${log.ipAddress || 'Unknown'}`)
-          .text(`   Request ID: ${log.requestId || 'N/A'}`);
-
-        if (log.delta && Object.keys(log.delta.modified || {}).length > 0) {
-          doc.text(`   Changes: ${Object.keys(log.delta.modified).join(', ')}`);
-        }
-
-        if (log.deltaHash) {
-          doc.fontSize(7).fillColor('blue')
-            .text(`   Hash: ${log.deltaHash.substring(0, 16)}...`, { link: null });
-          doc.fillColor('black');
-        }
-
-        doc.moveDown(0.5);
-      });
-
-      // Add footer
-      doc.fontSize(8).fillColor('gray')
-        .text('This document contains confidential information. Unauthorized access or distribution is prohibited.', 
-          50, doc.page.height - 50, { align: 'center', width: doc.page.width - 100 });
-
-      // Finalize PDF
-      doc.end();
-
-    } catch (error) {
-      console.error('Error exporting audit logs to PDF:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          success: false,
-          message: 'Failed to export audit logs',
-          error: error.message
-        });
-      }
-    }
-  }
-);
-
-/**
- * @route   GET /api/audit/action-types
- * @desc    Get list of available audit action types
- * @access  Private
- */
-router.get('/action-types', protect, (req, res) => {
-  res.json({
-    success: true,
-    data: Object.values(AuditActions)
+  // Save forensic query
+  await db.insert(forensicQueries).values({
+    userId: req.user.id,
+    queryType: 'replay',
+    targetDate: date,
+    queryParams: { targetDate },
+    resultSummary: {
+      expensesCount: result.state.expenses?.length || 0,
+      goalsCount: result.state.goals?.length || 0,
+      categoriesCount: result.state.categories?.length || 0,
+    },
+    executionTime: result.metadata.executionTime,
+    status: 'completed',
+    completedAt: new Date(),
   });
-});
+
+  res.success(result, 'State replayed successfully');
+}));
+
+/**
+ * @route   POST /api/audit/trace/:resourceId
+ * @desc    Trace a specific transaction's history
+ * @access  Private
+ */
+router.post('/trace/:resourceId', protect, asyncHandler(async (req, res) => {
+  const { resourceId } = req.params;
+
+  const trace = await replayEngine.traceTransaction(req.user.id, resourceId);
+
+  res.success(trace, 'Transaction traced successfully');
+}));
+
+/**
+ * @route   POST /api/audit/explain/:resourceId
+ * @desc    Get AI explanation of a transaction chain
+ * @access  Private
+ */
+router.post('/explain/:resourceId', protect, asyncHandler(async (req, res) => {
+  const { resourceId } = req.params;
+
+  const explanation = await forensicAI.explainTransactionChain(req.user.id, resourceId);
+
+  // Save forensic query
+  await db.insert(forensicQueries).values({
+    userId: req.user.id,
+    queryType: 'explain',
+    targetResourceId: resourceId,
+    queryParams: { resourceId },
+    aiExplanation: explanation,
+    status: 'completed',
+    completedAt: new Date(),
+  });
+
+  res.success({ explanation }, 'Explanation generated successfully');
+}));
+
+/**
+ * @route   POST /api/audit/forensic-report
+ * @desc    Generate comprehensive forensic report for a period
+ * @access  Private
+ */
+router.post('/forensic-report', protect, asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.body;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return res.status(400).json({ success: false, message: 'Invalid date format' });
+  }
+
+  const report = await forensicAI.generateForensicReport(req.user.id, start, end);
+
+  res.success(report, 'Forensic report generated successfully');
+}));
+
+/**
+ * @route   POST /api/audit/analyze-discrepancy
+ * @desc    Analyze balance discrepancy between two dates
+ * @access  Private
+ */
+router.post('/analyze-discrepancy', protect, asyncHandler(async (req, res) => {
+  const { date1, date2 } = req.body;
+
+  if (!date1 || !date2) {
+    return res.status(400).json({ success: false, message: 'date1 and date2 are required' });
+  }
+
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+    return res.status(400).json({ success: false, message: 'Invalid date format' });
+  }
+
+  const analysis = await forensicAI.analyzeBalanceDiscrepancy(req.user.id, d1, d2);
+
+  res.success(analysis, 'Discrepancy analysis completed');
+}));
+
+/**
+ * @route   GET /api/audit/queries
+ * @desc    Get user's forensic query history
+ * @access  Private
+ */
+router.get('/queries', protect, asyncHandler(async (req, res) => {
+  const { limit = 20 } = req.query;
+
+  const queries = await db
+    .select()
+    .from(forensicQueries)
+    .where(eq(forensicQueries.userId, req.user.id))
+    .orderBy(desc(forensicQueries.createdAt))
+    .limit(parseInt(limit));
+
+  res.success(queries, 'Forensic queries retrieved successfully');
+}));
+
+/**
+ * @route   GET /api/audit/deltas
+ * @desc    Get recent state deltas for the user
+ * @access  Private
+ */
+router.get('/deltas', protect, asyncHandler(async (req, res) => {
+  const { limit = 50, resourceType } = req.query;
+
+  const conditions = [eq(stateDeltas.userId, req.user.id)];
+  if (resourceType) {
+    conditions.push(eq(stateDeltas.resourceType, resourceType));
+  }
+
+  const deltas = await db
+    .select()
+    .from(stateDeltas)
+    .where(and(...conditions))
+    .orderBy(desc(stateDeltas.createdAt))
+    .limit(parseInt(limit));
+
+  res.success(deltas, 'State deltas retrieved successfully');
+}));
+
+/**
+ * @route   GET /api/audit/balance-history
+ * @desc    Get balance at specific points in time
+ * @access  Private
+ */
+router.get('/balance-history', protect, asyncHandler(async (req, res) => {
+  const { dates } = req.query; // Comma-separated dates
+
+  if (!dates) {
+    return res.status(400).json({ success: false, message: 'dates parameter is required' });
+  }
+
+  const dateArray = dates.split(',').map(d => new Date(d.trim()));
+  const balances = [];
+
+  for (const date of dateArray) {
+    if (!isNaN(date.getTime())) {
+      const balance = await replayEngine.calculateBalanceAtDate(req.user.id, date);
+      balances.push({ date, balance });
+    }
+  }
+
+  res.success(balances, 'Balance history retrieved successfully');
+}));
 
 export default router;

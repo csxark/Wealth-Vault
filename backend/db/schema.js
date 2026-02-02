@@ -259,6 +259,54 @@ export const exchangeRates = pgTable('exchange_rates', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Audit Snapshots Table (for Time Machine feature)
+export const auditSnapshots = pgTable('audit_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: timestamp('snapshot_date').notNull(),
+    totalBalance: numeric('total_balance', { precision: 12, scale: 2 }).notNull(),
+    accountState: jsonb('account_state').notNull(), // Complete state: { expenses, goals, categories, budgets }
+    transactionCount: integer('transaction_count').default(0),
+    checksum: text('checksum').notNull(), // SHA-256 hash for integrity verification
+    compressionType: text('compression_type').default('gzip'), // Compression method used
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// State Deltas Table (for incremental audit tracking)
+export const stateDeltas = pgTable('state_deltas', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceType: text('resource_type').notNull(), // 'expense', 'goal', 'category', 'budget'
+    resourceId: uuid('resource_id').notNull(),
+    operation: text('operation').notNull(), // 'CREATE', 'UPDATE', 'DELETE'
+    beforeState: jsonb('before_state'), // State before the change
+    afterState: jsonb('after_state'), // State after the change
+    changedFields: jsonb('changed_fields').default([]), // Array of field names that changed
+    triggeredBy: text('triggered_by').default('user'), // 'user', 'system', 'api', 'cron'
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    sessionId: text('session_id'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Forensic Queries Table (for tracking replay requests)
+export const forensicQueries = pgTable('forensic_queries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    queryType: text('query_type').notNull(), // 'replay', 'trace', 'explain'
+    targetDate: timestamp('target_date'), // For time-travel queries
+    targetResourceId: uuid('target_resource_id'), // For transaction tracing
+    queryParams: jsonb('query_params').default({}),
+    resultSummary: jsonb('result_summary'), // Cached result summary
+    aiExplanation: text('ai_explanation'), // Gemini-generated natural language explanation
+    executionTime: integer('execution_time'), // Milliseconds
+    status: text('status').default('pending'), // 'pending', 'completed', 'failed'
+    createdAt: timestamp('created_at').defaultNow(),
+    completedAt: timestamp('completed_at'),
+});
+
 // Forecast Snapshots Table (for Cash Flow Forecasting)
 export const forecastSnapshots = pgTable('forecast_snapshots', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -319,7 +367,7 @@ export const auditLogs = pgTable('audit_logs', {
     deltaHash: text('delta_hash'), // Cryptographic hash of the delta (SHA-256)
     metadata: jsonb('metadata').default({}),
     status: text('status').default('success'), // success, failure
-   ipAddress: text('ip_address'),
+    ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
     sessionId: text('session_id'),
     requestId: text('request_id'), // For correlation
@@ -651,6 +699,31 @@ export const disputedTransactionsRelations = relations(disputedTransactions, ({ 
     }),
     assignee: one(users, {
         fields: [disputedTransactions.assignedTo],
+        references: [users.id],
+    }),
+}));
+
+
+// Audit Snapshots Relations
+export const auditSnapshotsRelations = relations(auditSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [auditSnapshots.userId],
+        references: [users.id],
+    }),
+}));
+
+// State Deltas Relations
+export const stateDeltasRelations = relations(stateDeltas, ({ one }) => ({
+    user: one(users, {
+        fields: [stateDeltas.userId],
+        references: [users.id],
+    }),
+}));
+
+// Forensic Queries Relations
+export const forensicQueriesRelations = relations(forensicQueries, ({ one }) => ({
+    user: one(users, {
+        fields: [forensicQueries.userId],
         references: [users.id],
     }),
 }));

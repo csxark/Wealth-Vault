@@ -22,7 +22,6 @@ import {
 import { requestIdMiddleware, requestLogger, errorLogger, analyticsMiddleware } from "./middleware/requestLogger.js";
 import { performanceMiddleware } from "./services/performanceMonitor.js";
 import { logInfo, logError } from "./utils/logger.js";
-import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
 import { responseWrapper } from "./middleware/responseWrapper.js";
 import { paginationMiddleware } from "./utils/pagination.js";
@@ -46,6 +45,7 @@ import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
+import snapshotGenerator from "./jobs/snapshotGenerator.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 
