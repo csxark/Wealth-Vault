@@ -4,4 +4,6 @@ export default {
   transform: {},
   moduleNameMapper: {},
   verbose: true,
+  setupFilesAfterEnv: ['<rootDir>/test/setup.js'],
+  testTimeout: 10000,
 };
