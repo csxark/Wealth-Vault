@@ -22,7 +22,6 @@ import {
 import { requestIdMiddleware, requestLogger, errorLogger, analyticsMiddleware } from "./middleware/requestLogger.js";
 import { performanceMiddleware } from "./services/performanceMonitor.js";
 import { logInfo, logError } from "./utils/logger.js";
-import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
 import { responseWrapper } from "./middleware/responseWrapper.js";
 import { paginationMiddleware } from "./utils/pagination.js";
