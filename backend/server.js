@@ -44,6 +44,7 @@ import securityRoutes from "./routes/security.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
+import snapshotGenerator from "./jobs/snapshotGenerator.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 
@@ -245,6 +246,7 @@ app.listen(PORT, () => {
   scheduleMonthlyReports();
   scheduleWeeklyHabitDigest();
   scheduleTaxReminders();
+  snapshotGenerator.initialize();
 
   // Initialize default tax categories (runs once, safe to call multiple times)
   initializeDefaultTaxCategories().catch(err => {
