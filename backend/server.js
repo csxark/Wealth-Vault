@@ -44,6 +44,7 @@ import securityRoutes from "./routes/security.js";
 import subscriptionRoutes from "./routes/subscriptions.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
+import fxRateSync from "./jobs/fxRateSync.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
@@ -249,6 +250,7 @@ app.listen(PORT, () => {
   scheduleWeeklyHabitDigest();
   scheduleTaxReminders();
   subscriptionMonitor.initialize();
+  fxRateSync.start();
 
   // Initialize default tax categories (runs once, safe to call multiple times)
   initializeDefaultTaxCategories().catch(err => {
