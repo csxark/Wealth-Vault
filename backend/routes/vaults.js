@@ -1,9 +1,9 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc, sum, count } from "drizzle-orm";
 import crypto from "crypto";
 import db from "../config/db.js";
-import { vaults, vaultMembers, vaultInvites, users } from "../db/schema.js";
+import { vaults, vaultMembers, vaultInvites, users, expenseShares, reimbursements, familySettings, expenses, goals } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { checkVaultAccess, isVaultOwner } from "../middleware/vaultAuth.js";
 import { asyncHandler, ValidationError, NotFoundError, ConflictError } from "../middleware/errorHandler.js";

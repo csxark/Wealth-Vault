@@ -1538,6 +1538,243 @@ export const subscriptionsAPI = {
   },
 };
 
+// Vault/Family API
+const vaultAPI = {
+  // Get user vaults
+  getVaults: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        name: string;
+        description: string;
+        ownerId: string;
+        currency: string;
+        role: string;
+        joinedAt: string;
+      }>;
+    }>('/vaults');
+  },
+
+  // Create vault
+  createVault: async (data: { name: string; description?: string; currency?: string }) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      data: { id: string; name: string; description: string; ownerId: string; currency: string };
+    }>('/vaults', {
+      method: 'POST',
+      data,
+    });
+  },
+
+  // Get vault members
+  getVaultMembers: async (vaultId: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        role: string;
+        joinedAt: string;
+      }>;
+    }>(`/vaults/${vaultId}/members`);
+  },
+
+  // Invite member to vault
+  inviteMember: async (vaultId: string, data: { email: string; role?: string }) => {
+    return apiRequest<{
+      success: boolean;
+      data: { inviteToken: string };
+    }>(`/vaults/${vaultId}/invite`, {
+      method: 'POST',
+      data,
+    });
+  },
+
+  // Accept vault invitation
+  acceptInvite: async (data: { token: string }) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+    }>('/vaults/accept-invite', {
+      method: 'POST',
+      data,
+    });
+  },
+
+  // Split expense among family members
+  splitExpense: async (vaultId: string, data: {
+    expenseId: string;
+    shares: Array<{
+      userId: string;
+      shareAmount: number;
+      sharePercentage?: number;
+      notes?: string;
+    }>;
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      data: Array<{ id: string; userId: string; shareAmount: number; sharePercentage: number }>;
+    }>(`/vaults/${vaultId}/expense-shares`, {
+      method: 'POST',
+      data,
+    });
+  },
+
+  // Get expense shares for vault
+  getExpenseShares: async (vaultId: string, expenseId?: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        expenseId: string;
+        userId: string;
+        shareAmount: number;
+        sharePercentage: number;
+        isPaid: boolean;
+        paidAt?: string;
+        notes?: string;
+      }>;
+    }>(`/vaults/${vaultId}/expense-shares${expenseId ? `?expenseId=${expenseId}` : ''}`);
+  },
+
+  // Create reimbursement request
+  createReimbursement: async (vaultId: string, data: {
+    fromUserId: string;
+    toUserId: string;
+    amount: number;
+    currency: string;
+    description: string;
+    expenseId?: string;
+    dueDate?: string;
+    notes?: string;
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      data: { id: string; status: string; createdAt: string };
+    }>(`/vaults/${vaultId}/reimbursements`, {
+      method: 'POST',
+      data,
+    });
+  },
+
+  // Get reimbursements for vault
+  getReimbursements: async (vaultId: string, status?: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        fromUserId: string;
+        toUserId: string;
+        amount: number;
+        currency: string;
+        description: string;
+        status: string;
+        expenseId?: string;
+        completedAt?: string;
+        dueDate?: string;
+        notes?: string;
+        createdAt: string;
+      }>;
+    }>(`/vaults/${vaultId}/reimbursements${status ? `?status=${status}` : ''}`);
+  },
+
+  // Mark reimbursement as completed
+  completeReimbursement: async (vaultId: string, reimbursementId: string) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+    }>(`/vaults/${vaultId}/reimbursements/${reimbursementId}/complete`, {
+      method: 'PUT',
+    });
+  },
+
+  // Get family financial health score
+  getFamilyHealth: async (vaultId: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        vaultId: string;
+        overallScore: number;
+        breakdown: {
+          expenseManagement: number;
+          expenseSharing: number;
+          goalAchievement: number;
+          individualHealth: number;
+        };
+        metrics: {
+          memberCount: number;
+          totalExpenses: number;
+          sharedExpenses: number;
+          pendingReimbursements: number;
+          totalOwed: number;
+          activeGoals: number;
+          completedGoals: number;
+        };
+        categoryBreakdown: Array<{
+          category: string;
+          totalSpent: number;
+          percentage: number;
+        }>;
+        recommendations: string[];
+        calculatedAt: string;
+      };
+    }>(`/vaults/${vaultId}/family-health`);
+  },
+
+  // Get family dashboard data
+  getFamilyDashboard: async (vaultId: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        vault: {
+          id: string;
+          name: string;
+          description: string;
+          currency: string;
+          memberCount: number;
+        };
+        recentExpenses: Array<{
+          id: string;
+          amount: number;
+          description: string;
+          category: string;
+          date: string;
+          userId: string;
+          userName: string;
+          isShared: boolean;
+        }>;
+        pendingReimbursements: Array<{
+          id: string;
+          fromUser: string;
+          toUser: string;
+          amount: number;
+          description: string;
+          dueDate?: string;
+        }>;
+        familyGoals: Array<{
+          id: string;
+          title: string;
+          targetAmount: number;
+          currentAmount: number;
+          status: string;
+          progress: number;
+        }>;
+        monthlySpending: {
+          total: number;
+          byCategory: Array<{ category: string; amount: number; percentage: number }>;
+          trend: Array<{ month: string; amount: number }>;
+        };
+      };
+    }>(`/vaults/${vaultId}/family-dashboard`);
+  },
+};
+
 // Export all APIs
 export default {
   auth: authAPI,
@@ -1548,4 +1785,5 @@ export default {
   investments: investmentsAPI,
   subscriptions: subscriptionsAPI,
   health: healthAPI,
+  vaults: vaultAPI,
 };

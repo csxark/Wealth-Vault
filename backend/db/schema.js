@@ -123,6 +123,64 @@ export const vaultInvites = pgTable('vault_invites', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Expense Shares Table (for splitting expenses among family members)
+export const expenseShares = pgTable('expense_shares', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    shareAmount: numeric('share_amount', { precision: 12, scale: 2 }).notNull(),
+    sharePercentage: doublePrecision('share_percentage'), // Optional percentage split
+    isPaid: boolean('is_paid').default(false),
+    paidAt: timestamp('paid_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Reimbursements Table (for tracking owed and settled amounts)
+export const reimbursements = pgTable('reimbursements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    fromUserId: uuid('from_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    toUserId: uuid('to_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    description: text('description').notNull(),
+    status: text('status').default('pending'), // pending, completed, cancelled
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'set null' }), // Optional link to original expense
+    completedAt: timestamp('completed_at'),
+    dueDate: timestamp('due_date'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Family Settings Table (for family-specific configurations)
+export const familySettings = pgTable('family_settings', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull().unique(),
+    familyName: text('family_name'),
+    defaultSplitMethod: text('default_split_method').default('equal'), // equal, percentage, custom
+    currency: text('currency').default('USD'),
+    monthlyBudget: numeric('monthly_budget', { precision: 12, scale: 2 }),
+    enableReimbursements: boolean('enable_reimbursements').default(true),
+    enableHealthScoring: boolean('enable_health_scoring').default(true),
+    notificationSettings: jsonb('notification_settings').default({
+        expenseAdded: true,
+        reimbursementDue: true,
+        goalMilestone: true,
+        monthlySummary: true
+    }),
+    privacySettings: jsonb('privacy_settings').default({
+        shareExpenses: 'family', // family, none
+        shareGoals: 'family',
+        shareHealthScore: 'family'
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Goals Table
 export const goals = pgTable('goals', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -475,18 +533,6 @@ export const priceHistory = pgTable('price_history', {
 
 // Relations
 
-export const vaultsRelations = relations(vaults, ({ one, many }) => ({
-    owner: one(users, {
-        fields: [vaults.ownerId],
-        references: [users.id],
-    }),
-    members: many(vaultMembers),
-    expenses: many(expenses),
-    goals: many(goals),
-    invites: many(vaultInvites),
-    reports: many(reports),
-}));
-
 export const reportsRelations = relations(reports, ({ one }) => ({
     user: one(users, {
         fields: [reports.userId],
@@ -550,21 +596,6 @@ export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
     category: one(categories, {
         fields: [subscriptions.categoryId],
         references: [categories.id],
-    }),
-}));
-
-export const expensesRelations = relations(expenses, ({ one }) => ({
-    user: one(users, {
-        fields: [expenses.userId],
-        references: [users.id],
-    }),
-    category: one(categories, {
-        fields: [expenses.categoryId],
-        references: [categories.id],
-    }),
-    vault: one(vaults, {
-        fields: [expenses.vaultId],
-        references: [vaults.id],
     }),
 }));
 
@@ -643,7 +674,84 @@ export const priceHistoryRelations = relations(priceHistory, ({ one }) => ({
     }),
 }));
 
-// Update users relations to include portfolios and subscriptions
+// Family Relations
+export const expenseSharesRelations = relations(expenseShares, ({ one }) => ({
+    expense: one(expenses, {
+        fields: [expenseShares.expenseId],
+        references: [expenses.id],
+    }),
+    vault: one(vaults, {
+        fields: [expenseShares.vaultId],
+        references: [vaults.id],
+    }),
+    user: one(users, {
+        fields: [expenseShares.userId],
+        references: [users.id],
+    }),
+}));
+
+export const reimbursementsRelations = relations(reimbursements, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [reimbursements.vaultId],
+        references: [vaults.id],
+    }),
+    fromUser: one(users, {
+        fields: [reimbursements.fromUserId],
+        references: [users.id],
+        relationName: 'reimbursements_from'
+    }),
+    toUser: one(users, {
+        fields: [reimbursements.toUserId],
+        references: [users.id],
+        relationName: 'reimbursements_to'
+    }),
+    expense: one(expenses, {
+        fields: [reimbursements.expenseId],
+        references: [expenses.id],
+    }),
+}));
+
+export const familySettingsRelations = relations(familySettings, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [familySettings.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+// Update vaults relations to include family tables
+export const vaultsRelations = relations(vaults, ({ one, many }) => ({
+    owner: one(users, {
+        fields: [vaults.ownerId],
+        references: [users.id],
+    }),
+    members: many(vaultMembers),
+    expenses: many(expenses),
+    goals: many(goals),
+    invites: many(vaultInvites),
+    reports: many(reports),
+    expenseShares: many(expenseShares),
+    reimbursements: many(reimbursements),
+    familySettings: one(familySettings),
+}));
+
+// Update expenses relations to include shares
+export const expensesRelations = relations(expenses, ({ one, many }) => ({
+    user: one(users, {
+        fields: [expenses.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [expenses.categoryId],
+        references: [categories.id],
+    }),
+    vault: one(vaults, {
+        fields: [expenses.vaultId],
+        references: [vaults.id],
+    }),
+    shares: many(expenseShares),
+}));
+
+// Update users relations to include portfolios, subscriptions, and family relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
     expenses: many(expenses),
@@ -656,4 +764,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     budgetAlerts: many(budgetAlerts),
     portfolios: many(portfolios),
     subscriptions: many(subscriptions),
+    expenseShares: many(expenseShares),
+    sentReimbursements: many(reimbursements, { relationName: 'reimbursements_from' }),
+    receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
 }));
