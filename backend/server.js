@@ -42,13 +42,16 @@ import currenciesRoutes from "./routes/currencies.js";
 import auditRoutes from "./routes/audit.js";
 import securityRoutes from "./routes/security.js";
 import subscriptionRoutes from "./routes/subscriptions.js";
+import assetRoutes from "./routes/assets.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
 import fxRateSync from "./jobs/fxRateSync.js";
+import valuationUpdater from "./jobs/valuationUpdater.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
+import marketData from "./services/marketData.js";
 
 // Load environment variables
 dotenv.config();
@@ -206,6 +209,7 @@ app.use("/api/currencies", userLimiter, currenciesRoutes);
 app.use("/api/audit", userLimiter, auditRoutes);
 app.use("/api/security", userLimiter, securityRoutes);
 app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
+app.use("/api/assets", userLimiter, assetRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -251,9 +255,14 @@ app.listen(PORT, () => {
   scheduleTaxReminders();
   subscriptionMonitor.initialize();
   fxRateSync.start();
+  valuationUpdater.start();
 
-  // Initialize default tax categories (runs once, safe to call multiple times)
+  // Initialize default tax categories and market indices
   initializeDefaultTaxCategories().catch(err => {
     console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
+  });
+
+  marketData.initializeDefaults().catch(err => {
+    console.warn('⚠️ Market indices initialization skipped:', err.message);
   });
 });

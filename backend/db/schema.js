@@ -739,3 +739,74 @@ export const fxTransactionsRelations = relations(fxTransactions, ({ one }) => ({
         relationName: 'targetWallet',
     }),
 }));
+
+// Fixed Assets (Real Estate, Gold, Art, Vehicles, etc.)
+export const fixedAssets = pgTable('fixed_assets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    category: text('category').notNull(), // 'real_estate', 'vehicle', 'jewelry', 'art', 'collectible', 'other'
+    purchasePrice: numeric('purchase_price', { precision: 12, scale: 2 }).notNull(),
+    purchaseDate: timestamp('purchase_date'),
+    currentValue: numeric('current_value', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    location: text('location'), // For real estate
+    description: text('description'),
+    isLiquid: boolean('is_liquid').default(false),
+    appreciationRate: numeric('appreciation_rate', { precision: 5, scale: 2 }), // Annual %
+    metadata: jsonb('metadata'), // verification docs, insurance info
+    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Asset Valuation History
+export const assetValuations = pgTable('asset_valuations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    assetId: uuid('asset_id').references(() => fixedAssets.id, { onDelete: 'cascade' }).notNull(),
+    value: numeric('value', { precision: 12, scale: 2 }).notNull(),
+    date: timestamp('date').defaultNow(),
+    source: text('source').default('manual'), // 'manual', 'market_adjustment', 'appraisal'
+});
+
+// Simulation Results (Monte Carlo)
+export const simulationResults = pgTable('simulation_results', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scenarioName: text('scenario_name').notNull(),
+    configurations: jsonb('configurations'), // { inflationRate, investmentReturn, timeHorizon }
+    results: jsonb('results'), // { p10, p50, p90, yearlyProjections: [] }
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Market Indices (for reference growth rates)
+export const marketIndices = pgTable('market_indices', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull().unique(), // 'S&P500', 'Gold', 'RealEstate_US'
+    currentValue: numeric('current_value', { precision: 12, scale: 2 }),
+    avgAnnualReturn: numeric('avg_annual_return', { precision: 5, scale: 2 }),
+    volatility: numeric('volatility', { precision: 5, scale: 2 }),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+});
+
+// Asset Relations
+export const fixedAssetsRelations = relations(fixedAssets, ({ one, many }) => ({
+    user: one(users, {
+        fields: [fixedAssets.userId],
+        references: [users.id],
+    }),
+    valuations: many(assetValuations),
+}));
+
+export const assetValuationsRelations = relations(assetValuations, ({ one }) => ({
+    asset: one(fixedAssets, {
+        fields: [assetValuations.assetId],
+        references: [fixedAssets.id],
+    }),
+}));
+
+export const simulationResultsRelations = relations(simulationResults, ({ one }) => ({
+    user: one(users, {
+        fields: [simulationResults.userId],
+        references: [users.id],
+    }),
+}));
