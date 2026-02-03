@@ -847,4 +847,86 @@ export const forensicQueriesRelations = relations(forensicQueries, ({ one }) => 
 }));
 
 // No relations needed for exchangeRates as it's a standalone reference table
+// Multi-Currency Wallets
+export const currencyWallets = pgTable('currency_wallets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    currency: text('currency').notNull(), // 'USD', 'EUR', 'BTC'
+    balance: numeric('balance', { precision: 18, scale: 8 }).default('0'), // High precision for crypto
+    isDefault: boolean('is_default').default(false),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
 
+// FX Transactions (Conversions)
+export const fxTransactions = pgTable('fx_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceWalletId: uuid('source_wallet_id').references(() => currencyWallets.id),
+    targetWalletId: uuid('target_wallet_id').references(() => currencyWallets.id),
+    sourceCurrency: text('source_currency').notNull(),
+    targetCurrency: text('target_currency').notNull(),
+    sourceAmount: numeric('source_amount', { precision: 18, scale: 8 }).notNull(),
+    targetAmount: numeric('target_amount', { precision: 18, scale: 8 }).notNull(),
+    exchangeRate: numeric('exchange_rate', { precision: 18, scale: 8 }).notNull(),
+    fee: numeric('fee', { precision: 12, scale: 2 }).default('0'),
+    status: text('status').default('completed'), // 'pending', 'completed', 'failed'
+    metadata: jsonb('metadata'), // Store arbitrage details if AI triggered
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Real-Time FX Rates Cache
+export const fxRates = pgTable('fx_rates', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    pair: text('pair').notNull().unique(), // 'USD/EUR'
+    rate: numeric('rate', { precision: 18, scale: 8 }).notNull(),
+    change24h: numeric('change_24h', { precision: 5, scale: 2 }).default('0'),
+    volatility: numeric('volatility', { precision: 5, scale: 2 }).default('0'), // High volatility alert
+    lastUpdated: timestamp('last_updated').defaultNow(),
+});
+
+// Arbitrage Opportunities (AI Predictions)
+export const arbitrageOpportunities = pgTable('arbitrage_opportunities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    pair: text('pair').notNull(),
+    type: text('type').notNull(), // 'buy_signal', 'sell_signal'
+    currentRate: numeric('current_rate', { precision: 18, scale: 8 }),
+    predictedRate: numeric('predicted_rate', { precision: 18, scale: 8 }),
+    confidence: numeric('confidence', { precision: 5, scale: 2 }), // 0-100
+    expectedProfit: numeric('expected_profit', { precision: 5, scale: 2 }), // Percentage
+    validUntil: timestamp('valid_until'),
+    status: text('status').default('active'), // 'active', 'expired', 'executed'
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Define Relations
+export const currencyWalletsRelations = relations(currencyWallets, ({ one, many }) => ({
+    user: one(users, {
+        fields: [currencyWallets.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [currencyWallets.vaultId],
+        references: [vaults.id],
+    }),
+    transactionsFrom: many(fxTransactions, { relationName: 'sourceWallet' }),
+    transactionsTo: many(fxTransactions, { relationName: 'targetWallet' }),
+}));
+
+export const fxTransactionsRelations = relations(fxTransactions, ({ one }) => ({
+    user: one(users, {
+        fields: [fxTransactions.userId],
+        references: [users.id],
+    }),
+    sourceWallet: one(currencyWallets, {
+        fields: [fxTransactions.sourceWalletId],
+        references: [currencyWallets.id],
+        relationName: 'sourceWallet',
+    }),
+    targetWallet: one(currencyWallets, {
+        fields: [fxTransactions.targetWalletId],
+        references: [currencyWallets.id],
+        relationName: 'targetWallet',
+    }),
+}));

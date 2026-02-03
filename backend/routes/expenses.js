@@ -12,6 +12,7 @@ import { initializeRecurringExpense, disableRecurring } from "../services/expens
 import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
 import { securityInterceptor, auditBulkOperation } from "../middleware/auditMiddleware.js";
 import { logAudit, AuditActions, ResourceTypes } from "../services/auditService.js";
+import fxEngine from "../services/fxEngine.js";
 import subscriptionDetector from "../services/subscriptionDetector.js";
 import { guardExpenseCreation } from "../middleware/securityGuard.js";
 
@@ -256,6 +257,7 @@ router.post(
         recurringPattern,
         notes,
         subcategory,
+        currency = 'USD',
       } = req.body;
 
       // Verify category (If personal, must be owned by user. If vault, should we allow shared categories? For now, user's categories are personal)
@@ -300,6 +302,7 @@ router.post(
           recurringPattern,
           notes,
           subcategory,
+          currency,
         })
         .returning();
 
@@ -329,7 +332,15 @@ router.post(
       }
 
       // Proactively monitor budget thresholds
-      await budgetEngine.monitorBudget(req.user.id, category);
+      let budgetAmount = parseFloat(amount);
+      if (currency !== (req.user.currency || 'USD')) {
+        try {
+          budgetAmount = await fxEngine.convertAmount(parseFloat(amount), currency, req.user.currency || 'USD');
+        } catch (e) {
+          console.warn('FX conversion failed for budget check', e);
+        }
+      }
+      await budgetEngine.monitorBudget(req.user.id, category, budgetAmount);
 
       // Match expense to subscription if possible
       try {
