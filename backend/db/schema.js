@@ -663,6 +663,18 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
     }),
     expenses: many(expenses),
     goals: many(goals),
+    subscriptions: many(subscriptions),
+}));
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+    user: one(users, {
+        fields: [subscriptions.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [subscriptions.categoryId],
+        references: [categories.id],
+    }),
 }));
 
 export const expensesRelations = relations(expenses, ({ one, many }) => ({
