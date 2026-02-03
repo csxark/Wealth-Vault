@@ -333,6 +333,112 @@ export const financialHealthScores = pgTable('financial_health_scores', {
     calculatedAt: timestamp('calculated_at').defaultNow(),
 });
 
+// Portfolios Table
+export const portfolios = pgTable('portfolios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    currency: text('currency').default('USD'),
+    totalValue: numeric('total_value', { precision: 15, scale: 2 }).default('0'),
+    totalCost: numeric('total_cost', { precision: 15, scale: 2 }).default('0'),
+    totalGainLoss: numeric('total_gain_loss', { precision: 15, scale: 2 }).default('0'),
+    totalGainLossPercent: doublePrecision('total_gain_loss_percent').default(0),
+    isActive: boolean('is_active').default(true),
+    riskTolerance: text('risk_tolerance').default('moderate'), // conservative, moderate, aggressive
+    investmentStrategy: text('investment_strategy'), // growth, income, balanced, etc.
+    targetAllocation: jsonb('target_allocation').default({}), // { 'stocks': 60, 'bonds': 30, 'cash': 10 }
+    metadata: jsonb('metadata').default({
+        lastUpdated: null,
+        performanceHistory: [],
+        rebalancingNeeded: false
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Investments Table
+export const investments = pgTable('investments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    symbol: text('symbol').notNull(), // AAPL, GOOGL, etc.
+    name: text('name').notNull(), // Apple Inc., Alphabet Inc.
+    type: text('type').notNull(), // stock, etf, mutual_fund, bond, crypto
+    assetClass: text('asset_class').default('equity'), // equity, fixed_income, alternative, cash
+    sector: text('sector'), // technology, healthcare, financials, etc.
+    country: text('country').default('US'),
+    currency: text('currency').default('USD'),
+    quantity: numeric('quantity', { precision: 15, scale: 6 }).notNull(),
+    averageCost: numeric('average_cost', { precision: 12, scale: 4 }).notNull(),
+    currentPrice: numeric('current_price', { precision: 12, scale: 4 }),
+    marketValue: numeric('market_value', { precision: 15, scale: 2 }),
+    totalCost: numeric('total_cost', { precision: 15, scale: 2 }),
+    unrealizedGainLoss: numeric('unrealized_gain_loss', { precision: 15, scale: 2 }),
+    unrealizedGainLossPercent: doublePrecision('unrealized_gain_loss_percent'),
+    dividendYield: doublePrecision('dividend_yield'),
+    peRatio: doublePrecision('pe_ratio'),
+    marketCap: numeric('market_cap', { precision: 18, scale: 2 }),
+    lastPriceUpdate: timestamp('last_price_update'),
+    isActive: boolean('is_active').default(true),
+    tags: jsonb('tags').default([]),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({
+        exchange: null,
+        cusip: null,
+        isin: null,
+        lastDividend: null,
+        dividendFrequency: null
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Investment Transactions Table
+export const investmentTransactions = pgTable('investment_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    type: text('type').notNull(), // buy, sell, dividend, split, fee
+    quantity: numeric('quantity', { precision: 15, scale: 6 }).notNull(),
+    price: numeric('price', { precision: 12, scale: 4 }).notNull(),
+    totalAmount: numeric('total_amount', { precision: 15, scale: 2 }).notNull(),
+    fees: numeric('fees', { precision: 10, scale: 2 }).default('0'),
+    currency: text('currency').default('USD'),
+    exchangeRate: doublePrecision('exchange_rate').default(1),
+    date: timestamp('date').defaultNow().notNull(),
+    broker: text('broker'),
+    orderId: text('order_id'),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({
+        settlementDate: null,
+        commission: 0,
+        taxes: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Price History Table
+export const priceHistory = pgTable('price_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    symbol: text('symbol').notNull(),
+    date: timestamp('date').notNull(),
+    open: numeric('open', { precision: 12, scale: 4 }),
+    high: numeric('high', { precision: 12, scale: 4 }),
+    low: numeric('low', { precision: 12, scale: 4 }),
+    close: numeric('close', { precision: 12, scale: 4 }).notNull(),
+    volume: integer('volume'),
+    adjustedClose: numeric('adjusted_close', { precision: 12, scale: 4 }),
+    dividend: numeric('dividend', { precision: 10, scale: 4 }).default('0'),
+    splitRatio: doublePrecision('split_ratio').default(1),
+    currency: text('currency').default('USD'),
+    source: text('source').default('yahoo'), // yahoo, alpha_vantage, manual
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -457,3 +563,61 @@ export const tokenBlacklistRelations = relations(tokenBlacklist, ({ one }) => ({
 }));
 
 // No relations needed for exchangeRates as it's a standalone reference table
+
+// Investment Relations
+export const portfoliosRelations = relations(portfolios, ({ one, many }) => ({
+    user: one(users, {
+        fields: [portfolios.userId],
+        references: [users.id],
+    }),
+    investments: many(investments),
+}));
+
+export const investmentsRelations = relations(investments, ({ one, many }) => ({
+    portfolio: one(portfolios, {
+        fields: [investments.portfolioId],
+        references: [portfolios.id],
+    }),
+    user: one(users, {
+        fields: [investments.userId],
+        references: [users.id],
+    }),
+    transactions: many(investmentTransactions),
+    priceHistory: many(priceHistory),
+}));
+
+export const investmentTransactionsRelations = relations(investmentTransactions, ({ one }) => ({
+    investment: one(investments, {
+        fields: [investmentTransactions.investmentId],
+        references: [investments.id],
+    }),
+    portfolio: one(portfolios, {
+        fields: [investmentTransactions.portfolioId],
+        references: [portfolios.id],
+    }),
+    user: one(users, {
+        fields: [investmentTransactions.userId],
+        references: [users.id],
+    }),
+}));
+
+export const priceHistoryRelations = relations(priceHistory, ({ one }) => ({
+    investment: one(investments, {
+        fields: [priceHistory.investmentId],
+        references: [investments.id],
+    }),
+}));
+
+// Update users relations to include portfolios
+export const usersRelations = relations(users, ({ many }) => ({
+    categories: many(categories),
+    expenses: many(expenses),
+    goals: many(goals),
+    deviceSessions: many(deviceSessions),
+    vaultMemberships: many(vaultMembers),
+    ownedVaults: many(vaults),
+    securityEvents: many(securityEvents),
+    reports: many(reports),
+    budgetAlerts: many(budgetAlerts),
+    portfolios: many(portfolios),
+}));
