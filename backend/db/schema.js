@@ -810,3 +810,126 @@ export const simulationResultsRelations = relations(simulationResults, ({ one })
         references: [users.id],
     }),
 }));
+
+// Family Roles (Hierarchical Governance)
+export const familyRoles = pgTable('family_roles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    role: text('role').notNull(), // 'owner', 'parent', 'child', 'trustee', 'beneficiary'
+    permissions: jsonb('permissions').default({
+        canApprove: false,
+        canCreateExpense: true,
+        requiresApproval: false,
+        approvalThreshold: 0, // Amount above which approval needed
+        canManageRoles: false,
+        canViewAll: true
+    }),
+    assignedBy: uuid('assigned_by').references(() => users.id),
+    assignedAt: timestamp('assigned_at').defaultNow(),
+    expiresAt: timestamp('expires_at'), // Optional role expiration
+    isActive: boolean('is_active').default(true),
+});
+
+// Approval Requests (Maker-Checker Workflow)
+export const approvalRequests = pgTable('approval_requests', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    requesterId: uuid('requester_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceType: text('resource_type').notNull(), // 'expense', 'goal', 'transfer', 'role_change'
+    resourceId: uuid('resource_id'), // ID of the pending resource
+    action: text('action').notNull(), // 'create', 'update', 'delete'
+    requestData: jsonb('request_data').notNull(), // Full payload of the request
+    amount: numeric('amount', { precision: 12, scale: 2 }), // For expense approvals
+    status: text('status').default('pending'), // 'pending', 'approved', 'rejected', 'auto_approved'
+    approvedBy: uuid('approved_by').references(() => users.id),
+    rejectedBy: uuid('rejected_by').references(() => users.id),
+    approvalReason: text('approval_reason'),
+    rejectionReason: text('rejection_reason'),
+    approvedAt: timestamp('approved_at'),
+    rejectedAt: timestamp('rejected_at'),
+    expiresAt: timestamp('expires_at'), // Auto-reject after X days
+    metadata: jsonb('metadata'), // Voting history, comments
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Inheritance Rules (Digital Will)
+export const inheritanceRules = pgTable('inheritance_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    beneficiaryId: uuid('beneficiary_id').references(() => users.id).notNull(),
+    assetType: text('asset_type'), // 'vault', 'fixed_asset', 'all'
+    assetId: uuid('asset_id'), // Specific asset or null for all
+    distributionPercentage: numeric('distribution_percentage', { precision: 5, scale: 2 }), // % share
+    conditions: jsonb('conditions').default({
+        inactivity threshold: 90, // Days of inactivity
+        requiresProofOfDeath: false,
+        immediateTransfer: false,
+        trusteeApprovalRequired: false
+    }),
+    trusteeId: uuid('trustee_id').references(() => users.id), // Optional executor
+    status: text('status').default('active'), // 'active', 'triggered', 'executed', 'revoked'
+    triggeredAt: timestamp('triggered_at'),
+    executedAt: timestamp('executed_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Inactivity Triggers (Dead Man's Switch Monitoring)
+export const inactivityTriggers = pgTable('inactivity_triggers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    lastSeenAt: timestamp('last_seen_at').defaultNow(),
+    lastActivityType: text('last_activity_type'), // 'login', 'api_call', 'manual_ping'
+    inactivityDays: integer('inactivity_days').default(0),
+    warningsSent: integer('warnings_sent').default(0),
+    lastWarningAt: timestamp('last_warning_at'),
+    status: text('status').default('active'), // 'active', 'warned', 'triggered'
+    triggeredAt: timestamp('triggered_at'),
+    challengeToken: text('challenge_token'), // For proof-of-life verification
+    challengeSentAt: timestamp('challenge_sent_at'),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations for Governance Tables
+export const familyRolesRelations = relations(familyRoles, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [familyRoles.vaultId],
+        references: [vaults.id],
+    }),
+    user: one(users, {
+        fields: [familyRoles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const approvalRequestsRelations = relations(approvalRequests, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [approvalRequests.vaultId],
+        references: [vaults.id],
+    }),
+    requester: one(users, {
+        fields: [approvalRequests.requesterId],
+        references: [users.id],
+    }),
+}));
+
+export const inheritanceRulesRelations = relations(inheritanceRules, ({ one }) => ({
+    user: one(users, {
+        fields: [inheritanceRules.userId],
+        references: [users.id],
+    }),
+    beneficiary: one(users, {
+        fields: [inheritanceRules.beneficiaryId],
+        references: [users.id],
+    }),
+}));
+
+export const inactivityTriggersRelations = relations(inactivityTriggers, ({ one }) => ({
+    user: one(users, {
+        fields: [inactivityTriggers.userId],
+        references: [users.id],
+    }),
+}));

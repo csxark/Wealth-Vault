@@ -97,7 +97,7 @@ class NotificationService {
   async sendBudgetAlert(alertData) {
     const { userId, message, threshold } = alertData;
     const isCritical = threshold >= 100;
-    
+
     await this.sendNotification(userId, {
       title: isCritical ? "🚫 Budget Limit Exceeded" : "⚠️ Budget Warning",
       message,
@@ -150,7 +150,7 @@ class NotificationService {
     const urgency = isOverdue ? `🚨 OVERDUE` : '⏰ Reminder';
     const subject = `${urgency}: Vault Balance in "${vault.name}"`;
     const debtList = breakdown?.owes?.map(d => `<li><strong>${d.user.name}</strong>: ${vault.currency || 'INR'} ${parseFloat(d.amount).toFixed(2)}</li>`).join('') || '';
-    
+
     const htmlMessage = `
         <p>Hello ${user.name},</p>
         <p>This is a ${isOverdue ? '<strong>priority reminder</strong>' : 'friendly reminder'} regarding your outstanding balance in the shared vault <strong>"${vault.name}"</strong>.</p>
@@ -161,7 +161,7 @@ class NotificationService {
         ${debtList ? `<h4>Breakdown:</h4><ul>${debtList}</ul>` : ''}
         <p>Please visit the app to settle your balance.</p>
     `;
-    
+
     await this.sendEmail(user.email, subject, htmlMessage);
   }
 
@@ -181,6 +181,139 @@ class NotificationService {
   async sendEmailAlert(user, data) { return this.sendEmail(user.email, "Wealth Vault Alert", data.message); }
   async storePushNotification(d) { return true; }
   async storeInAppNotification(d) { return true; }
+
+  /**
+   * GOVERNANCE NOTIFICATIONS
+   */
+
+  /**
+   * Notify approver of pending request
+   */
+  async sendApprovalRequestNotification(approverUser, requesterName, vaultName, requestType, amount = null) {
+    const subject = `🔔 Approval Required in "${vaultName}"`;
+    const amountText = amount ? ` for ${amount}` : '';
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Approval Request</h2>
+        <p><strong>${requesterName}</strong> has requested approval for a <strong>${requestType}</strong>${amountText} in the vault <strong>"${vaultName}"</strong>.</p>
+        <p>Please review and approve/reject this request in your Wealth Vault dashboard.</p>
+        <p style="color: #666;">This request will expire in 7 days.</p>
+      </div>
+    `;
+
+    await this.sendEmail(approverUser.email, subject, message);
+    await this.sendNotification(approverUser.id, {
+      title: subject,
+      message: `${requesterName} requested ${requestType} approval in "${vaultName}"`,
+      type: 'approval_request',
+      data: { vault: vaultName, requester: requesterName }
+    });
+  }
+
+  /**
+   * Notify requester of approval/rejection
+   */
+  async sendApprovalDecisionNotification(requesterUser, decision, vaultName, reason = '') {
+    const isApproved = decision === 'approved';
+    const subject = isApproved
+      ? `✅ Request Approved in "${vaultName}"`
+      : `❌ Request Rejected in "${vaultName}"`;
+
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Approval ${isApproved ? 'Granted' : 'Denied'}</h2>
+        <p>Your request in <strong>"${vaultName}"</strong> has been <strong>${decision}</strong>.</p>
+        ${reason ? `<p><em>Reason: ${reason}</em></p>` : ''}
+      </div>
+    `;
+
+    await this.sendEmail(requesterUser.email, subject, message);
+    await this.sendNotification(requesterUser.id, {
+      title: subject,
+      message: `Your request was ${decision}${reason ? `: ${reason}` : ''}`,
+      type: isApproved ? 'approval_granted' : 'approval_denied'
+    });
+  }
+
+  /**
+   * Send proof-of-life challenge
+   */
+  async sendProofOfLifeChallenge(user, token, daysInactive) {
+    const subject = `⚠️ Proof of Life Required - ${daysInactive} Days Inactive`;
+    const verifyLink = `${process.env.FRONTEND_URL}/verify-activity?token=${token}`;
+
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #fff3cd; border: 2px solid #ffc107;">
+        <h2 style="color: #856404;">Activity Verification Required</h2>
+        <p>We noticed you haven't been active on Wealth Vault for <strong>${daysInactive} days</strong>.</p>
+        <p>To prevent your inheritance protocol from being triggered, please verify your activity:</p>
+        <p style="text-align: center; margin: 30px 0;">
+          <a href="${verifyLink}" style="background-color: #ffc107; color: #000; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            VERIFY I'M ACTIVE
+          </a>
+        </p>
+        <p style="color: #666; font-size: 12px;">Or copy this link: ${verifyLink}</p>
+        <p><strong>Important:</strong> If you do not respond, your digital will may be executed according to your inheritance rules.</p>
+      </div>
+    `;
+
+    await this.sendEmail(user.email, subject, message);
+    await this.sendNotification(user.id, {
+      title: subject,
+      message: `Please verify your activity to prevent inheritance protocol activation`,
+      type: 'proof_of_life',
+      data: { daysInactive, token }
+    });
+  }
+
+  /**
+   * Notify beneficiaries of inheritance trigger
+   */
+  async sendInheritanceTriggeredNotification(beneficiaryUser, deceasedName, assetDescription) {
+    const subject = `📜 Inheritance Protocol Activated`;
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f8f9fa; border-left: 4px solid #28a745;">
+        <h2>Digital Will Execution</h2>
+        <p>This is to inform you that an inheritance protocol has been triggered for <strong>${deceasedName}</strong>.</p>
+        <p>According to their digital will, you are designated as a beneficiary for:</p>
+        <blockquote style="background-color: #fff; padding: 15px; border-left: 3px solid #28a745;">
+          ${assetDescription}
+        </blockquote>
+        <p>Please log in to your Wealth Vault account to review the details and complete any required verification.</p>
+        <p style="color: #666;">Our condolences during this time.</p>
+      </div>
+    `;
+
+    await this.sendEmail(beneficiaryUser.email, subject, message);
+    await this.sendNotification(beneficiaryUser.id, {
+      title: subject,
+      message: `You have been designated as a beneficiary in ${deceasedName}'s digital will`,
+      type: 'inheritance_triggered',
+      data: { deceased: deceasedName, asset: assetDescription }
+    });
+  }
+
+  /**
+   * Notify trustee of inheritance requiring approval
+   */
+  async sendTrusteeNotification(trusteeUser, deceasedName, beneficiaryName) {
+    const subject = `⚖️ Trustee Action Required`;
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Trustee Responsibility Activated</h2>
+        <p>As the designated trustee for <strong>${deceasedName}</strong>, your approval is required for the distribution of assets to <strong>${beneficiaryName}</strong>.</p>
+        <p>Please review the inheritance details and approve or reject the distribution in your Wealth Vault dashboard.</p>
+      </div>
+    `;
+
+    await this.sendEmail(trusteeUser.email, subject, message);
+    await this.sendNotification(trusteeUser.id, {
+      title: subject,
+      message: `Trustee approval required for ${deceasedName}'s estate`,
+      type: 'trustee_action',
+      data: { deceased: deceasedName, beneficiary: beneficiaryName }
+    });
+  }
 }
 
 export default new NotificationService();
