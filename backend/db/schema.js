@@ -930,3 +930,293 @@ export const fxTransactionsRelations = relations(fxTransactions, ({ one }) => ({
         relationName: 'targetWallet',
     }),
 }));
+
+// Fixed Assets (Real Estate, Gold, Art, Vehicles, etc.)
+export const fixedAssets = pgTable('fixed_assets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    category: text('category').notNull(), // 'real_estate', 'vehicle', 'jewelry', 'art', 'collectible', 'other'
+    purchasePrice: numeric('purchase_price', { precision: 12, scale: 2 }).notNull(),
+    purchaseDate: timestamp('purchase_date'),
+    currentValue: numeric('current_value', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    location: text('location'), // For real estate
+    description: text('description'),
+    isLiquid: boolean('is_liquid').default(false),
+    appreciationRate: numeric('appreciation_rate', { precision: 5, scale: 2 }), // Annual %
+    metadata: jsonb('metadata'), // verification docs, insurance info
+    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Asset Valuation History
+export const assetValuations = pgTable('asset_valuations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    assetId: uuid('asset_id').references(() => fixedAssets.id, { onDelete: 'cascade' }).notNull(),
+    value: numeric('value', { precision: 12, scale: 2 }).notNull(),
+    date: timestamp('date').defaultNow(),
+    source: text('source').default('manual'), // 'manual', 'market_adjustment', 'appraisal'
+});
+
+// Simulation Results (Monte Carlo)
+export const simulationResults = pgTable('simulation_results', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scenarioName: text('scenario_name').notNull(),
+    configurations: jsonb('configurations'), // { inflationRate, investmentReturn, timeHorizon }
+    results: jsonb('results'), // { p10, p50, p90, yearlyProjections: [] }
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Market Indices (for reference growth rates)
+export const marketIndices = pgTable('market_indices', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull().unique(), // 'S&P500', 'Gold', 'RealEstate_US'
+    currentValue: numeric('current_value', { precision: 12, scale: 2 }),
+    avgAnnualReturn: numeric('avg_annual_return', { precision: 5, scale: 2 }),
+    volatility: numeric('volatility', { precision: 5, scale: 2 }),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+});
+
+// Asset Relations
+export const fixedAssetsRelations = relations(fixedAssets, ({ one, many }) => ({
+    user: one(users, {
+        fields: [fixedAssets.userId],
+        references: [users.id],
+    }),
+    valuations: many(assetValuations),
+}));
+
+export const assetValuationsRelations = relations(assetValuations, ({ one }) => ({
+    asset: one(fixedAssets, {
+        fields: [assetValuations.assetId],
+        references: [fixedAssets.id],
+    }),
+}));
+
+export const simulationResultsRelations = relations(simulationResults, ({ one }) => ({
+    user: one(users, {
+        fields: [simulationResults.userId],
+        references: [users.id],
+    }),
+}));
+
+// Family Roles (Hierarchical Governance)
+export const familyRoles = pgTable('family_roles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    role: text('role').notNull(), // 'owner', 'parent', 'child', 'trustee', 'beneficiary'
+    permissions: jsonb('permissions').default({
+        canApprove: false,
+        canCreateExpense: true,
+        requiresApproval: false,
+        approvalThreshold: 0, // Amount above which approval needed
+        canManageRoles: false,
+        canViewAll: true
+    }),
+    assignedBy: uuid('assigned_by').references(() => users.id),
+    assignedAt: timestamp('assigned_at').defaultNow(),
+    expiresAt: timestamp('expires_at'), // Optional role expiration
+    isActive: boolean('is_active').default(true),
+});
+
+// Approval Requests (Maker-Checker Workflow)
+export const approvalRequests = pgTable('approval_requests', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    requesterId: uuid('requester_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceType: text('resource_type').notNull(), // 'expense', 'goal', 'transfer', 'role_change'
+    resourceId: uuid('resource_id'), // ID of the pending resource
+    action: text('action').notNull(), // 'create', 'update', 'delete'
+    requestData: jsonb('request_data').notNull(), // Full payload of the request
+    amount: numeric('amount', { precision: 12, scale: 2 }), // For expense approvals
+    status: text('status').default('pending'), // 'pending', 'approved', 'rejected', 'auto_approved'
+    approvedBy: uuid('approved_by').references(() => users.id),
+    rejectedBy: uuid('rejected_by').references(() => users.id),
+    approvalReason: text('approval_reason'),
+    rejectionReason: text('rejection_reason'),
+    approvedAt: timestamp('approved_at'),
+    rejectedAt: timestamp('rejected_at'),
+    expiresAt: timestamp('expires_at'), // Auto-reject after X days
+    metadata: jsonb('metadata'), // Voting history, comments
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Inheritance Rules (Digital Will)
+export const inheritanceRules = pgTable('inheritance_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    beneficiaryId: uuid('beneficiary_id').references(() => users.id).notNull(),
+    assetType: text('asset_type'), // 'vault', 'fixed_asset', 'all'
+    assetId: uuid('asset_id'), // Specific asset or null for all
+    distributionPercentage: numeric('distribution_percentage', { precision: 5, scale: 2 }), // % share
+    conditions: jsonb('conditions').default({
+        inactivity threshold: 90, // Days of inactivity
+        requiresProofOfDeath: false,
+        immediateTransfer: false,
+        trusteeApprovalRequired: false
+    }),
+    trusteeId: uuid('trustee_id').references(() => users.id), // Optional executor
+    status: text('status').default('active'), // 'active', 'triggered', 'executed', 'revoked'
+    triggeredAt: timestamp('triggered_at'),
+    executedAt: timestamp('executed_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Inactivity Triggers (Dead Man's Switch Monitoring)
+export const inactivityTriggers = pgTable('inactivity_triggers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    lastSeenAt: timestamp('last_seen_at').defaultNow(),
+    lastActivityType: text('last_activity_type'), // 'login', 'api_call', 'manual_ping'
+    inactivityDays: integer('inactivity_days').default(0),
+    warningsSent: integer('warnings_sent').default(0),
+    lastWarningAt: timestamp('last_warning_at'),
+    status: text('status').default('active'), // 'active', 'warned', 'triggered'
+    triggeredAt: timestamp('triggered_at'),
+    challengeToken: text('challenge_token'), // For proof-of-life verification
+    challengeSentAt: timestamp('challenge_sent_at'),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations for Governance Tables
+export const familyRolesRelations = relations(familyRoles, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [familyRoles.vaultId],
+        references: [vaults.id],
+    }),
+    user: one(users, {
+        fields: [familyRoles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const approvalRequestsRelations = relations(approvalRequests, ({ one }) => ({
+    vault: one(vaults, {
+        fields: [approvalRequests.vaultId],
+        references: [vaults.id],
+    }),
+    requester: one(users, {
+        fields: [approvalRequests.requesterId],
+        references: [users.id],
+    }),
+}));
+
+export const inheritanceRulesRelations = relations(inheritanceRules, ({ one }) => ({
+    user: one(users, {
+        fields: [inheritanceRules.userId],
+        references: [users.id],
+    }),
+    beneficiary: one(users, {
+        fields: [inheritanceRules.beneficiaryId],
+        references: [users.id],
+    }),
+}));
+
+export const inactivityTriggersRelations = relations(inactivityTriggers, ({ one }) => ({
+    user: one(users, {
+        fields: [inactivityTriggers.userId],
+        references: [users.id],
+    }),
+}));
+
+// Tax Profiles (User Tax Configuration)
+export const taxProfiles = pgTable('tax_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    country: text('country').default('US'),
+    filingStatus: text('filing_status').default('single'), // 'single', 'married_joint', 'married_separate', 'head_of_household'
+    taxYear: integer('tax_year').notNull(),
+    annualIncome: numeric('annual_income', { precision: 12, scale: 2 }),
+    standardDeduction: numeric('standard_deduction', { precision: 12, scale: 2 }),
+    useItemizedDeductions: boolean('use_itemized_deductions').default(false),
+    stateCode: text('state_code'), // 'CA', 'NY', etc.
+    taxBracketData: jsonb('tax_bracket_data'), // Cached bracket info
+    lastCalculated: timestamp('last_calculated'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Tax Brackets (Configurable Tax Rates)
+export const taxBrackets = pgTable('tax_brackets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    country: text('country').default('US'),
+    taxYear: integer('tax_year').notNull(),
+    filingStatus: text('filing_status').notNull(),
+    bracketLevel: integer('bracket_level').notNull(), // 1, 2, 3...
+    minIncome: numeric('min_income', { precision: 12, scale: 2 }).notNull(),
+    maxIncome: numeric('max_income', { precision: 12, scale: 2 }), // NULL for highest bracket
+    rate: numeric('rate', { precision: 5, scale: 2 }).notNull(), // Percentage
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tax Deductions (AI-Detected & Manual)
+export const taxDeductions = pgTable('tax_deductions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+    taxYear: integer('tax_year').notNull(),
+    category: text('category').notNull(), // 'business_expense', 'medical', 'charitable', 'mortgage_interest', 'education'
+    description: text('description'),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    deductionType: text('deduction_type').default('itemized'), // 'standard', 'itemized', 'above_the_line'
+    aiDetected: boolean('ai_detected').default(false),
+    confidence: doublePrecision('confidence').default(0), // AI confidence 0-1
+    aiReasoning: text('ai_reasoning'), // Gemini's explanation
+    status: text('status').default('pending'), // 'pending', 'approved', 'rejected', 'claimed'
+    approvedBy: uuid('approved_by').references(() => users.id),
+    approvedAt: timestamp('approved_at'),
+    metadata: jsonb('metadata'), // Receipt info, notes
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tax Reports (Generated Tax Summaries)
+export const taxReports = pgTable('tax_reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    taxYear: integer('tax_year').notNull(),
+    reportType: text('report_type').default('annual'), // 'quarterly', 'annual', 'estimated'
+    totalIncome: numeric('total_income', { precision: 12, scale: 2 }),
+    totalDeductions: numeric('total_deductions', { precision: 12, scale: 2 }),
+    taxableIncome: numeric('taxable_income', { precision: 12, scale: 2 }),
+    totalTaxOwed: numeric('total_tax_owed', { precision: 12, scale: 2 }),
+    effectiveTaxRate: numeric('effective_tax_rate', { precision: 5, scale: 2 }),
+    marginalTaxRate: numeric('marginal_tax_rate', { precision: 5, scale: 2 }),
+    estimatedRefund: numeric('estimated_refund', { precision: 12, scale: 2 }),
+    breakdown: jsonb('breakdown'), // Detailed calculations
+    pdfUrl: text('pdf_url'),
+    status: text('status').default('draft'), // 'draft', 'final', 'filed'
+    generatedAt: timestamp('generated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tax Relations
+export const taxProfilesRelations = relations(taxProfiles, ({ one }) => ({
+    user: one(users, {
+        fields: [taxProfiles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const taxDeductionsRelations = relations(taxDeductions, ({ one }) => ({
+    user: one(users, {
+        fields: [taxDeductions.userId],
+        references: [users.id],
+    }),
+    expense: one(expenses, {
+        fields: [taxDeductions.expenseId],
+        references: [expenses.id],
+    }),
+}));
+
+export const taxReportsRelations = relations(taxReports, ({ one }) => ({
+    user: one(users, {
+        fields: [taxReports.userId],
+        references: [users.id],
+    }),
+}));
