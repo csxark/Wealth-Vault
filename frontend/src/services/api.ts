@@ -1348,6 +1348,196 @@ export const investmentsAPI = {
   },
 };
 
+// Subscription API Types
+export interface Subscription {
+  id: string;
+  userId: string;
+  categoryId?: string;
+  serviceName: string;
+  description?: string;
+  cost: string;
+  currency: string;
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  renewalDate: string;
+  autoRenewal: boolean;
+  status: 'active' | 'cancelled' | 'paused' | 'expired';
+  paymentMethod: string;
+  website?: string;
+  loginCredentials?: Record<string, any>;
+  tags: string[];
+  notes?: string;
+  cancellationDate?: string;
+  lastChargedDate?: string;
+  nextChargeDate?: string;
+  trialEndDate?: string;
+  isTrial: boolean;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+  category?: {
+    id: string;
+    name: string;
+    color: string;
+    icon: string;
+  };
+}
+
+// Subscription API
+export const subscriptionsAPI = {
+  // Get all subscriptions
+  getAll: async (params?: {
+    status?: 'active' | 'cancelled' | 'paused' | 'expired';
+    categoryId?: string;
+    sortBy?: 'renewalDate' | 'cost' | 'serviceName' | 'createdAt';
+    sortOrder?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: Subscription[];
+    }>('/subscriptions', {
+      method: 'GET',
+      params,
+    });
+  },
+
+  // Get subscription by ID
+  getById: async (id: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: Subscription;
+    }>(`/subscriptions/${id}`);
+  },
+
+  // Create new subscription
+  create: async (subscriptionData: Omit<Subscription, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'nextChargeDate' | 'metadata'>) => {
+    return apiRequest<{
+      success: boolean;
+      data: Subscription;
+    }>('/subscriptions', {
+      method: 'POST',
+      data: subscriptionData,
+    });
+  },
+
+  // Update subscription
+  update: async (id: string, subscriptionData: Partial<Subscription>) => {
+    return apiRequest<{
+      success: boolean;
+      data: Subscription;
+    }>(`/subscriptions/${id}`, {
+      method: 'PUT',
+      data: subscriptionData,
+    });
+  },
+
+  // Delete subscription
+  delete: async (id: string) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+    }>(`/subscriptions/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Cancel subscription
+  cancel: async (id: string, cancellationDate?: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: Subscription;
+    }>(`/subscriptions/${id}/cancel`, {
+      method: 'PUT',
+      data: { cancellationDate },
+    });
+  },
+
+  // Get subscription analytics
+  getAnalytics: async (params?: {
+    period?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        summary: {
+          totalMonthly: number;
+          totalAnnual: number;
+          count: number;
+        };
+        byCategory: Array<{
+          categoryName: string;
+          total: number;
+          count: number;
+        }>;
+        upcomingRenewals: Array<{
+          id: string;
+          serviceName: string;
+          cost: string;
+          nextChargeDate: string;
+          renewalDate: string;
+        }>;
+      };
+    }>('/subscriptions/analytics', {
+      method: 'GET',
+      params,
+    });
+  },
+
+  // Detect potential subscriptions
+  detectPotential: async (params?: {
+    monthsToAnalyze?: number;
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: Array<{
+        serviceName: string;
+        cost: string;
+        frequency: string;
+        confidence: number;
+        expenseIds: string[];
+        transactionCount: number;
+        firstDate: string;
+        lastDate: string;
+      }>;
+    }>('/subscriptions/detect', {
+      method: 'GET',
+      params,
+    });
+  },
+
+  // Create subscription from detection
+  createFromDetection: async (detectionData: {
+    serviceName: string;
+    cost: string;
+    frequency: string;
+    categoryId?: string;
+    expenseIds: string[];
+    confidence: number;
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: Subscription;
+    }>('/subscriptions/create-from-detection', {
+      method: 'POST',
+      data: detectionData,
+    });
+  },
+
+  // Get detection statistics
+  getDetectionStats: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        totalDetections: number;
+        highConfidence: number;
+        mediumConfidence: number;
+        lowConfidence: number;
+      };
+    }>('/subscriptions/detection-stats');
+  },
+};
+
 // Export all APIs
 export default {
   auth: authAPI,
@@ -1356,5 +1546,6 @@ export default {
   goals: goalsAPI,
   analytics: analyticsAPI,
   investments: investmentsAPI,
+  subscriptions: subscriptionsAPI,
   health: healthAPI,
 };

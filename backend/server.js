@@ -189,6 +189,7 @@ app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
+app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
 app.use("/api/investments", userLimiter, investmentRoutes);
 app.use("/api/budget-alerts", userLimiter, budgetAlertsRoutes);
 

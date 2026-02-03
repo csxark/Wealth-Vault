@@ -289,6 +289,40 @@ export const recurringExpenses = pgTable('recurring_expenses', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Subscriptions Table
+export const subscriptions = pgTable('subscriptions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
+    serviceName: text('service_name').notNull(),
+    description: text('description'),
+    cost: numeric('cost', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    frequency: text('frequency').notNull(), // 'weekly', 'monthly', 'quarterly', 'yearly'
+    renewalDate: timestamp('renewal_date').notNull(),
+    autoRenewal: boolean('auto_renewal').default(true),
+    status: text('status').default('active'), // 'active', 'cancelled', 'paused', 'expired'
+    paymentMethod: text('payment_method').default('credit_card'),
+    website: text('website'),
+    loginCredentials: jsonb('login_credentials'), // { username, password } - encrypted
+    tags: jsonb('tags').default([]),
+    notes: text('notes'),
+    cancellationDate: timestamp('cancellation_date'),
+    lastChargedDate: timestamp('last_charged_date'),
+    nextChargeDate: timestamp('next_charge_date'),
+    trialEndDate: timestamp('trial_end_date'),
+    isTrial: boolean('is_trial').default(false),
+    metadata: jsonb('metadata').default({
+        detectedFromExpense: false,
+        expenseId: null,
+        annualCost: 0,
+        costTrend: [],
+        lastReminderSent: null
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Budget Rules Table
 export const budgetRules = pgTable('budget_rules', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -440,17 +474,6 @@ export const priceHistory = pgTable('price_history', {
 });
 
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
-    categories: many(categories),
-    expenses: many(expenses),
-    goals: many(goals),
-    deviceSessions: many(deviceSessions),
-    vaultMemberships: many(vaultMembers),
-    ownedVaults: many(vaults),
-    securityEvents: many(securityEvents),
-    reports: many(reports),
-    budgetAlerts: many(budgetAlerts),
-}));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
     owner: one(users, {
@@ -516,6 +539,18 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
     }),
     expenses: many(expenses),
     goals: many(goals),
+    subscriptions: many(subscriptions),
+}));
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+    user: one(users, {
+        fields: [subscriptions.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [subscriptions.categoryId],
+        references: [categories.id],
+    }),
 }));
 
 export const expensesRelations = relations(expenses, ({ one }) => ({
@@ -608,7 +643,7 @@ export const priceHistoryRelations = relations(priceHistory, ({ one }) => ({
     }),
 }));
 
-// Update users relations to include portfolios
+// Update users relations to include portfolios and subscriptions
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
     expenses: many(expenses),
@@ -620,4 +655,5 @@ export const usersRelations = relations(users, ({ many }) => ({
     reports: many(reports),
     budgetAlerts: many(budgetAlerts),
     portfolios: many(portfolios),
+    subscriptions: many(subscriptions),
 }));
