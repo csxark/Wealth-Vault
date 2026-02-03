@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, goals, reports, users } from "../db/schema.js";
+import { expenses, categories, goals, reports, users, subscriptions, subscriptionUsage, cancellationSuggestions } from "../db/schema.js";
 import geminiService from './geminiservice.js';
 import emailService from './emailService.js';
 
@@ -26,12 +26,15 @@ class ReportService {
       // Fetch goals data
       const goalsData = await this.getGoalsData(userId);
 
+      // Fetch subscription data
+      const subscriptionData = await this.getSubscriptionData(userId);
+
       // Generate AI insights
-      const aiInsights = await this.generateAIInsights(analyticsData, goalsData, year, month);
+      const aiInsights = await this.generateAIInsights(analyticsData, goalsData, subscriptionData, year, month);
 
       // Generate PDF and Excel
-      const pdfBuffer = await this.createPDF(analyticsData, goalsData, aiInsights, year, month);
-      const excelBuffer = await this.createExcel(analyticsData, goalsData, year, month);
+      const pdfBuffer = await this.createPDF(analyticsData, goalsData, subscriptionData, aiInsights, year, month);
+      const excelBuffer = await this.createExcel(analyticsData, goalsData, subscriptionData, year, month);
 
       // Save files to disk
       const reportsDir = path.join(process.cwd(), 'uploads', 'reports');
@@ -227,7 +230,7 @@ class ReportService {
     };
   }
 
-  async generateAIInsights(analyticsData, goalsData, year, month) {
+  async generateAIInsights(analyticsData, goalsData, subscriptionData, year, month) {
     try {
       const prompt = `Analyze this financial data for ${analyticsData.period.month} and provide 3-4 key insights:
 
@@ -245,6 +248,13 @@ Goals Progress:
 - Total goals: ${goalsData.summary.total}
 - Active goals: ${goalsData.summary.active}
 - Completed goals: ${goalsData.summary.completed}
+- Avg. progress: ${goalsData.summary.averageProgress.toFixed(1)}%
+
+Subscription Analytics:
+- Active subscriptions: ${subscriptionData.activeCount}
+- Monthly subscription cost: ₹${subscriptionData.totalMonthlyCost.toFixed(2)}
+- Potential annual savings: ₹${subscriptionData.totalPotentialAnnualSavings.toFixed(2)}
+- AI Suggestions: ${subscriptionData.suggestions.map(s => s.reason).join(', ')}
 - Average progress: ${goalsData.summary.averageProgress.toFixed(1)}%
 - Total milestones: ${goalsData.summary.totalMilestones}
 - Completed milestones: ${goalsData.summary.completedMilestones}
@@ -258,7 +268,7 @@ Please provide actionable insights about spending patterns, goal progress, miles
       return 'AI insights are currently unavailable. Please check your spending patterns manually.';
     }
   }
-  async createPDF(analyticsData, goalsData, aiInsights, year, month) {
+  async createPDF(analyticsData, goalsData, subscriptionData, aiInsights, year, month) {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'A4',
@@ -333,6 +343,26 @@ Please provide actionable insights about spending patterns, goal progress, miles
 
       doc.moveDown();
 
+      // Subscription Section
+      doc.fontSize(18).font('Helvetica-Bold').text('Subscription Intelligence');
+      doc.moveDown();
+      doc.fontSize(12).font('Helvetica');
+
+      doc.text(`Active Subscriptions: ${subscriptionData.activeCount}`);
+      doc.text(`Monthly Subscription Spend: ₹${subscriptionData.totalMonthlyCost.toFixed(2)}`);
+      doc.text(`Potential Annual Savings: ₹${subscriptionData.totalPotentialAnnualSavings.toFixed(2)}`);
+      doc.moveDown();
+
+      if (subscriptionData.suggestions.length > 0) {
+        doc.font('Helvetica-Bold').text('Recommended Actions:');
+        doc.font('Helvetica');
+        subscriptionData.suggestions.forEach(sug => {
+          doc.text(`• ${sug.reason}`);
+        });
+      }
+
+      doc.moveDown();
+
       // AI Insights
       doc.fontSize(18).font('Helvetica-Bold').text('AI Insights');
       doc.moveDown();
@@ -353,7 +383,7 @@ Please provide actionable insights about spending patterns, goal progress, miles
     });
   }
 
-  async createExcel(analyticsData, goalsData, year, month) {
+  async createExcel(analyticsData, goalsData, subscriptionData, year, month) {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Spending Summary');
 
@@ -409,9 +439,59 @@ Please provide actionable insights about spending patterns, goal progress, miles
         progress: `${goal.progress.toFixed(1)}%`,
       });
     });
+  });
 
-    return await workbook.xlsx.writeBuffer();
+  // Add Subscriptions sheet
+  const subSheet = workbook.addWorksheet('Subscription Analysis');
+    subSheet.columns = [
+    { header: 'Monthly Cost (₹)', key: 'monthlyCost', width: 20 },
+    { header: 'Potential Savings (₹)', key: 'savings', width: 20 },
+    { header: 'Active Count', key: 'count', width: 15 },
+  ];
+
+    subSheet.addRow({
+    monthlyCost: subscriptionData.totalMonthlyCost.toFixed(2),
+      savings: subscriptionData.totalPotentialAnnualSavings.toFixed(2),
+        count: subscriptionData.activeCount
+    });
+
+if (subscriptionData.suggestions.length > 0) {
+  subSheet.addRow({});
+  subSheet.addRow({ monthlyCost: 'AI Suggestions' });
+  subscriptionData.suggestions.forEach(sug => {
+    subSheet.addRow({ monthlyCost: sug.reason });
+  });
+}
+
+return await workbook.xlsx.writeBuffer();
   }
+
+  async getSubscriptionData(userId) {
+  const activeSubs = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, 'active')));
+
+  // Total monthly subscription cost
+  let totalMonthlyCost = 0;
+  activeSubs.forEach(sub => {
+    const amt = parseFloat(sub.amount);
+    if (sub.billingCycle === 'yearly') totalMonthlyCost += amt / 12;
+    else if (sub.billingCycle === 'quarterly') totalMonthlyCost += amt / 3;
+    else if (sub.billingCycle === 'weekly') totalMonthlyCost += amt * 4;
+    else totalMonthlyCost += amt;
+  });
+
+  const pendingSuggestions = await db.select().from(cancellationSuggestions).where(
+    and(eq(cancellationSuggestions.userId, userId), eq(cancellationSuggestions.status, 'pending'))
+  );
+
+  const totalPotentialAnnualSavings = pendingSuggestions.reduce((sum, sug) => sum + parseFloat(sug.potentialSavings || 0), 0);
+
+  return {
+    activeCount: activeSubs.length,
+    totalMonthlyCost,
+    totalPotentialAnnualSavings,
+    suggestions: pendingSuggestions.slice(0, 5)
+  };
+}
 }
 
 export default new ReportService();
