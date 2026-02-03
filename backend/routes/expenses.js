@@ -2,7 +2,7 @@ import express from "express";
 import { body, validationResult } from "express-validator";
 import { eq, and, gte, lte, asc, desc, sql, like } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users, vaultMembers } from "../db/schema.js";
+import { expenses, categories, users, vaultMembers, subscriptions } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
 import { checkVaultAccess } from "../middleware/vaultAuth.js";
 import { asyncHandler, ValidationError, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
@@ -12,7 +12,7 @@ import { initializeRecurringExpense, disableRecurring } from "../services/expens
 import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
 import { securityInterceptor, auditBulkOperation } from "../middleware/auditMiddleware.js";
 import { logAudit, AuditActions, ResourceTypes } from "../services/auditService.js";
-import { logStateDelta } from "../middleware/auditLogger.js";
+import subscriptionDetector from "../services/subscriptionDetector.js";
 import { guardExpenseCreation } from "../middleware/securityGuard.js";
 
 const router = express.Router();
@@ -331,18 +331,32 @@ router.post(
       // Proactively monitor budget thresholds
       await budgetEngine.monitorBudget(req.user.id, category);
 
-      // Log state delta for forensic tracking
-      await logStateDelta({
-        userId: req.user.id,
-        resourceType: 'expense',
-        resourceId: newExpense.id,
-        operation: 'CREATE',
-        beforeState: null,
-        afterState: newExpense,
-        triggeredBy: 'user',
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-      });
+      // Match expense to subscription if possible
+      try {
+        const matchedSub = await subscriptionDetector.matchExpenseToSubscription(newExpense, req.user.id);
+        if (matchedSub) {
+          // Update subscription with last renewal and next renewal estimate
+          const lastRenewalDate = new Date(newExpense.date || new Date());
+          const nextRenewalDate = new Date(lastRenewalDate);
+
+          if (matchedSub.billingCycle === 'yearly') nextRenewalDate.setFullYear(nextRenewalDate.getFullYear() + 1);
+          else if (matchedSub.billingCycle === 'quarterly') nextRenewalDate.setMonth(nextRenewalDate.getMonth() + 3);
+          else if (matchedSub.billingCycle === 'biweekly') nextRenewalDate.setDate(nextRenewalDate.getDate() + 14);
+          else if (matchedSub.billingCycle === 'weekly') nextRenewalDate.setDate(nextRenewalDate.getDate() + 7);
+          else nextRenewalDate.setMonth(nextRenewalDate.getMonth() + 1); // Default monthly
+
+          await db.update(subscriptions)
+            .set({
+              lastRenewalDate,
+              nextRenewalDate,
+              linkedExpenseIds: [...(matchedSub.linkedExpenseIds || []), newExpense.id],
+              updatedAt: new Date()
+            })
+            .where(eq(subscriptions.id, matchedSub.id));
+        }
+      } catch (subError) {
+        console.error('Subscription matching failed:', subError);
+      }
 
       const expenseWithCategory = await db.query.expenses.findFirst({
         where: eq(expenses.id, newExpense.id),
