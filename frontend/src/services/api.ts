@@ -1357,4 +1357,5 @@ export default {
   analytics: analyticsAPI,
   investments: investmentsAPI,
   health: healthAPI,
+  vaults: vaultAPI,
 };
