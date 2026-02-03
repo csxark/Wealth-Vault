@@ -44,11 +44,13 @@ import securityRoutes from "./routes/security.js";
 import subscriptionRoutes from "./routes/subscriptions.js";
 import assetRoutes from "./routes/assets.js";
 import governanceRoutes from "./routes/governance.js";
+import taxRoutes from "./routes/tax.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
 import fxRateSync from "./jobs/fxRateSync.js";
 import valuationUpdater from "./jobs/valuationUpdater.js";
 import inactivityMonitor from "./jobs/inactivityMonitor.js";
+import taxEstimator from "./jobs/taxEstimator.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
@@ -213,6 +215,7 @@ app.use("/api/security", userLimiter, securityRoutes);
 app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
 app.use("/api/assets", userLimiter, assetRoutes);
 app.use("/api/governance", userLimiter, governanceRoutes);
+app.use("/api/tax", userLimiter, taxRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -260,6 +263,7 @@ app.listen(PORT, () => {
   fxRateSync.start();
   valuationUpdater.start();
   inactivityMonitor.start();
+  taxEstimator.start();
 
   // Initialize default tax categories and market indices
   initializeDefaultTaxCategories().catch(err => {

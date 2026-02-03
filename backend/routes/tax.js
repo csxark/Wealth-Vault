@@ -1,594 +1,162 @@
-/**
- * Tax Routes
- * API endpoints for tax profiles, summaries, optimization, and filing status
- */
-
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
-import {
-  getUserTaxProfile,
-  updateTaxProfile,
-  calculateYTDTaxSummary,
-  calculateTaxSavingsOpportunities,
-  initializeDefaultTaxCategories
-} from '../services/taxService.js';
-import {
-  analyzeExpenseTaxDeductibility,
-  batchAnalyzeExpenses,
-  generateTaxOptimizationRecommendations
-} from '../services/taxAI.js';
-import { db } from '../config/db.js';
-import { taxCategories, expenses, userTaxProfiles } from '../db/schema.js';
-import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { body, validationResult } from 'express-validator';
+import { protect } from '../middleware/auth.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import taxEngine from '../services/taxEngine.js';
+import deductionScout from '../services/deductionScout.js';
 
 const router = express.Router();
 
 /**
- * GET /api/tax/profile
- * Get user's tax profile
+ * @route   GET /api/tax/profile
+ * @desc    Get user's tax profile
  */
-router.get('/profile', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const profile = await getUserTaxProfile(userId);
+router.get('/profile', protect, asyncHandler(async (req, res) => {
+  const { taxYear = new Date().getFullYear() } = req.query;
+  const profile = await taxEngine.getTaxProfile(req.user.id, parseInt(taxYear));
 
-    res.json({
-      success: true,
-      data: profile
-    });
-  } catch (error) {
-    console.error('Error fetching tax profile:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch tax profile'
-    });
+  if (!profile) {
+    return res.status(404).json({ success: false, message: 'Tax profile not found' });
   }
-});
+
+  res.success(profile);
+}));
 
 /**
- * PUT /api/tax/profile
- * Update user's tax profile
+ * @route   POST /api/tax/profile
+ * @desc    Create or update tax profile
  */
-router.put('/profile', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const updates = req.body;
+router.post('/profile', protect, [
+  body('taxYear').isInt(),
+  body('filingStatus').isIn(['single', 'married_joint', 'married_separate', 'head_of_household']),
+  body('annualIncome').optional().isFloat({ gt: 0 }),
+], asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    // Validate filing status
-    const validFilingStatuses = ['single', 'married_jointly', 'married_separately', 'head_of_household'];
-    if (updates.filingStatus && !validFilingStatuses.includes(updates.filingStatus)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid filing status'
-      });
-    }
-
-    const updated = await updateTaxProfile(userId, updates);
-
-    res.json({
-      success: true,
-      message: 'Tax profile updated successfully',
-      data: updated
-    });
-  } catch (error) {
-    console.error('Error updating tax profile:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to update tax profile'
-    });
-  }
-});
+  const profile = await taxEngine.upsertTaxProfile(req.user.id, req.body);
+  res.success(profile, 'Tax profile updated');
+}));
 
 /**
- * GET /api/tax/summary
- * Get year-to-date tax summary
+ * @route   GET /api/tax/calculate
+ * @desc    Calculate current tax liability
  */
-router.get('/summary', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { year } = req.query;
-    const taxYear = year ? parseInt(year) : new Date().getFullYear();
-
-    const summary = await calculateYTDTaxSummary(userId, taxYear);
-
-    res.json({
-      success: true,
-      data: summary
-    });
-  } catch (error) {
-    console.error('Error calculating tax summary:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to calculate tax summary'
-    });
-  }
-});
+router.get('/calculate', protect, asyncHandler(async (req, res) => {
+  const { taxYear = new Date().getFullYear() } = req.query;
+  const calculation = await taxEngine.calculateTaxLiability(req.user.id, parseInt(taxYear));
+  res.success(calculation);
+}));
 
 /**
- * GET /api/tax/opportunities
- * Get tax savings opportunities
+ * @route   GET /api/tax/deductions
+ * @desc    Get all deductions for a tax year
  */
-router.get('/opportunities', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { year } = req.query;
-    const taxYear = year ? parseInt(year) : new Date().getFullYear();
-
-    const opportunities = await calculateTaxSavingsOpportunities(userId, taxYear);
-
-    res.json({
-      success: true,
-      data: opportunities
-    });
-  } catch (error) {
-    console.error('Error calculating tax opportunities:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to calculate tax opportunities'
-    });
-  }
-});
+router.get('/deductions', protect, asyncHandler(async (req, res) => {
+  const { taxYear = new Date().getFullYear() } = req.query;
+  const deductions = await taxEngine.getUserDeductions(req.user.id, parseInt(taxYear));
+  res.success(deductions);
+}));
 
 /**
- * GET /api/tax/categories
- * Get all tax categories
+ * @route   POST /api/tax/deductions
+ * @desc    Add manual deduction
  */
-router.get('/categories', authenticateToken, async (req, res) => {
-  try {
-    const categories = await db
-      .select()
-      .from(taxCategories)
-      .where(eq(taxCategories.isActive, true))
-      .orderBy(taxCategories.categoryName);
+router.post('/deductions', protect, [
+  body('taxYear').isInt(),
+  body('category').isString(),
+  body('amount').isFloat({ gt: 0 }),
+  body('description').isString(),
+], asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    res.json({
-      success: true,
-      data: categories
-    });
-  } catch (error) {
-    console.error('Error fetching tax categories:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch tax categories'
-    });
-  }
-});
+  const deduction = await taxEngine.addDeduction(req.user.id, req.body);
+  res.success(deduction, 'Deduction added');
+}));
 
 /**
- * POST /api/tax/categories/initialize
- * Initialize default tax categories (admin/first-time setup)
+ * @route   POST /api/tax/deductions/:id/approve
+ * @desc    Approve AI-detected deduction
  */
-router.post('/categories/initialize', authenticateToken, async (req, res) => {
-  try {
-    const count = await initializeDefaultTaxCategories();
-
-    res.json({
-      success: true,
-      message: `Initialized ${count} tax categories`,
-      count
-    });
-  } catch (error) {
-    console.error('Error initializing tax categories:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to initialize tax categories'
-    });
-  }
-});
+router.post('/deductions/:id/approve', protect, asyncHandler(async (req, res) => {
+  const approved = await taxEngine.approveDeduction(req.params.id, req.user.id);
+  res.success(approved, 'Deduction approved');
+}));
 
 /**
- * POST /api/tax/analyze-expense
- * Analyze single expense for tax deductibility
+ * @route   POST /api/tax/deductions/:id/reject
+ * @desc    Reject AI-detected deduction
  */
-router.post('/analyze-expense', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { expenseId } = req.body;
-
-    if (!expenseId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Expense ID is required'
-      });
-    }
-
-    // Fetch expense
-    const expense = await db.query.expenses.findFirst({
-      where: and(
-        eq(expenses.id, expenseId),
-        eq(expenses.userId, userId)
-      )
-    });
-
-    if (!expense) {
-      return res.status(404).json({
-        success: false,
-        error: 'Expense not found'
-      });
-    }
-
-    // Get user profile
-    const userProfile = await getUserTaxProfile(userId);
-
-    // Analyze expense
-    const analysis = await analyzeExpenseTaxDeductibility(expense, userProfile);
-
-    // Update expense if deductible with high confidence
-    if (analysis.isTaxDeductible && analysis.confidence > 0.7) {
-      const taxCat = await db.query.taxCategories.findFirst({
-        where: eq(taxCategories.categoryName, analysis.recommendedTaxCategory)
-      });
-
-      if (taxCat) {
-        await db
-          .update(expenses)
-          .set({
-            isTaxDeductible: true,
-            taxCategoryId: taxCat.id,
-            taxDeductibilityConfidence: analysis.confidence,
-            taxNotes: analysis.reasoning,
-            taxYear: new Date(expense.date).getFullYear(),
-            updatedAt: new Date()
-          })
-          .where(eq(expenses.id, expenseId));
-      }
-    }
-
-    res.json({
-      success: true,
-      data: {
-        expense: {
-          id: expense.id,
-          description: expense.description,
-          amount: expense.amount,
-          date: expense.date
-        },
-        analysis
-      }
-    });
-  } catch (error) {
-    console.error('Error analyzing expense:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to analyze expense'
-    });
-  }
-});
+router.post('/deductions/:id/reject', protect, asyncHandler(async (req, res) => {
+  const rejected = await taxEngine.rejectDeduction(req.params.id);
+  res.success(rejected, 'Deduction rejected');
+}));
 
 /**
- * POST /api/tax/analyze-expenses-batch
- * Analyze multiple expenses in batch
+ * @route   POST /api/tax/scan
+ * @desc    Scan expenses for deduction opportunities
  */
-router.post('/analyze-expenses-batch', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { expenseIds, year } = req.body;
-
-    let idsToAnalyze = expenseIds;
-
-    // If no IDs provided, analyze all expenses for the year
-    if (!idsToAnalyze || idsToAnalyze.length === 0) {
-      const targetYear = year || new Date().getFullYear();
-      const startOfYear = new Date(targetYear, 0, 1);
-      const endOfYear = new Date(targetYear, 11, 31, 23, 59, 59);
-
-      const yearExpenses = await db
-        .select({ id: expenses.id })
-        .from(expenses)
-        .where(
-          and(
-            eq(expenses.userId, userId),
-            gte(expenses.date, startOfYear),
-            lte(expenses.date, endOfYear),
-            eq(expenses.isTaxDeductible, false) // Only analyze untagged expenses
-          )
-        );
-
-      idsToAnalyze = yearExpenses.map(exp => exp.id);
-    }
-
-    if (idsToAnalyze.length === 0) {
-      return res.json({
-        success: true,
-        message: 'No expenses to analyze',
-        data: {
-          totalAnalyzed: 0,
-          deductibleCount: 0,
-          results: []
-        }
-      });
-    }
-
-    const results = await batchAnalyzeExpenses(userId, idsToAnalyze);
-
-    res.json({
-      success: true,
-      message: `Analyzed ${results.totalAnalyzed} expenses`,
-      data: results
-    });
-  } catch (error) {
-    console.error('Error in batch expense analysis:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to analyze expenses'
-    });
-  }
-});
+router.post('/scan', protect, asyncHandler(async (req, res) => {
+  const { taxYear = new Date().getFullYear() } = req.body;
+  const deductions = await deductionScout.scanExpenses(req.user.id, parseInt(taxYear));
+  res.success(deductions, `Found ${deductions.length} potential deductions`);
+}));
 
 /**
- * GET /api/tax/recommendations
- * Get AI-powered tax optimization recommendations
+ * @route   GET /api/tax/suggestions
+ * @desc    Get AI deduction suggestions
  */
-router.get('/recommendations', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { year } = req.query;
-    const taxYear = year ? parseInt(year) : new Date().getFullYear();
-
-    const recommendations = await generateTaxOptimizationRecommendations(userId, taxYear);
-
-    res.json({
-      success: true,
-      data: recommendations
-    });
-  } catch (error) {
-    console.error('Error generating recommendations:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate recommendations'
-    });
-  }
-});
+router.get('/suggestions', protect, asyncHandler(async (req, res) => {
+  const { taxYear = new Date().getFullYear() } = req.query;
+  const suggestions = await deductionScout.getSuggestions(req.user.id, parseInt(taxYear));
+  res.success(suggestions);
+}));
 
 /**
- * GET /api/tax/deductible-expenses
- * Get all tax-deductible expenses for a year
+ * @route   POST /api/tax/scan-receipt
+ * @desc    Analyze receipt text for deductions
  */
-router.get('/deductible-expenses', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { year, category } = req.query;
-    const targetYear = year ? parseInt(year) : new Date().getFullYear();
-
-    const startOfYear = new Date(targetYear, 0, 1);
-    const endOfYear = new Date(targetYear, 11, 31, 23, 59, 59);
-
-    let query = db
-      .select()
-      .from(expenses)
-      .where(
-        and(
-          eq(expenses.userId, userId),
-          eq(expenses.isTaxDeductible, true),
-          gte(expenses.date, startOfYear),
-          lte(expenses.date, endOfYear)
-        )
-      );
-
-    const deductibleExpenses = await query;
-
-    // Group by tax category
-    const byCategory = {};
-    let totalDeductions = 0;
-
-    for (const expense of deductibleExpenses) {
-      const amount = parseFloat(expense.amount);
-      totalDeductions += amount;
-
-      if (expense.taxCategoryId) {
-        const taxCat = await db.query.taxCategories.findFirst({
-          where: eq(taxCategories.id, expense.taxCategoryId)
-        });
-
-        const categoryName = taxCat?.categoryName || 'Uncategorized';
-        
-        if (!byCategory[categoryName]) {
-          byCategory[categoryName] = {
-            category: categoryName,
-            expenses: [],
-            total: 0,
-            count: 0
-          };
-        }
-
-        byCategory[categoryName].expenses.push(expense);
-        byCategory[categoryName].total += amount;
-        byCategory[categoryName].count++;
-      }
-    }
-
-    res.json({
-      success: true,
-      data: {
-        year: targetYear,
-        totalDeductions,
-        expenseCount: deductibleExpenses.length,
-        byCategory,
-        expenses: deductibleExpenses
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching deductible expenses:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch deductible expenses'
-    });
-  }
-});
+router.post('/scan-receipt', protect, [
+  body('receiptText').isString(),
+  body('taxYear').optional().isInt(),
+], asyncHandler(async (req, res) => {
+  const { receiptText, taxYear = new Date().getFullYear() } = req.body;
+  const deductions = await deductionScout.analyzeReceipt(receiptText, req.user.id, parseInt(taxYear));
+  res.success(deductions, 'Receipt analyzed');
+}));
 
 /**
- * GET /api/tax/filing-status
- * Get next filing deadline and status
+ * @route   POST /api/tax/reports/generate
+ * @desc    Generate tax report
  */
-router.get('/filing-status', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const profile = await getUserTaxProfile(userId);
-
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    
-    // Tax filing deadline is typically April 15
-    const filingDeadline = new Date(currentYear, 3, 15); // April 15
-    
-    // Adjust if April 15 falls on weekend
-    if (filingDeadline.getDay() === 0) { // Sunday
-      filingDeadline.setDate(filingDeadline.getDate() + 1);
-    } else if (filingDeadline.getDay() === 6) { // Saturday
-      filingDeadline.setDate(filingDeadline.getDate() + 2);
-    }
-
-    const daysUntilDeadline = Math.ceil((filingDeadline - currentDate) / (1000 * 60 * 60 * 24));
-    
-    // Quarterly deadlines (if quarterly taxpayer)
-    const quarterlyDeadlines = [
-      new Date(currentYear, 3, 15), // Q1: April 15
-      new Date(currentYear, 5, 15), // Q2: June 15
-      new Date(currentYear, 8, 15), // Q3: September 15
-      new Date(currentYear, 0, 15, currentYear + 1) // Q4: January 15 of next year
-    ];
-
-    const nextQuarterlyDeadline = quarterlyDeadlines.find(d => d > currentDate);
-
-    res.json({
-      success: true,
-      data: {
-        filingStatus: profile.filingStatus,
-        quarterlyTaxPayer: profile.quarterlyTaxPayer,
-        annualFilingDeadline: filingDeadline,
-        daysUntilAnnualDeadline: daysUntilDeadline,
-        nextQuarterlyDeadline: profile.quarterlyTaxPayer ? nextQuarterlyDeadline : null,
-        lastFilingDate: profile.lastFilingDate,
-        estimatedTaxBracket: profile.estimatedTaxBracket,
-        ytdTaxPaid: profile.ytdTaxPaid,
-        ytdTaxableIncome: profile.ytdTaxableIncome,
-        ytdDeductions: profile.ytdDeductions
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching filing status:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch filing status'
-    });
-  }
-});
+router.post('/reports/generate', protect, [
+  body('taxYear').isInt(),
+  body('reportType').optional().isIn(['quarterly', 'annual', 'estimated']),
+], asyncHandler(async (req, res) => {
+  const { taxYear, reportType } = req.body;
+  const report = await taxEngine.generateReport(req.user.id, parseInt(taxYear), reportType);
+  res.success(report, 'Tax report generated');
+}));
 
 /**
- * GET /api/tax/dashboard
- * Get comprehensive tax dashboard data
+ * @route   GET /api/tax/reports
+ * @desc    Get user's tax reports
  */
-router.get('/dashboard', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const currentYear = new Date().getFullYear();
-
-    // Parallel fetch all data
-    const [profile, summary, opportunities, recommendations] = await Promise.all([
-      getUserTaxProfile(userId),
-      calculateYTDTaxSummary(userId, currentYear),
-      calculateTaxSavingsOpportunities(userId, currentYear),
-      generateTaxOptimizationRecommendations(userId, currentYear).catch(() => null) // Optional
-    ]);
-
-    // Calculate progress metrics
-    const yearProgress = (new Date().getMonth() + 1) / 12 * 100;
-    const deductionProgress = (summary.deductions.used / summary.grossIncome) * 100;
-
-    res.json({
-      success: true,
-      data: {
-        profile: {
-          filingStatus: profile.filingStatus,
-          taxBracket: profile.estimatedTaxBracket,
-          quarterlyTaxPayer: profile.quarterlyTaxPayer
-        },
-        summary: {
-          grossIncome: summary.grossIncome,
-          totalDeductions: summary.deductions.used,
-          taxableIncome: summary.taxableIncome,
-          estimatedTax: summary.taxLiability,
-          effectiveRate: summary.effectiveRate,
-          taxPaid: summary.taxPaid,
-          remainingDue: summary.remainingDue
-        },
-        opportunities: {
-          count: opportunities.opportunities.length,
-          topThree: opportunities.opportunities.slice(0, 3),
-          totalPotentialSavings: opportunities.totalPotentialSavings
-        },
-        progress: {
-          yearProgress: Math.round(yearProgress),
-          deductionProgress: Math.round(deductionProgress),
-          deductibleExpenseCount: summary.deductibleExpenseCount,
-          totalExpenseCount: summary.totalExpenseCount
-        },
-        recentRecommendations: recommendations?.immediateActions || [],
-        nextDeadline: profile.quarterlyTaxPayer 
-          ? 'Next quarterly payment due'
-          : 'Annual filing: April 15'
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching tax dashboard:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch tax dashboard'
-    });
-  }
-});
+router.get('/reports', protect, asyncHandler(async (req, res) => {
+  const { taxYear } = req.query;
+  const reports = await taxEngine.getUserReports(req.user.id, taxYear ? parseInt(taxYear) : null);
+  res.success(reports);
+}));
 
 /**
- * PATCH /api/tax/expense/:id/tax-category
- * Manually update expense tax category
+ * @route   GET /api/tax/brackets
+ * @desc    Get tax brackets for configuration
  */
-router.patch('/expense/:id/tax-category', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const expenseId = req.params.id;
-    const { taxCategoryId, isTaxDeductible, taxNotes } = req.body;
-
-    // Verify expense belongs to user
-    const expense = await db.query.expenses.findFirst({
-      where: and(
-        eq(expenses.id, expenseId),
-        eq(expenses.userId, userId)
-      )
-    });
-
-    if (!expense) {
-      return res.status(404).json({
-        success: false,
-        error: 'Expense not found'
-      });
-    }
-
-    // Update expense
-    const [updated] = await db
-      .update(expenses)
-      .set({
-        isTaxDeductible: isTaxDeductible !== undefined ? isTaxDeductible : expense.isTaxDeductible,
-        taxCategoryId: taxCategoryId || expense.taxCategoryId,
-        taxNotes: taxNotes || expense.taxNotes,
-        taxYear: new Date(expense.date).getFullYear(),
-        taxDeductibilityConfidence: 1.0, // User manually set
-        updatedAt: new Date()
-      })
-      .where(eq(expenses.id, expenseId))
-      .returning();
-
-    res.json({
-      success: true,
-      message: 'Expense tax category updated',
-      data: updated
-    });
-  } catch (error) {
-    console.error('Error updating expense tax category:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to update expense tax category'
-    });
-  }
-});
+router.get('/brackets', protect, asyncHandler(async (req, res) => {
+  const { country = 'US', taxYear = new Date().getFullYear(), filingStatus = 'single' } = req.query;
+  const brackets = await taxEngine.getTaxBrackets(country, parseInt(taxYear), filingStatus);
+  res.success(brackets);
+}));
 
 export default router;

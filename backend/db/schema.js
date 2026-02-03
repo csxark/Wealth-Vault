@@ -933,3 +933,99 @@ export const inactivityTriggersRelations = relations(inactivityTriggers, ({ one 
         references: [users.id],
     }),
 }));
+
+// Tax Profiles (User Tax Configuration)
+export const taxProfiles = pgTable('tax_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    country: text('country').default('US'),
+    filingStatus: text('filing_status').default('single'), // 'single', 'married_joint', 'married_separate', 'head_of_household'
+    taxYear: integer('tax_year').notNull(),
+    annualIncome: numeric('annual_income', { precision: 12, scale: 2 }),
+    standardDeduction: numeric('standard_deduction', { precision: 12, scale: 2 }),
+    useItemizedDeductions: boolean('use_itemized_deductions').default(false),
+    stateCode: text('state_code'), // 'CA', 'NY', etc.
+    taxBracketData: jsonb('tax_bracket_data'), // Cached bracket info
+    lastCalculated: timestamp('last_calculated'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Tax Brackets (Configurable Tax Rates)
+export const taxBrackets = pgTable('tax_brackets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    country: text('country').default('US'),
+    taxYear: integer('tax_year').notNull(),
+    filingStatus: text('filing_status').notNull(),
+    bracketLevel: integer('bracket_level').notNull(), // 1, 2, 3...
+    minIncome: numeric('min_income', { precision: 12, scale: 2 }).notNull(),
+    maxIncome: numeric('max_income', { precision: 12, scale: 2 }), // NULL for highest bracket
+    rate: numeric('rate', { precision: 5, scale: 2 }).notNull(), // Percentage
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tax Deductions (AI-Detected & Manual)
+export const taxDeductions = pgTable('tax_deductions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+    taxYear: integer('tax_year').notNull(),
+    category: text('category').notNull(), // 'business_expense', 'medical', 'charitable', 'mortgage_interest', 'education'
+    description: text('description'),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    deductionType: text('deduction_type').default('itemized'), // 'standard', 'itemized', 'above_the_line'
+    aiDetected: boolean('ai_detected').default(false),
+    confidence: doublePrecision('confidence').default(0), // AI confidence 0-1
+    aiReasoning: text('ai_reasoning'), // Gemini's explanation
+    status: text('status').default('pending'), // 'pending', 'approved', 'rejected', 'claimed'
+    approvedBy: uuid('approved_by').references(() => users.id),
+    approvedAt: timestamp('approved_at'),
+    metadata: jsonb('metadata'), // Receipt info, notes
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tax Reports (Generated Tax Summaries)
+export const taxReports = pgTable('tax_reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    taxYear: integer('tax_year').notNull(),
+    reportType: text('report_type').default('annual'), // 'quarterly', 'annual', 'estimated'
+    totalIncome: numeric('total_income', { precision: 12, scale: 2 }),
+    totalDeductions: numeric('total_deductions', { precision: 12, scale: 2 }),
+    taxableIncome: numeric('taxable_income', { precision: 12, scale: 2 }),
+    totalTaxOwed: numeric('total_tax_owed', { precision: 12, scale: 2 }),
+    effectiveTaxRate: numeric('effective_tax_rate', { precision: 5, scale: 2 }),
+    marginalTaxRate: numeric('marginal_tax_rate', { precision: 5, scale: 2 }),
+    estimatedRefund: numeric('estimated_refund', { precision: 12, scale: 2 }),
+    breakdown: jsonb('breakdown'), // Detailed calculations
+    pdfUrl: text('pdf_url'),
+    status: text('status').default('draft'), // 'draft', 'final', 'filed'
+    generatedAt: timestamp('generated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tax Relations
+export const taxProfilesRelations = relations(taxProfiles, ({ one }) => ({
+    user: one(users, {
+        fields: [taxProfiles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const taxDeductionsRelations = relations(taxDeductions, ({ one }) => ({
+    user: one(users, {
+        fields: [taxDeductions.userId],
+        references: [users.id],
+    }),
+    expense: one(expenses, {
+        fields: [taxDeductions.expenseId],
+        references: [expenses.id],
+    }),
+}));
+
+export const taxReportsRelations = relations(taxReports, ({ one }) => ({
+    user: one(users, {
+        fields: [taxReports.userId],
+        references: [users.id],
+    }),
+}));
