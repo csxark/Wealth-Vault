@@ -232,6 +232,67 @@ export const goalMilestones = pgTable('goal_milestones', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Subscriptions Table
+export const subscriptions = pgTable('subscriptions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    serviceName: text('service_name').notNull(),
+    description: text('description'),
+    cost: numeric('cost', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    frequency: text('frequency').notNull(), // weekly, biweekly, monthly, quarterly, yearly
+    renewalDate: timestamp('renewal_date').notNull(),
+    autoRenewal: boolean('auto_renewal').default(true),
+    status: text('status').default('active'), // active, paused, cancelled
+    paymentMethod: text('payment_method').default('credit_card'),
+    website: text('website'),
+    loginCredentials: jsonb('login_credentials'),
+    tags: jsonb('tags').default([]),
+    notes: text('notes'),
+    cancellationDate: timestamp('cancellation_date'),
+    lastChargedDate: timestamp('last_charged_date'),
+    nextChargeDate: timestamp('next_charge_date'),
+    trialEndDate: timestamp('trial_end_date'),
+    isTrial: boolean('is_trial').default(false),
+    metadata: jsonb('metadata').default({
+        detectedFromExpense: false,
+        expenseId: null,
+        annualCost: 0,
+        costTrend: [],
+        lastReminderSent: null
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Subscription Usage Table
+export const subscriptionUsage = pgTable('subscription_usage', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    subscriptionId: uuid('subscription_id').references(() => subscriptions.id, { onDelete: 'cascade' }).notNull(),
+    month: text('month').notNull(), // YYYY-MM format
+    usageCount: integer('usage_count').default(0),
+    usageHours: numeric('usage_hours', { precision: 10, scale: 2 }).default('0'),
+    valueScore: integer('value_score').default(0), // 0-100
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Cancellation Suggestions Table
+export const cancellationSuggestions = pgTable('cancellation_suggestions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    subscriptionId: uuid('subscription_id').references(() => subscriptions.id, { onDelete: 'cascade' }).notNull(),
+    reason: text('reason').notNull(), // underutilized, expensive, duplicate, etc.
+    confidence: numeric('confidence', { precision: 5, scale: 2 }).notNull(), // 0-100
+    potentialSavings: numeric('potential_savings', { precision: 12, scale: 2 }).notNull(),
+    aiRecommendation: text('ai_recommendation'),
+    isDismissed: boolean('is_dismissed').default(false),
+    dismissedAt: timestamp('dismissed_at'),
+    dismissReason: text('dismiss_reason'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Device Sessions Table for token management
 export const deviceSessions = pgTable('device_sessions', {
     id: uuid('id').defaultRandom().primaryKey(),
