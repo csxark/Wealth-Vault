@@ -1,5 +1,5 @@
 
-import { pgTable, uuid, text, boolean, integer, numeric, timestamp, jsonb, doublePrecision } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, boolean, integer, numeric, timestamp, jsonb, doublePrecision, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Users Table
@@ -86,12 +86,18 @@ export const expenses = pgTable('expenses', {
     }),
     // Tax-related fields
     isTaxDeductible: boolean('is_tax_deductible').default(false),
-    taxCategoryId: uuid('tax_category_id').references(() => taxCategories.id, { onDelete: 'set null' }),
+    taxCategoryId: uuid('tax_category_id'), // .references(() => taxCategories.id, { onDelete: 'set null' }), FIX: taxCategories not defined
     taxDeductibilityConfidence: doublePrecision('tax_deductibility_confidence').default(0), // AI confidence (0-1)
     taxNotes: text('tax_notes'), // User or AI notes about tax treatment
     taxYear: integer('tax_year'), // Which tax year this applies to
     createdAt: timestamp('created_at').defaultNow(),
+
     updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userDateIdx: index('idx_expenses_user_date').on(table.userId, table.date),
+        userCategoryIdx: index('idx_expenses_user_category').on(table.userId, table.categoryId),
+    };
 });
 
 // Vaults Table (Collaborative Shared Wallets)
@@ -1054,7 +1060,7 @@ export const inheritanceRules = pgTable('inheritance_rules', {
     assetId: uuid('asset_id'), // Specific asset or null for all
     distributionPercentage: numeric('distribution_percentage', { precision: 5, scale: 2 }), // % share
     conditions: jsonb('conditions').default({
-        inactivity threshold: 90, // Days of inactivity
+        inactivityThreshold: 90, // Days of inactivity
         requiresProofOfDeath: false,
         immediateTransfer: false,
         trusteeApprovalRequired: false
