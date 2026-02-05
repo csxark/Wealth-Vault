@@ -751,6 +751,56 @@ export const expensesRelations = relations(expenses, ({ one, many }) => ({
     shares: many(expenseShares),
 }));
 
+// Bank Accounts Table (for Plaid integration)
+export const bankAccounts = pgTable('bank_accounts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    plaidAccountId: text('plaid_account_id').notNull(),
+    plaidItemId: text('plaid_item_id').notNull(),
+    name: text('name').notNull(),
+    officialName: text('official_name'),
+    type: text('type').notNull(), // checking, savings, credit, loan, investment
+    subtype: text('subtype'), // checking, savings, credit_card, etc.
+    mask: text('mask'), // last 4 digits
+    institutionId: text('institution_id').notNull(),
+    institutionName: text('institution_name').notNull(),
+    balanceCurrent: numeric('balance_current', { precision: 15, scale: 2 }),
+    balanceAvailable: numeric('balance_available', { precision: 15, scale: 2 }),
+    currency: text('currency').default('USD'),
+    isActive: boolean('is_active').default(true),
+    lastSyncedAt: timestamp('last_synced_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Bank Transactions Table (raw transactions from Plaid)
+export const bankTransactions = pgTable('bank_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    bankAccountId: uuid('bank_account_id').references(() => bankAccounts.id, { onDelete: 'cascade' }).notNull(),
+    plaidTransactionId: text('plaid_transaction_id').notNull().unique(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'set null' }), // Link to imported expense
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    description: text('description').notNull(),
+    originalDescription: text('original_description'),
+    date: timestamp('date').notNull(),
+    category: jsonb('category'), // Plaid's category hierarchy
+    categoryId: text('category_id'), // Plaid's category ID
+    pending: boolean('pending').default(false),
+    pendingTransactionId: text('pending_transaction_id'),
+    accountOwner: text('account_owner'),
+    location: jsonb('location'), // { address, city, region, postal_code, country, lat, lon, store_number }
+    paymentMeta: jsonb('payment_meta'), // { reference_number, ppd_id, payee, by_order_of, payer, payment_method, payment_processor, reason }
+    transactionType: text('transaction_type'), // digital, place, special, unresolved
+    transactionCode: text('transaction_code'), // adjustment, atm, bank_charge, bill_payment, etc.
+    isImported: boolean('is_imported').default(false),
+    importStatus: text('import_status').default('pending'), // pending, imported, duplicate, error
+    importError: text('import_error'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Update users relations to include portfolios, subscriptions, and family relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -767,4 +817,31 @@ export const usersRelations = relations(users, ({ many }) => ({
     expenseShares: many(expenseShares),
     sentReimbursements: many(reimbursements, { relationName: 'reimbursements_from' }),
     receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
+    bankAccounts: many(bankAccounts),
+    bankTransactions: many(bankTransactions),
+}));
+
+// Bank Accounts Relations
+export const bankAccountsRelations = relations(bankAccounts, ({ one, many }) => ({
+    user: one(users, {
+        fields: [bankAccounts.userId],
+        references: [users.id],
+    }),
+    transactions: many(bankTransactions),
+}));
+
+// Bank Transactions Relations
+export const bankTransactionsRelations = relations(bankTransactions, ({ one }) => ({
+    user: one(users, {
+        fields: [bankTransactions.userId],
+        references: [users.id],
+    }),
+    bankAccount: one(bankAccounts, {
+        fields: [bankTransactions.bankAccountId],
+        references: [bankAccounts.id],
+    }),
+    expense: one(expenses, {
+        fields: [bankTransactions.expenseId],
+        references: [expenses.id],
+    }),
 }));
