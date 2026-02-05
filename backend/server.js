@@ -38,7 +38,24 @@ import analyticsRoutes from "./routes/analytics.js";
 import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
+import auditRoutes from "./routes/audit.js";
+import securityRoutes from "./routes/security.js";
+import subscriptionRoutes from "./routes/subscriptions.js";
+import assetRoutes from "./routes/assets.js";
+import governanceRoutes from "./routes/governance.js";
+import taxRoutes from "./routes/tax.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
+import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
+import fxRateSync from "./jobs/fxRateSync.js";
+import valuationUpdater from "./jobs/valuationUpdater.js";
+import inactivityMonitor from "./jobs/inactivityMonitor.js";
+import taxEstimator from "./jobs/taxEstimator.js";
+import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
+import { scheduleTaxReminders } from "./jobs/taxReminders.js";
+import snapshotGenerator from "./jobs/snapshotGenerator.js";
+import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
+import { initializeDefaultTaxCategories } from "./services/taxService.js";
+import marketData from "./services/marketData.js";
 
 // Load environment variables
 dotenv.config();
@@ -60,6 +77,9 @@ runImmediateSync().then(() => {
 }).catch(err => {
   console.warn('⚠️ Initial exchange rates sync failed:', err.message);
 });
+
+// Schedule weekly habit digest job
+scheduleWeeklyHabitDigest();
 
 // Initiliz uplod directorys
 initializeUploads().catch((err) => {
@@ -135,6 +155,7 @@ app.use(paginationMiddleware());
 
 // Logng and monitrng midlware
 app.use(requestIdMiddleware);
+app.use(auditRequestIdMiddleware); // Add audit request correlation
 app.use(requestLogger);
 app.use(performanceMiddleware);
 app.use(analyticsMiddleware);
@@ -189,10 +210,12 @@ app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
+app.use("/api/audit", userLimiter, auditRoutes);
+app.use("/api/security", userLimiter, securityRoutes);
 app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
-app.use("/api/investments", userLimiter, investmentRoutes);
-app.use("/api/budget-alerts", userLimiter, budgetAlertsRoutes);
-app.use("/api/bank-sync", userLimiter, bankSyncRoutes);
+app.use("/api/assets", userLimiter, assetRoutes);
+app.use("/api/governance", userLimiter, governanceRoutes);
+app.use("/api/tax", userLimiter, taxRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -234,4 +257,20 @@ app.listen(PORT, () => {
 
   // Start background jobs
   scheduleMonthlyReports();
+  scheduleWeeklyHabitDigest();
+  scheduleTaxReminders();
+  subscriptionMonitor.initialize();
+  fxRateSync.start();
+  valuationUpdater.start();
+  inactivityMonitor.start();
+  taxEstimator.start();
+
+  // Initialize default tax categories and market indices
+  initializeDefaultTaxCategories().catch(err => {
+    console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
+  });
+
+  marketData.initializeDefaults().catch(err => {
+    console.warn('⚠️ Market indices initialization skipped:', err.message);
+  });
 });
