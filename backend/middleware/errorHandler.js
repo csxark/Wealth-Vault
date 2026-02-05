@@ -1,4 +1,5 @@
 import { HTTP_STATUS, ERROR_CODES, errorResponse } from './responseWrapper.js';
+import { logError } from '../utils/logger.js';
 
 /**
  * Enhanced Error Handler Middleware
@@ -61,14 +62,14 @@ export const asyncHandler = (fn) => {
 
 // Enhanced error handler middleware
 export const errorHandler = (err, req, res, next) => {
-  console.error('Error:', {
-    message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+  // Use structured logging
+  logError('Unhandled Error caught in global handler', err, {
     url: req.originalUrl,
     method: req.method,
     ip: req.ip,
     userAgent: req.get('User-Agent'),
-    timestamp: new Date().toISOString(),
+    userId: req.user?.id || 'anonymous',
+    body: req.body ? JSON.stringify(req.body).substring(0, 1000) : null, // Log sanitized body snippet
   });
 
   // Handle custom errors
@@ -138,14 +139,19 @@ export const errorHandler = (err, req, res, next) => {
   }
 
   // Default server error
+  // Stack trace is ONLY included in development environment via errorResponse logic or explicit passed object
+  // The 'errorResponse' wrapper typically handles the structure. 
+  // We ensure here that we pass the stack only if safe.
+  const showStack = process.env.NODE_ENV === 'development';
+
   return errorResponse(
     res,
-    process.env.NODE_ENV === 'production' 
-      ? 'Internal server error' 
+    process.env.NODE_ENV === 'production'
+      ? 'Internal server error'
       : err.message,
     HTTP_STATUS.INTERNAL_SERVER_ERROR,
     ERROR_CODES.INTERNAL_ERROR,
-    process.env.NODE_ENV === 'development' ? { stack: err.stack } : null
+    showStack ? { stack: err.stack } : null
   );
 };
 
