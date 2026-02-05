@@ -2,8 +2,9 @@ import express from "express";
 import { body, validationResult } from "express-validator";
 import { eq, and, sql, desc, asc, gte } from "drizzle-orm";
 import db from "../config/db.js";
-import { goals, users, categories, goalMilestones } from "../db/schema.js";
+import { goals, users, categories, goalMilestones, vaultMembers } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
+import { checkVaultAccess } from "../middleware/vaultAuth.js";
 import notificationService from "../services/notificationService.js";
 
 const router = express.Router();
@@ -79,9 +80,29 @@ router.get("/", protect, async (req, res) => {
       priority,
       sortBy = "deadline",
       sortOrder = "asc",
+      vaultId,
     } = req.query;
 
-    const conditions = [eq(goals.userId, req.user.id)];
+    let conditions = [];
+
+    if (vaultId) {
+      // Check vault access
+      const [membership] = await db
+        .select()
+        .from(vaultMembers)
+        .where(and(eq(vaultMembers.vaultId, vaultId), eq(vaultMembers.userId, req.user.id)));
+
+      if (!membership) {
+        return res.status(403).json({ success: false, message: "Access denied to vault" });
+      }
+
+      // Get vault goals
+      conditions = [eq(goals.vaultId, vaultId)];
+    } else {
+      // Get personal goals
+      conditions = [eq(goals.userId, req.user.id), sql`${goals.vaultId} IS NULL`];
+    }
+
     if (status) conditions.push(eq(goals.status, status));
     if (type) conditions.push(eq(goals.type, type));
     if (priority) conditions.push(eq(goals.priority, priority));
@@ -182,11 +203,24 @@ router.post(
         priority,
         deadline,
         category,
+        vaultId,
         tags,
         notes,
         milestones,
         recurringContribution,
       } = req.body;
+
+      // Check vault access if vaultId provided
+      if (vaultId) {
+        const [membership] = await db
+          .select()
+          .from(vaultMembers)
+          .where(and(eq(vaultMembers.vaultId, vaultId), eq(vaultMembers.userId, req.user.id)));
+
+        if (!membership) {
+          return res.status(403).json({ success: false, message: "Access denied to vault" });
+        }
+      }
 
       if (category) {
         const [cat] = await db
@@ -228,6 +262,7 @@ router.post(
           priority: priority || "medium",
           deadline: new Date(deadline),
           categoryId: category,
+          vaultId: vaultId || null,
           tags: tags || [],
           notes,
           milestones: milestones || [],
