@@ -4,7 +4,9 @@ import db from "../config/db.js";
 import { expenses, categories, users } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
-import reportService from "../services/reportService.js";
+import assetService from "../services/assetService.js";
+import projectionEngine from "../services/projectionEngine.js";
+import marketData from "../services/marketData.js";
 
 const router = express.Router();
 
@@ -1003,6 +1005,96 @@ router.post("/generate-monthly-report", protect, async (req, res) => {
     res.success(report, "Monthly report generated successfully");
   } catch (error) {
     console.error("Manual report generation error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   GET /analytics/portfolio
+ * @desc    Get complete portfolio overview (assets + projections)
+ */
+router.get("/portfolio", protect, async (req, res) => {
+  try {
+    const [assets, portfolio, latestSimulation] = await Promise.all([
+      assetService.getUserAssets(req.user.id),
+      assetService.getPortfolioValue(req.user.id),
+      projectionEngine.getSimulationHistory(req.user.id).then(sims => sims[0] || null)
+    ]);
+
+    // Get financial state for context
+    const financialState = await projectionEngine.getCurrentFinancialState(req.user.id, true);
+
+    res.success({
+      assets,
+      portfolio,
+      financialState,
+      latestProjection: latestSimulation
+    });
+  } catch (error) {
+    console.error("Portfolio analytics error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   GET /analytics/net-worth-projection
+ * @desc    Quick projection for dashboard widgets
+ */
+router.get("/net-worth-projection", protect, async (req, res) => {
+  try {
+    const { years = 10 } = req.query;
+
+    // Run a lightweight simulation (fewer iterations)
+    const result = await projectionEngine.runSimulation(req.user.id, {
+      timeHorizon: parseInt(years),
+      iterations: 500, // Faster for real-time
+      includeAssets: true
+    });
+
+    res.success(result);
+  } catch (error) {
+    console.error("Projection error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   GET /analytics/asset-allocation
+ * @desc    Get asset allocation breakdown
+ */
+router.get("/asset-allocation", protect, async (req, res) => {
+  try {
+    const assets = await assetService.getUserAssets(req.user.id);
+
+    const allocation = assets.reduce((acc, asset) => {
+      const category = asset.category;
+      const value = parseFloat(asset.currentValue);
+
+      if (!acc[category]) {
+        acc[category] = { count: 0, totalValue: 0 };
+      }
+
+      acc[category].count++;
+      acc[category].totalValue += value;
+
+      return acc;
+    }, {});
+
+    const totalValue = Object.values(allocation).reduce((sum, cat) => sum + cat.totalValue, 0);
+
+    const formatted = Object.entries(allocation).map(([category, data]) => ({
+      category,
+      count: data.count,
+      value: data.totalValue,
+      percentage: totalValue > 0 ? ((data.totalValue / totalValue) * 100).toFixed(2) : 0
+    }));
+
+    res.success({
+      allocation: formatted,
+      totalValue
+    });
+  } catch (error) {
+    console.error("Asset allocation error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });

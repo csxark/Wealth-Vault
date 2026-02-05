@@ -15,6 +15,13 @@
       "when": 1770112014747,
       "tag": "0001_mean_mordo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770300000000,
+      "tag": "0010_add_expenses_indexes",
+      "breakpoints": true
     }
   ]
 }
