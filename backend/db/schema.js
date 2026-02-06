@@ -887,3 +887,128 @@ export const savingsRoundupsRelations = relations(savingsRoundups, ({ one }) => 
         references: [expenses.id],
     }),
 }));
+
+// Education Content Table
+export const educationContent = pgTable('education_content', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    content: text('content').notNull(), // Full article content or video URL
+    type: text('type').notNull(), // 'article', 'video', 'infographic'
+    category: text('category').notNull(), // 'budgeting', 'saving', 'investing', 'debt', 'credit', 'general'
+    difficulty: text('difficulty').default('beginner'), // 'beginner', 'intermediate', 'advanced'
+    estimatedReadTime: integer('estimated_read_time').default(5), // in minutes
+    tags: jsonb('tags').default([]),
+    isActive: boolean('is_active').default(true),
+    targetAudience: jsonb('target_audience').default({}), // { minScore: 0, maxScore: 100, financialHealthAreas: ['savings', 'budgeting'] }
+    metadata: jsonb('metadata').default({
+        author: null,
+        source: null,
+        lastReviewed: null,
+        viewCount: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Education Quizzes Table
+export const educationQuizzes = pgTable('education_quizzes', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    contentId: uuid('content_id').references(() => educationContent.id, { onDelete: 'cascade' }).notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    questions: jsonb('questions').notNull(), // Array of question objects with options and correct answers
+    passingScore: integer('passing_score').default(70), // Minimum percentage to pass
+    timeLimit: integer('time_limit'), // Time limit in minutes, null for no limit
+    maxAttempts: integer('max_attempts').default(3),
+    isActive: boolean('is_active').default(true),
+    difficulty: text('difficulty').default('beginner'),
+    tags: jsonb('tags').default([]),
+    metadata: jsonb('metadata').default({
+        totalQuestions: 0,
+        averageScore: 0,
+        completionRate: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// User Education Progress Table
+export const userEducationProgress = pgTable('user_education_progress', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    contentId: uuid('content_id').references(() => educationContent.id, { onDelete: 'cascade' }).notNull(),
+    status: text('status').default('not_started'), // 'not_started', 'in_progress', 'completed'
+    progress: doublePrecision('progress').default(0), // 0-100 percentage
+    timeSpent: integer('time_spent').default(0), // Time spent in minutes
+    completedAt: timestamp('completed_at'),
+    lastAccessedAt: timestamp('last_accessed_at').defaultNow(),
+    quizScore: integer('quiz_score'), // Score percentage if quiz completed
+    quizPassed: boolean('quiz_passed').default(false),
+    metadata: jsonb('metadata').default({
+        bookmarks: [],
+        notes: '',
+        favorite: false
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Quiz Attempts Table
+export const quizAttempts = pgTable('quiz_attempts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    quizId: uuid('quiz_id').references(() => educationQuizzes.id, { onDelete: 'cascade' }).notNull(),
+    attemptNumber: integer('attempt_number').default(1),
+    answers: jsonb('answers').notNull(), // User's answers
+    score: integer('score').notNull(), // Percentage score
+    passed: boolean('passed').default(false),
+    timeTaken: integer('time_taken'), // Time taken in minutes
+    startedAt: timestamp('started_at').defaultNow(),
+    completedAt: timestamp('completed_at'),
+    metadata: jsonb('metadata').default({
+        correctAnswers: 0,
+        totalQuestions: 0,
+        questionBreakdown: []
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Education Content Relations
+export const educationContentRelations = relations(educationContent, ({ many }) => ({
+    quizzes: many(educationQuizzes),
+    userProgress: many(userEducationProgress),
+}));
+
+// Education Quizzes Relations
+export const educationQuizzesRelations = relations(educationQuizzes, ({ one, many }) => ({
+    content: one(educationContent, {
+        fields: [educationQuizzes.contentId],
+        references: [educationContent.id],
+    }),
+    attempts: many(quizAttempts),
+}));
+
+// User Education Progress Relations
+export const userEducationProgressRelations = relations(userEducationProgress, ({ one }) => ({
+    user: one(users, {
+        fields: [userEducationProgress.userId],
+        references: [users.id],
+    }),
+    content: one(educationContent, {
+        fields: [userEducationProgress.contentId],
+        references: [educationContent.id],
+    }),
+}));
+
+// Quiz Attempts Relations
+export const quizAttemptsRelations = relations(quizAttempts, ({ one }) => ({
+    user: one(users, {
+        fields: [quizAttempts.userId],
+        references: [users.id],
+    }),
+    quiz: one(educationQuizzes, {
+        fields: [quizAttempts.quizId],
+        references: [educationQuizzes.id],
+    }),
+}));
