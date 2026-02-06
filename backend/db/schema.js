@@ -382,6 +382,60 @@ export const forecastSnapshots = pgTable('forecast_snapshots', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Balance Snapshots Table (Daily balance tracking for historical analysis)
+export const balanceSnapshots = pgTable('balance_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    date: timestamp('date').defaultNow().notNull(),
+    balance: numeric('balance', { precision: 12, scale: 2 }).notNull(),
+    income: numeric('income', { precision: 12, scale: 2 }).default('0'),
+    expense: numeric('expense', { precision: 12, scale: 2 }).default('0'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => {
+    return {
+        userDateIdx: index('idx_balance_snapshots_user_date').on(table.userId, table.date),
+    };
+});
+
+// Liquidity Alerts Table
+export const liquidityAlerts = pgTable('liquidity_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    threshold: numeric('threshold', { precision: 12, scale: 2 }).notNull(),
+    alertDays: integer('alert_days').default(7), // alert if balance falls below threshold within X days
+    isActive: boolean('is_active').default(true),
+    lastTriggeredAt: timestamp('last_triggered_at'),
+    severity: text('severity').default('warning'), // 'warning', 'critical'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_liquidity_alerts_user_id').on(table.userId),
+    };
+});
+
+// Transfer Suggestions Table (AI-generated recommendations for account optimization)
+export const transferSuggestions = pgTable('transfer_suggestions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceVaultId: uuid('source_vault_id').references(() => vaults.id, { onDelete: 'set null' }),
+    destVaultId: uuid('dest_vault_id').references(() => vaults.id, { onDelete: 'set null' }),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    reason: text('reason'),
+    suggestedDate: timestamp('suggested_date'),
+    status: text('status').default('pending'), // 'pending', 'accepted', 'ignored', 'executed'
+    aiConfidence: doublePrecision('ai_confidence'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_transfer_suggestions_user_id').on(table.userId),
+    };
+});
+
 // Token Blacklist Table
 export const tokenBlacklist = pgTable('token_blacklist', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -648,9 +702,10 @@ export const usersRelations = relations(users, ({ many }) => ({
     auditLogs: many(auditLogs),
     securityMarkers: many(securityMarkers),
     disputedTransactions: many(disputedTransactions),
-    debts: many(debts),
-    payoffStrategies: many(payoffStrategies),
-    refinanceOpportunities: many(refinanceOpportunities),
+    balanceSnapshots: many(balanceSnapshots),
+    forecastSnapshots: many(forecastSnapshots),
+    liquidityAlerts: many(liquidityAlerts),
+    transferSuggestions: many(transferSuggestions),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -1432,5 +1487,34 @@ export const taxReportsRelations = relations(taxReports, ({ one }) => ({
     user: one(users, {
         fields: [taxReports.userId],
         references: [users.id],
+    }),
+}));
+
+export const balanceSnapshotsRelations = relations(balanceSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [balanceSnapshots.userId],
+        references: [users.id],
+    }),
+}));
+
+export const liquidityAlertsRelations = relations(liquidityAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [liquidityAlerts.userId],
+        references: [users.id],
+    }),
+}));
+
+export const transferSuggestionsRelations = relations(transferSuggestions, ({ one }) => ({
+    user: one(users, {
+        fields: [transferSuggestions.userId],
+        references: [users.id],
+    }),
+    sourceVault: one(vaults, {
+        fields: [transferSuggestions.sourceVaultId],
+        references: [vaults.id],
+    }),
+    destVault: one(vaults, {
+        fields: [transferSuggestions.destVaultId],
+        references: [vaults.id],
     }),
 }));
