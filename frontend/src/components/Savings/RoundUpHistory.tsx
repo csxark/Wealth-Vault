@@ -49,7 +49,7 @@ const RoundUpHistory: React.FC = () => {
 
   const loadRoundUps = async () => {
     try {
-      const response = await fetch(`/api/savings/roundups?page=${page}&limit=20`, {
+      const response = await fetch(`/api/savings/history?page=${page}&limit=20`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
