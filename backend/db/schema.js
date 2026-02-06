@@ -100,6 +100,23 @@ export const expenses = pgTable('expenses', {
     };
 });
 
+// Subscriptions Table
+export const subscriptions = pgTable('subscriptions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    billingCycle: text('billing_cycle').default('monthly'), // monthly, yearly, weekly
+    nextPaymentDate: timestamp('next_payment_date').notNull(),
+    description: text('description'),
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Vaults Table (Collaborative Shared Wallets)
 export const vaults = pgTable('vaults', {
     id: uuid('id').defaultRandom().primaryKey(),
