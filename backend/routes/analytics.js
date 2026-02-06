@@ -49,6 +49,10 @@ router.get("/spending-summary", protect, async (req, res) => {
   try {
     const { startDate, endDate, period = "month" } = req.query;
 
+    // Get user's base currency
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const baseCurrency = user?.currency || 'USD';
+
     // Calculate date range based on period
     const now = new Date();
     let start, end;
@@ -79,33 +83,89 @@ router.get("/spending-summary", protect, async (req, res) => {
       lte(expenses.date, end),
     ];
 
-    // Category-wise spending
-    const categorySpending = await db
-      .select({
-        categoryId: expenses.categoryId,
-        categoryName: categories.name,
-        categoryColor: categories.color,
-        categoryIcon: categories.icon,
-        total: sql`sum(${expenses.amount})`,
-        count: sql`count(*)`,
-        avgAmount: sql`avg(${expenses.amount})`,
-      })
-      .from(expenses)
-      .leftJoin(categories, eq(expenses.categoryId, categories.id))
-      .where(and(...conditions))
-      .groupBy(expenses.categoryId, categories.name, categories.color, categories.icon)
-      .orderBy(desc(sql`sum(${expenses.amount})`));
+    // Fetch all expenses for processing (needed for normalization)
+    const allExpenses = await db.query.expenses.findMany({
+      where: and(...conditions),
+      with: {
+        category: {
+          columns: { name: true, color: true, icon: true, id: true }
+        }
+      }
+    });
 
-    // Monthly trend (last 6 months)
+    // Normalize expenses
+    const normalizedExpenses = await Promise.all(allExpenses.map(async (exp) => {
+      let normalizedAmount = Number(exp.amount);
+      if (exp.currency && exp.currency !== baseCurrency) {
+        normalizedAmount = await convertAmount(normalizedAmount, exp.currency, baseCurrency);
+      }
+      return {
+        ...exp,
+        normalizedAmount,
+        categoryId: exp.categoryId,
+        categoryName: exp.category?.name || 'Uncategorized',
+        categoryColor: exp.category?.color,
+        categoryIcon: exp.category?.icon
+      };
+    }));
+
+    // Calculate Summary
+    const summary = {
+      totalAmount: normalizedExpenses.reduce((sum, e) => sum + e.normalizedAmount, 0),
+      totalCount: normalizedExpenses.length,
+      avgTransaction: normalizedExpenses.length > 0
+        ? normalizedExpenses.reduce((sum, e) => sum + e.normalizedAmount, 0) / normalizedExpenses.length
+        : 0,
+      maxTransaction: normalizedExpenses.length > 0
+        ? Math.max(...normalizedExpenses.map(e => e.normalizedAmount))
+        : 0,
+      minTransaction: normalizedExpenses.length > 0
+        ? Math.min(...normalizedExpenses.map(e => e.normalizedAmount))
+        : 0,
+    };
+
+    // Category-wise spending
+    const categoryMap = new Map();
+    normalizedExpenses.forEach(exp => {
+      const catKey = exp.categoryId || 'uncategorized';
+      if (!categoryMap.has(catKey)) {
+        categoryMap.set(catKey, {
+          categoryId: exp.categoryId,
+          categoryName: exp.categoryName,
+          categoryColor: exp.categoryColor,
+          categoryIcon: exp.categoryIcon,
+          total: 0,
+          count: 0,
+          expenses: [] // keep track for avg calculation if needed
+        });
+      }
+      const cat = categoryMap.get(catKey);
+      cat.total += exp.normalizedAmount;
+      cat.count += 1;
+      cat.expenses.push(exp.normalizedAmount);
+    });
+
+    const categorySpending = Array.from(categoryMap.values())
+      .map(cat => ({
+        ...cat,
+        avgAmount: cat.total / cat.count,
+        percentage: summary.totalAmount > 0 ? (cat.total / summary.totalAmount) * 100 : 0
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    // Monthly trend (last 6 months) - Requires fetching past data and normalizing
+    // Optimization: fetching aggregated data by currency for past months to avoid fetching all rows
     const monthlyTrend = [];
     for (let i = 5; i >= 0; i--) {
       const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
 
-      const [monthData] = await db
+      // Fetch grouped by currency
+      const monthData = await db
         .select({
+          currency: expenses.currency,
           total: sql`sum(${expenses.amount})`,
-          count: sql`count(*)`,
+          count: sql`count(*)`
         })
         .from(expenses)
         .where(
@@ -115,91 +175,81 @@ router.get("/spending-summary", protect, async (req, res) => {
             gte(expenses.date, monthStart),
             lte(expenses.date, monthEnd)
           )
-        );
+        )
+        .groupBy(expenses.currency);
+
+      let monthTotal = 0;
+      let monthCount = 0;
+
+      for (const record of monthData) {
+        const amount = Number(record.total);
+        const currency = record.currency || baseCurrency;
+        const normalized = currency !== baseCurrency
+          ? await convertAmount(amount, currency, baseCurrency)
+          : amount;
+        monthTotal += normalized;
+        monthCount += Number(record.count);
+      }
 
       monthlyTrend.push({
         month: monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-        total: Number(monthData?.total || 0),
-        count: Number(monthData?.count || 0),
+        total: monthTotal,
+        count: monthCount,
         date: monthStart.toISOString(),
       });
     }
 
-    // Top expenses in period
-    const topExpenses = await db.query.expenses.findMany({
-      where: and(...conditions),
-      orderBy: [desc(expenses.amount)],
-      limit: 10,
-      with: {
-        category: {
-          columns: { name: true, color: true, icon: true },
-        },
-      },
-    });
+    // Top expenses in period (normalized)
+    const topExpenses = [...normalizedExpenses]
+      .sort((a, b) => b.normalizedAmount - a.normalizedAmount)
+      .slice(0, 10);
 
     // Payment method breakdown
-    const paymentMethods = await db
-      .select({
-        paymentMethod: expenses.paymentMethod,
-        total: sql`sum(${expenses.amount})`,
-        count: sql`count(*)`,
-      })
-      .from(expenses)
-      .where(and(...conditions))
-      .groupBy(expenses.paymentMethod)
-      .orderBy(desc(sql`sum(${expenses.amount})`));
+    const paymentMap = new Map();
+    normalizedExpenses.forEach(exp => {
+      const method = exp.paymentMethod || 'other';
+      if (!paymentMap.has(method)) {
+        paymentMap.set(method, {
+          method,
+          total: 0,
+          count: 0
+        });
+      }
+      const pm = paymentMap.get(method);
+      pm.total += exp.normalizedAmount;
+      pm.count += 1;
+    });
 
-    // Overall summary
-    const [summary] = await db
-      .select({
-        totalAmount: sql`sum(${expenses.amount})`,
-        totalCount: sql`count(*)`,
-        avgTransaction: sql`avg(${expenses.amount})`,
-        maxTransaction: sql`max(${expenses.amount})`,
-        minTransaction: sql`min(${expenses.amount})`,
-      })
-      .from(expenses)
-      .where(and(...conditions));
+    const paymentMethods = Array.from(paymentMap.values())
+      .map(pm => ({
+        ...pm,
+        percentage: summary.totalAmount > 0 ? (pm.total / summary.totalAmount) * 100 : 0
+      }))
+      .sort((a, b) => b.total - a.total);
 
     res.json({
       success: true,
       data: {
+        baseCurrency,
         period: {
           start: start.toISOString(),
           end: end.toISOString(),
           type: period,
         },
-        summary: {
-          totalAmount: Number(summary?.totalAmount || 0),
-          totalCount: Number(summary?.totalCount || 0),
-          avgTransaction: Number(summary?.avgTransaction || 0),
-          maxTransaction: Number(summary?.maxTransaction || 0),
-          minTransaction: Number(summary?.minTransaction || 0),
-        },
-        categoryBreakdown: categorySpending.map((item) => ({
-          categoryId: item.categoryId,
-          categoryName: item.categoryName || 'Uncategorized',
-          categoryColor: item.categoryColor || '#6b7280',
-          categoryIcon: item.categoryIcon || 'circle',
-          total: Number(item.total),
-          count: Number(item.count),
-          avgAmount: Number(item.avgAmount),
-          percentage: summary?.totalAmount ? (Number(item.total) / Number(summary.totalAmount)) * 100 : 0,
-        })),
+        summary,
+        categoryBreakdown: categorySpending,
         monthlyTrend,
         topExpenses: topExpenses.map((exp) => ({
           id: exp.id,
-          amount: Number(exp.amount),
+          amount: exp.normalizedAmount, // Send normalized amount
+          originalAmount: Number(exp.amount),
+          currency: baseCurrency,
+          originalCurrency: exp.currency,
           description: exp.description,
           date: exp.date,
           category: exp.category,
         })),
-        paymentMethods: paymentMethods.map((pm) => ({
-          method: pm.paymentMethod,
-          total: Number(pm.total),
-          count: Number(pm.count),
-          percentage: summary?.totalAmount ? (Number(pm.total) / Number(summary.totalAmount)) * 100 : 0,
-        })),
+        paymentMethods,
       },
     });
   } catch (error) {
