@@ -1,12 +1,15 @@
 import express from "express";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users } from "../db/schema.js";
+import { expenses, categories, users, debts as debtsTable, debtPayments } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
 import assetService from "../services/assetService.js";
 import projectionEngine from "../services/projectionEngine.js";
 import marketData from "../services/marketData.js";
+import debtEngine from "../services/debtEngine.js";
+import payoffOptimizer from "../services/payoffOptimizer.js";
+import refinanceScout from "../services/refinanceScout.js";
 
 const router = express.Router();
 
@@ -1096,6 +1099,654 @@ router.get("/asset-allocation", protect, async (req, res) => {
   } catch (error) {
     console.error("Asset allocation error:", error);
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================
+// DEBT ANALYTICS ENDPOINTS
+// ============================================
+
+/**
+ * @route   GET /analytics/debt-to-income
+ * @desc    Calculate debt-to-income ratio
+ */
+router.get("/debt-to-income", protect, async (req, res) => {
+  try {
+    // Get user's monthly income
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const monthlyIncome = req.body.monthlyIncome 
+      ? parseFloat(req.body.monthlyIncome) 
+      : user?.monthlyIncome 
+        ? parseFloat(user.monthlyIncome) 
+        : 0;
+
+    if (monthlyIncome <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Monthly income is required to calculate DTI ratio"
+      });
+    }
+
+    // Get all active debts
+    const userDebts = await db.query.debts.findMany({
+      where: and(
+        eq(debtsTable.userId, req.user.id),
+        eq(debtsTable.isActive, true)
+      )
+    });
+
+    // Calculate total monthly debt payments
+    const breakdown = {
+      creditCards: 0,
+      loans: 0,
+      mortgage: 0,
+      other: 0
+    };
+
+    userDebts.forEach(debt => {
+      const payment = parseFloat(debt.minimumPayment);
+      switch (debt.debtType) {
+        case 'credit_card':
+          breakdown.creditCards += payment;
+          break;
+        case 'personal_loan':
+        case 'student_loan':
+        case 'auto_loan':
+        case 'medical':
+          breakdown.loans += payment;
+          break;
+        case 'mortgage':
+          breakdown.mortgage += payment;
+          break;
+        default:
+          breakdown.other += payment;
+      }
+    });
+
+    const totalMonthlyDebt = breakdown.creditCards + breakdown.loans + breakdown.mortgage + breakdown.other;
+    const dtiRatio = (totalMonthlyDebt / monthlyIncome) * 100;
+
+    // Determine DTI category
+    let dtiCategory;
+    if (dtiRatio < 20) dtiCategory = 'Excellent';
+    else if (dtiRatio < 30) dtiCategory = 'Good';
+    else if (dtiRatio < 40) dtiCategory = 'Fair';
+    else if (dtiRatio < 50) dtiCategory = 'Poor';
+    else dtiCategory = 'Critical';
+
+    // Generate recommendations
+    const recommendations = [];
+    if (dtiRatio > 40) {
+      recommendations.push({
+        priority: 'high',
+        message: 'Consider focusing on high-interest debts first to reduce your DTI quickly.'
+      });
+    }
+    if (breakdown.creditCards > totalMonthlyDebt * 0.5) {
+      recommendations.push({
+        priority: 'medium',
+        message: 'Credit card debt is a significant portion of your payments. Consider a balance transfer.'
+      });
+    }
+    if (dtiRatio < 30) {
+      recommendations.push({
+        priority: 'low',
+        message: 'Your DTI is in a healthy range. Consider increasing savings or investments.'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        dtiRatio: Math.round(dtiRatio * 100) / 100,
+        dtiCategory,
+        totalMonthlyDebt: Math.round(totalMonthlyDebt * 100) / 100,
+        monthlyIncome: Math.round(monthlyIncome * 100) / 100,
+        breakdown,
+        recommendations
+      }
+    });
+  } catch (error) {
+    console.error("Debt-to-income error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error calculating debt-to-income ratio",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/debt-freedom
+ * @desc    Calculate debt freedom date with payoff strategies
+ */
+router.get("/debt-freedom", protect, async (req, res) => {
+  try {
+    const { strategy = 'snowball', extra_payment = 0 } = req.query;
+    const extraPayment = parseFloat(extra_payment) || 0;
+
+    // Get all active debts
+    const userDebts = await db.query.debts.findMany({
+      where: and(
+        eq(debtsTable.userId, req.user.id),
+        eq(debtsTable.isActive, true)
+      )
+    });
+
+    if (userDebts.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          debtFreeDate: new Date().toISOString(),
+          monthsRemaining: 0,
+          totalInterest: 0,
+          totalPrincipal: 0,
+          payoffOrder: [],
+          milestones: [],
+          strategy,
+          message: 'No active debts found'
+        }
+      });
+    }
+
+    // Prepare debts array for optimizer
+    const debtsArray = userDebts.map(debt => ({
+      id: debt.id,
+      name: debt.name,
+      balance: parseFloat(debt.currentBalance),
+      apr: parseFloat(debt.apr),
+      minimumPayment: parseFloat(debt.minimumPayment)
+    }));
+
+    let result;
+    if (strategy === 'avalanche') {
+      result = await payoffOptimizer.calculateAvalancheStrategy(debtsArray, extraPayment);
+    } else {
+      result = await payoffOptimizer.calculateSnowballStrategy(debtsArray, extraPayment);
+    }
+
+    // Build payoff order
+    const payoffOrder = strategy === 'avalanche'
+      ? [...debtsArray].sort((a, b) => b.apr - a.apr).map(d => ({ id: d.id, name: d.name, apr: d.apr }))
+      : [...debtsArray].sort((a, b) => a.balance - b.balance).map(d => ({ id: d.id, name: d.name, balance: d.balance }));
+
+    // Create milestones
+    const milestones = [];
+    if (result.milestones && result.milestones.length > 0) {
+      milestones.push(...result.milestones);
+    }
+
+    // Add final payoff milestone
+    milestones.push({
+      name: 'Debt Freedom Day',
+      date: payoffOptimizer.formatDate(result.debtFreeDate),
+      remainingDebt: 0,
+      totalInterest: result.totalInterest
+    });
+
+    res.json({
+      success: true,
+      data: {
+        debtFreeDate: result.debtFreeDate.toISOString(),
+        monthsRemaining: result.monthsToFreedom,
+        totalInterest: result.totalInterest,
+        totalPrincipal: result.totalPrincipal || debtsArray.reduce((sum, d) => sum + d.balance, 0),
+        payoffOrder,
+        milestones,
+        strategy
+      }
+    });
+  } catch (error) {
+    console.error("Debt freedom calculation error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error calculating debt freedom date",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/debt-summary
+ * @desc    Get comprehensive debt summary
+ */
+router.get("/debt-summary", protect, async (req, res) => {
+  try {
+    // Get all active debts
+    const userDebts = await db.query.debts.findMany({
+      where: and(
+        eq(debtsTable.userId, req.user.id),
+        eq(debtsTable.isActive, true)
+      )
+    });
+
+    // Calculate totals
+    let totalDebt = 0;
+    let totalMonthlyPayment = 0;
+    let weightedAvgApr = 0;
+    let totalPrincipal = 0;
+    const debtByType = {};
+
+    userDebts.forEach(debt => {
+      const balance = parseFloat(debt.currentBalance);
+      const payment = parseFloat(debt.minimumPayment);
+      const apr = parseFloat(debt.apr);
+
+      totalDebt += balance;
+      totalMonthlyPayment += payment;
+      totalPrincipal += balance;
+
+      if (!debtByType[debt.debtType]) {
+        debtByType[debt.debtType] = { balance: 0, percentage: 0, count: 0 };
+      }
+      debtByType[debt.debtType].balance += balance;
+      debtByType[debt.debtType].count += 1;
+    });
+
+    // Calculate weighted average APR
+    if (totalDebt > 0) {
+      weightedAvgApr = userDebts.reduce((sum, debt) => {
+        return sum + (parseFloat(debt.apr) * parseFloat(debt.currentBalance));
+      }, 0) / totalDebt;
+    }
+
+    const monthlyInterest = totalDebt * (weightedAvgApr / 12);
+    const yearlyInterest = monthlyInterest * 12;
+
+    Object.keys(debtByType).forEach(type => {
+      debtByType[type].percentage = totalDebt > 0 
+        ? (debtByType[type].balance / totalDebt) * 100 
+        : 0;
+      debtByType[type].balance = Math.round(debtByType[type].balance * 100) / 100;
+      debtByType[type].percentage = Math.round(debtByType[type].percentage * 100) / 100;
+    });
+
+    // Get DTI ratio
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const monthlyIncome = user?.monthlyIncome ? parseFloat(user.monthlyIncome) : 1;
+    const dtiRatio = monthlyIncome > 0 ? (totalMonthlyPayment / monthlyIncome) * 100 : 0;
+
+    // Calculate debt freedom date
+    const debtFreeDate = await payoffOptimizer.calculateDebtFreeDate(
+      userDebts.map(d => ({
+        balance: parseFloat(d.currentBalance),
+        apr: parseFloat(d.apr),
+        minimumPayment: parseFloat(d.minimumPayment)
+      }))
+    );
+
+    res.json({
+      success: true,
+      data: {
+        totalDebt: Math.round(totalDebt * 100) / 100,
+        totalMonthlyPayment: Math.round(totalMonthlyPayment * 100) / 100,
+        weightedAvgApr: Math.round(weightedAvgApr * 1000) / 1000,
+        debtByType,
+        monthlyInterest: Math.round(monthlyInterest * 100) / 100,
+        yearlyInterest: Math.round(yearlyInterest * 100) / 100,
+        debtFreeDate: debtFreeDate?.toISOString() || null,
+        dtiRatio: Math.round(dtiRatio * 100) / 100,
+        debtCount: userDebts.length
+      }
+    });
+  } catch (error) {
+    console.error("Debt summary error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error calculating debt summary",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/debt-trends
+ * @desc    Get debt payment trends
+ */
+router.get("/debt-trends", protect, async (req, res) => {
+  try {
+    const { period = 'monthly', months = 12 } = req.query;
+    const monthsToAnalyze = parseInt(months);
+    const now = new Date();
+
+    // Get payment history
+    const trends = [];
+
+    if (period === 'monthly') {
+      for (let i = monthsToAnalyze - 1; i >= 0; i--) {
+        const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+
+        const [paymentData] = await db
+          .select({
+            totalPaid: sql`sum(${debtPayments.paymentAmount})`,
+            principalPaid: sql`sum(${debtPayments.principalPayment})`,
+            interestPaid: sql`sum(${debtPayments.interestPayment})`
+          })
+          .from(debtPayments)
+          .where(
+            and(
+              eq(debtPayments.userId, req.user.id),
+              gte(debtPayments.paymentDate, monthStart),
+              lte(debtPayments.paymentDate, monthEnd)
+            )
+          );
+
+        // Get debt balance at end of month
+        const [debtBalanceData] = await db
+          .select({
+            totalBalance: sql`sum(${debtsTable.currentBalance})`
+          })
+          .from(debtsTable)
+          .where(
+            and(
+              eq(debtsTable.userId, req.user.id),
+              eq(debtsTable.isActive, true)
+            )
+          );
+
+        trends.push({
+          period: monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+          date: monthStart.toISOString(),
+          totalPaid: Number(paymentData?.totalPaid || 0),
+          principalPaid: Number(paymentData?.principalPaid || 0),
+          interestPaid: Number(paymentData?.interestPaid || 0),
+          debtBalance: Number(debtBalanceData?.totalBalance || 0)
+        });
+      }
+    } else {
+      // Yearly trends
+      for (let i = 4; i >= 0; i--) {
+        const yearStart = new Date(now.getFullYear() - i, 0, 1);
+        const yearEnd = new Date(now.getFullYear() - i + 1, 0, 0);
+
+        const [paymentData] = await db
+          .select({
+            totalPaid: sql`sum(${debtPayments.paymentAmount})`,
+            principalPaid: sql`sum(${debtPayments.principalPayment})`,
+            interestPaid: sql`sum(${debtPayments.interestPayment})`
+          })
+          .from(debtPayments)
+          .where(
+            and(
+              eq(debtPayments.userId, req.user.id),
+              gte(debtPayments.paymentDate, yearStart),
+              lte(debtPayments.paymentDate, yearEnd)
+            )
+          );
+
+        trends.push({
+          period: (now.getFullYear() - i).toString(),
+          date: yearStart.toISOString(),
+          totalPaid: Number(paymentData?.totalPaid || 0),
+          principalPaid: Number(paymentData?.principalPaid || 0),
+          interestPaid: Number(paymentData?.interestPaid || 0)
+        });
+      }
+    }
+
+    // Calculate growth rate
+    let growthRate = 0;
+    if (trends.length >= 2) {
+      const first = trends[0];
+      const last = trends[trends.length - 1];
+      if (first.debtBalance > 0) {
+        growthRate = ((last.debtBalance - first.debtBalance) / first.debtBalance) * 100;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        trends,
+        growthRate: Math.round(growthRate * 100) / 100,
+        period,
+        monthsAnalyzed: monthsToAnalyze
+      }
+    });
+  } catch (error) {
+    console.error("Debt trends error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error calculating debt trends",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/debt-health
+ * @desc    Calculate overall debt health score
+ */
+router.get("/debt-health", protect, async (req, res) => {
+  try {
+    // Get all active debts
+    const userDebts = await db.query.debts.findMany({
+      where: and(
+        eq(debtsTable.userId, req.user.id),
+        eq(debtsTable.isActive, true)
+      )
+    });
+
+    // Get user income for DTI calculation
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const monthlyIncome = user?.monthlyIncome ? parseFloat(user.monthlyIncome) : 1;
+
+    // Calculate DTI score (0-25)
+    let dtiScore = 25;
+    let totalMonthlyDebt = 0;
+
+    userDebts.forEach(debt => {
+      totalMonthlyDebt += parseFloat(debt.minimumPayment);
+    });
+
+    const dtiRatio = monthlyIncome > 0 ? (totalMonthlyDebt / monthlyIncome) * 100 : 100;
+    if (dtiRatio > 50) dtiScore = 0;
+    else if (dtiRatio > 40) dtiScore = 5;
+    else if (dtiRatio > 30) dtiScore = 10;
+    else if (dtiRatio > 20) dtiScore = 18;
+    else if (dtiRatio > 10) dtiScore = 22;
+
+    // Calculate APR score (0-25)
+    let aprScore = 25;
+    if (userDebts.length > 0) {
+      const avgApr = userDebts.reduce((sum, d) => sum + parseFloat(d.apr), 0) / userDebts.length;
+      if (avgApr > 0.25) aprScore = 5;
+      else if (avgApr > 0.20) aprScore = 10;
+      else if (avgApr > 0.15) aprScore = 15;
+      else if (avgApr > 0.10) aprScore = 20;
+    }
+
+    // Calculate diversity score (0-25)
+    const debtTypes = new Set(userDebts.map(d => d.debtType));
+    let diversityScore = Math.min(debtTypes.size * 5, 25);
+
+    // Calculate progress score (0-25)
+    let progressScore = 25;
+    if (userDebts.length > 0) {
+      const totalOriginal = userDebts.reduce((sum, d) => {
+        return sum + parseFloat(d.principalAmount || d.currentBalance);
+      }, 0);
+      const totalCurrent = userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0);
+      const progress = totalOriginal > 0 ? ((totalOriginal - totalCurrent) / totalOriginal) * 100 : 0;
+      progressScore = Math.min(progress, 25);
+    }
+
+    const healthScore = dtiScore + aprScore + diversityScore + progressScore;
+
+    // Determine rating
+    let rating;
+    if (healthScore >= 85) rating = 'excellent';
+    else if (healthScore >= 70) rating = 'good';
+    else if (healthScore >= 50) rating = 'fair';
+    else rating = 'poor';
+
+    // Generate recommendations
+    const recommendations = [];
+    if (dtiScore < 15) {
+      recommendations.push({
+        priority: 'high',
+        message: 'Your debt-to-income ratio is high. Consider increasing payments or consolidating debts.'
+      });
+    }
+    if (aprScore < 15) {
+      recommendations.push({
+        priority: 'medium',
+        message: 'Your average APR is high. Look into refinancing or balance transfer options.'
+      });
+    }
+    if (progressScore < 10) {
+      recommendations.push({
+        priority: 'medium',
+        message: 'Make consistent payments to reduce your debt faster and improve your credit score.'
+      });
+    }
+    if (healthScore >= 85) {
+      recommendations.push({
+        priority: 'low',
+        message: 'Great job! Consider redirecting freed-up funds to investments or savings.'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        healthScore: Math.round(healthScore),
+        factors: {
+          dtiScore: Math.round(dtiScore),
+          aprScore: Math.round(aprScore),
+          diversityScore: Math.round(diversityScore),
+          progressScore: Math.round(progressScore)
+        },
+        rating,
+        recommendations,
+        summary: {
+          totalDebts: userDebts.length,
+          totalBalance: Math.round(userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0) * 100) / 100,
+          avgApr: userDebts.length > 0 
+            ? Math.round((userDebts.reduce((sum, d) => sum + parseFloat(d.apr), 0) / userDebts.length) * 1000) / 10 
+            : 0
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Debt health error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error calculating debt health",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/debt-insights
+ * @desc    Get AI-powered debt insights and refinance opportunities
+ */
+router.get("/debt-insights", protect, async (req, res) => {
+  try {
+    // Get all active debts
+    const userDebts = await db.query.debts.findMany({
+      where: and(
+        eq(debtsTable.userId, req.user.id),
+        eq(debtsTable.isActive, true)
+      )
+    });
+
+    // Get market rates for comparison
+    const marketRates = await refinanceScout.getCurrentMarketRates();
+
+    const insights = [];
+    let refinanceOpportunities = [];
+    let consolidationAnalysis = null;
+
+    // Analyze each debt
+    userDebts.forEach(debt => {
+      const currentApr = parseFloat(debt.apr);
+      const balance = parseFloat(debt.currentBalance);
+      const type = debt.debtType;
+
+      // Check for high APR warning
+      if (marketRates[type]) {
+        const { avg } = marketRates[type];
+        if (currentApr > avg + 0.03) {
+          insights.push({
+            type: 'warning',
+            title: `High APR on ${debt.name}`,
+            description: `Your APR of ${(currentApr * 100).toFixed(1)}% is ${((currentApr - avg) * 100).toFixed(1)}% higher than the current market average of ${(avg * 100).toFixed(1)}%.`,
+            action: 'Consider refinancing this debt to save on interest.'
+          });
+
+          // Add to refinance opportunities
+          refinanceOpportunities.push({
+            debtId: debt.id,
+            debtName: debt.name,
+            currentApr: currentApr * 100,
+            marketAvgApr: avg * 100,
+            potentialSavings: Math.round((currentApr - avg) * balance * 0.5 * 100) / 100
+          });
+        }
+      }
+
+      // Check for good payment history
+      if (currentApr < 0.10) {
+        insights.push({
+          type: 'success',
+          title: `Good Rate on ${debt.name}`,
+          description: `Your APR of ${(currentApr * 100).toFixed(1)}% is competitive.`,
+          action: 'Consider prioritizing higher-rate debts first.'
+        });
+      }
+    });
+
+    // Consolidation analysis
+    if (userDebts.length >= 2) {
+      const totalBalance = userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0);
+      const weightedAvgApr = userDebts.reduce((sum, d) => sum + parseFloat(d.apr) * parseFloat(d.currentBalance), 0) / totalBalance;
+
+      consolidationAnalysis = {
+        eligible: totalBalance >= 5000,
+        potentialBenefit: weightedAvgApr > 0.12 ? 'high' : weightedAvgApr > 0.08 ? 'medium' : 'low',
+        recommendation: weightedAvgApr > 0.15 
+          ? 'Consider a debt consolidation loan to simplify payments and reduce interest.'
+          : 'Your current rates are relatively good. Consolidation may not provide significant savings.'
+      };
+    }
+
+    // General insights
+    if (userDebts.length === 0) {
+      insights.push({
+        type: 'success',
+        title: 'Debt Free',
+        description: 'You have no active debts!',
+        action: 'Focus on building wealth and increasing your emergency fund.'
+      });
+    }
+
+    // Sort insights by priority
+    const priorityOrder = { warning: 0, info: 1, success: 2 };
+    insights.sort((a, b) => priorityOrder[a.type] - priorityOrder[b.type]);
+
+    res.json({
+      success: true,
+      data: {
+        insights,
+        refinanceOpportunities: refinanceOpportunities.sort((a, b) => b.potentialSavings - a.potentialSavings),
+        consolidationAnalysis,
+        summary: {
+          totalDebts: userDebts.length,
+          highPriorityIssues: insights.filter(i => i.type === 'warning').length,
+          opportunities: refinanceOpportunities.length
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Debt insights error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error generating debt insights",
+      error: error.message
+    });
   }
 });
 
