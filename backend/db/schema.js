@@ -28,6 +28,10 @@ export const users = pgTable('users', {
         theme: 'auto',
         language: 'en'
     }),
+    // Savings Round-Up Settings
+    savingsRoundUpEnabled: boolean('savings_round_up_enabled').default(false),
+    savingsGoalId: uuid('savings_goal_id').references(() => goals.id, { onDelete: 'set null' }),
+    roundUpToNearest: numeric('round_up_to_nearest', { precision: 5, scale: 2 }).default('1.00'), // Round up to nearest dollar or custom amount
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -228,6 +232,28 @@ export const goalMilestones = pgTable('goal_milestones', {
     metadata: jsonb('metadata').default({
         badgeEarned: false,
         notificationSent: false
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Savings Round-Ups Table
+export const savingsRoundups = pgTable('savings_roundups', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'set null' }),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }).notNull(),
+    originalAmount: numeric('original_amount', { precision: 12, scale: 2 }).notNull(),
+    roundedAmount: numeric('rounded_amount', { precision: 12, scale: 2 }).notNull(),
+    roundUpAmount: numeric('round_up_amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    status: text('status').default('pending'), // pending, transferred, failed
+    transferId: text('transfer_id'), // Plaid transfer ID
+    transferDate: timestamp('transfer_date'),
+    errorMessage: text('error_message'),
+    metadata: jsonb('metadata').default({
+        roundUpToNearest: '1.00',
+        createdBy: 'system'
     }),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
@@ -842,6 +868,22 @@ export const bankTransactionsRelations = relations(bankTransactions, ({ one }) =
     }),
     expense: one(expenses, {
         fields: [bankTransactions.expenseId],
+        references: [expenses.id],
+    }),
+}));
+
+// Savings Roundups Relations
+export const savingsRoundupsRelations = relations(savingsRoundups, ({ one }) => ({
+    user: one(users, {
+        fields: [savingsRoundups.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [savingsRoundups.goalId],
+        references: [goals.id],
+    }),
+    expense: one(expenses, {
+        fields: [savingsRoundups.expenseId],
         references: [expenses.id],
     }),
 }));

@@ -197,6 +197,7 @@ app.use("/api/investments", userLimiter, investmentRoutes);
 app.use("/api/investment-advice", userLimiter, investmentAdvice);
 app.use("/api/budget-alerts", userLimiter, budgetAlertsRoutes);
 app.use("/api/bank-sync", userLimiter, bankSyncRoutes);
+app.use("/api/savings", userLimiter, savingsRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
