@@ -1698,3 +1698,41 @@ export const transferSuggestionsRelations = relations(transferSuggestions, ({ on
         references: [vaults.id],
     }),
 }));
+
+// Forecasts Table (for AI-driven budget forecasting and simulations)
+export const forecasts = pgTable('forecasts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    forecastType: text('forecast_type').notNull(), // 'expense', 'income', 'budget', 'cash_flow'
+    period: text('period').notNull(), // 'monthly', 'quarterly', 'yearly'
+    forecastData: jsonb('forecast_data').notNull(), // Array of prediction points with dates and values
+    parameters: jsonb('parameters').notNull(), // Model parameters, confidence intervals, etc.
+    accuracy: doublePrecision('accuracy'), // Model accuracy score (0-1)
+    confidenceLevel: doublePrecision('confidence_level').default(0.95), // Statistical confidence level
+    scenario: text('scenario').default('baseline'), // 'baseline', 'optimistic', 'pessimistic', 'custom'
+    isSimulation: boolean('is_simulation').default(false), // True for user-created what-if scenarios
+    simulationInputs: jsonb('simulation_inputs'), // User inputs for simulations (e.g., income changes, expense adjustments)
+    currency: text('currency').default('USD'),
+    metadata: jsonb('metadata').default({
+        modelType: 'linear_regression', // 'linear_regression', 'exponential_smoothing', 'arima'
+        trainingDataPoints: 0,
+        seasonalAdjustment: false,
+        externalFactors: [], // inflation, market trends, etc.
+        lastTrained: null
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Forecasts Relations
+export const forecastsRelations = relations(forecasts, ({ one }) => ({
+    user: one(users, {
+        fields: [forecasts.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [forecasts.categoryId],
+        references: [categories.id],
+    }),
+}));

@@ -6,6 +6,7 @@ import { vaults, vaultMembers, expenses, categories, familySettings } from "../d
 import { protect } from "../middleware/auth.js";
 import { checkVaultAccess, isVaultOwner } from "../middleware/vaultAuth.js";
 import { asyncHandler, ValidationError, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
+import forecastingService from "../services/forecastingService.js";
 
 const router = express.Router();
 
@@ -189,6 +190,131 @@ router.get("/vault/:vaultId/alerts", protect, checkVaultAccess(), asyncHandler(a
   }
 
   res.success(alerts, 'Vault budget alerts retrieved successfully');
+}));
+
+/**
+ * @swagger
+ * /budgets/forecast:
+ *   post:
+ *     summary: Generate expense forecast
+ *     tags: [Budgets]
+ */
+router.post("/forecast", protect, [
+  body("categoryId").optional().isUUID(),
+  body("period").optional().isIn(['monthly', 'quarterly', 'yearly']),
+  body("monthsAhead").optional().isInt({ min: 1, max: 24 }),
+  body("scenario").optional().isIn(['baseline', 'optimistic', 'pessimistic']),
+  body("seasonalAdjustment").optional().isBoolean(),
+  body("externalFactors").optional().isArray(),
+], asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation failed", errors.array());
+  }
+
+  const {
+    categoryId,
+    period = 'monthly',
+    monthsAhead = 6,
+    scenario = 'baseline',
+    seasonalAdjustment = false,
+    externalFactors = []
+  } = req.body;
+
+  const forecast = await forecastingService.generateExpenseForecast(
+    req.user.id,
+    categoryId,
+    period,
+    monthsAhead,
+    {
+      scenario,
+      seasonalAdjustment,
+      externalFactors
+    }
+  );
+
+  res.success(forecast, 'Expense forecast generated successfully');
+}));
+
+/**
+ * @swagger
+ * /budgets/forecast/simulation:
+ *   post:
+ *     summary: Generate what-if scenario forecast
+ *     tags: [Budgets]
+ */
+router.post("/forecast/simulation", protect, [
+  body("simulationInputs").isObject(),
+  body("simulationInputs.incomeChange").optional().isFloat(),
+  body("simulationInputs.expenseAdjustments").optional().isArray(),
+  body("simulationInputs.oneTimeExpenses").optional().isArray(),
+], asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation failed", errors.array());
+  }
+
+  const { simulationInputs } = req.body;
+
+  const simulation = await forecastingService.generateSimulationForecast(
+    req.user.id,
+    simulationInputs
+  );
+
+  res.success(simulation, 'Simulation forecast generated successfully');
+}));
+
+/**
+ * @swagger
+ * /budgets/forecast:
+ *   get:
+ *     summary: Get user forecasts
+ *     tags: [Budgets]
+ */
+router.get("/forecast", protect, asyncHandler(async (req, res) => {
+  const { type, limit = 10 } = req.query;
+
+  const forecasts = await forecastingService.getUserForecasts(
+    req.user.id,
+    type,
+    parseInt(limit)
+  );
+
+  res.success(forecasts, 'User forecasts retrieved successfully');
+}));
+
+/**
+ * @swagger
+ * /budgets/forecast/:forecastId:
+ *   get:
+ *     summary: Get forecast by ID
+ *     tags: [Budgets]
+ */
+router.get("/forecast/:forecastId", protect, asyncHandler(async (req, res) => {
+  const { forecastId } = req.params;
+
+  const forecast = await forecastingService.getForecastById(forecastId, req.user.id);
+
+  if (!forecast) {
+    throw new NotFoundError('Forecast not found');
+  }
+
+  res.success(forecast, 'Forecast retrieved successfully');
+}));
+
+/**
+ * @swagger
+ * /budgets/forecast/:forecastId:
+ *   delete:
+ *     summary: Delete forecast
+ *     tags: [Budgets]
+ */
+router.delete("/forecast/:forecastId", protect, asyncHandler(async (req, res) => {
+  const { forecastId } = req.params;
+
+  await forecastingService.deleteForecast(forecastId, req.user.id);
+
+  res.success(null, 'Forecast deleted successfully');
 }));
 
 export default router;

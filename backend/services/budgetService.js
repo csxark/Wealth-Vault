@@ -3,6 +3,7 @@ import { expenses, categories, budgetAlerts } from '../db/schema.js';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import notificationService from './notificationService.js';
 import budgetRulesService from './budgetRulesService.js';
+import forecastingService from './forecastingService.js';
 
 class BudgetService {
   async checkBudgetAfterExpense(expenseData) {
