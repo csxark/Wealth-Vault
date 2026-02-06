@@ -32,6 +32,11 @@ export const users = pgTable('users', {
     savingsRoundUpEnabled: boolean('savings_round_up_enabled').default(false),
     savingsGoalId: uuid('savings_goal_id').references(() => goals.id, { onDelete: 'set null' }),
     roundUpToNearest: numeric('round_up_to_nearest', { precision: 5, scale: 2 }).default('1.00'), // Round up to nearest dollar or custom amount
+    // Peer Comparison Settings
+    peerComparisonConsent: boolean('peer_comparison_consent').default(false),
+    ageGroup: text('age_group'), // '18-24', '25-34', '35-44', '45-54', '55-64', '65+'
+    incomeRange: text('income_range'), // '0-25000', '25001-50000', '50001-75000', '75001-100000', '100001+'
+    location: text('location'), // City or region for grouping
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
