@@ -1,6 +1,6 @@
 // routes/gemini.js
 import express from "express";
-import { getGeminiResponse } from "../services/geminiService.js";
+import { getGeminiResponse } from "../services/geminiservice.js";
 import { protect } from "../middleware/auth.js";
 import { calculateUserFinancialHealth } from "../services/predictionService.js";
 import db from "../config/db.js";

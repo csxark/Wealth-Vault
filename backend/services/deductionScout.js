@@ -1,6 +1,6 @@
 import db from '../config/db.js';
 import { taxDeductions, expenses } from '../db/schema.js';
-import geminiService from './geminiService.js';
+import geminiService from './geminiservice.js';
 import { eq, and, isNull } from 'drizzle-orm';
 
 class DeductionScout {
