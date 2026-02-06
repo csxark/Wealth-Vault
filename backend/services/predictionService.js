@@ -18,6 +18,7 @@ import {
   analyzeSpendingByDayOfWeek,
   calculateCategoryConcentration,
 } from "../utils/financialCalculations.js";
+import forecastingService from "./forecastingService.js";
 
 /**
  * Calculate comprehensive financial health metrics for a user
