@@ -3,10 +3,11 @@ import { body, validationResult } from "express-validator";
 import { eq, and, sql, desc, sum, count } from "drizzle-orm";
 import crypto from "crypto";
 import db from "../config/db.js";
-import { vaults, vaultMembers, vaultInvites, users, expenseShares, reimbursements, familySettings, expenses, goals } from "../db/schema.js";
+import { vaults, vaultMembers, vaultInvites, users, vaultBalances } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { checkVaultAccess, isVaultOwner } from "../middleware/vaultAuth.js";
 import { asyncHandler, ValidationError, NotFoundError, ConflictError } from "../middleware/errorHandler.js";
+import { getSimplifiedDebts } from "../services/settlementService.js";
 
 const router = express.Router();
 
@@ -227,6 +228,42 @@ router.get(
             .where(eq(vaultMembers.vaultId, req.params.vaultId));
 
         res.success(members, "Vault members retrieved successfully");
+    })
+);
+
+/**
+ * @swagger
+ * /vaults/:vaultId/balances:
+ *   get:
+ *     summary: Get balance distribution and debt summary for a vault
+ */
+router.get(
+    "/:vaultId/balances",
+    protect,
+    checkVaultAccess(),
+    asyncHandler(async (req, res) => {
+        const { vaultId } = req.params;
+
+        // Get all member balances
+        const balances = await db
+            .select({
+                userId: vaultBalances.userId,
+                balance: vaultBalances.balance,
+                lastSettlementAt: vaultBalances.lastSettlementAt,
+                userName: users.name,
+                userEmail: users.email
+            })
+            .from(vaultBalances)
+            .innerJoin(users, eq(vaultBalances.userId, users.id))
+            .where(eq(vaultBalances.vaultId, vaultId));
+
+        // Get simplified debt structure
+        const debtStructure = await getSimplifiedDebts(vaultId);
+
+        res.success({
+            balances,
+            debtStructure
+        }, "Vault balances retrieved successfully");
     })
 );
 
