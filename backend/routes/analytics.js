@@ -1,12 +1,14 @@
 import express from "express";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users } from "../db/schema.js";
+import { expenses, categories, users, balanceSnapshots, transferSuggestions } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
 import assetService from "../services/assetService.js";
 import projectionEngine from "../services/projectionEngine.js";
 import marketData from "../services/marketData.js";
+import forecastEngine from "../services/forecastEngine.js";
+import liquidityMonitor from "../services/liquidityMonitor.js";
 
 const router = express.Router();
 
@@ -366,26 +368,37 @@ router.get("/health-history", protect, async (req, res) => {
  */
 router.get("/predictions", protect, async (req, res) => {
   try {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = now;
+    const days = parseInt(req.query.days) || 30;
 
-    // Get current health data which includes predictions
-    const healthData = await calculateUserFinancialHealth(req.user.id, start, end);
+    // Use the robust forecast engine
+    const forecast = await forecastEngine.projectCashFlow(req.user.id, days);
+
+    // Get liquidity context
+    const runway = await liquidityMonitor.calculateRunway(req.user.id);
+    const negativeMonths = await forecastEngine.identifyNegativeMonths(req.user.id, 90);
 
     res.json({
       success: true,
       data: {
-        cashFlowForecast: healthData.cashFlowPrediction,
-        insights: healthData.insights.filter(i => i.category === 'Forecast' || i.type === 'warning'),
-        spendingPatterns: {
-          dayOfWeek: healthData.dayOfWeekAnalysis,
-          categoryConcentration: healthData.concentrationMetrics,
+        forecast: forecast.projections,
+        summary: forecast.summary,
+        runway: {
+          daysRemaining: runway.days,
+          exhaustionDate: runway.exhaustionDate,
+          isStable: runway.isStable
         },
-        recommendations: [
-          healthData.recommendation,
-          ...healthData.insights.filter(i => i.priority === 'high' || i.priority === 'critical').map(i => i.message),
-        ],
+        riskMetrics: {
+          hasNegativeBalanceRisk: negativeMonths.hasDangerZones,
+          riskLevel: negativeMonths.overallRisk,
+          upcomingDangerZones: negativeMonths.dangerZones
+        },
+        confidence: forecast.metadata.confidence,
+        insights: negativeMonths.dangerZones.map(z => ({
+          type: 'warning',
+          category: 'Forecast',
+          message: z.recommendation,
+          date: z.startDate
+        }))
       },
     });
   } catch (error) {
@@ -394,6 +407,43 @@ router.get("/predictions", protect, async (req, res) => {
       success: false,
       message: "Server error while generating predictions",
     });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/cash-flow-stats:
+ *   get:
+ *     summary: Get detailed cash flow statistics and liquidity alerts
+ *     tags: [Analytics]
+ */
+router.get("/cash-flow-stats", protect, async (req, res) => {
+  try {
+    const forecast = await forecastEngine.projectCashFlow(req.user.id, 90);
+    const history = await db.query.balanceSnapshots.findMany({
+      where: eq(balanceSnapshots.userId, req.user.id),
+      orderBy: (balanceSnapshots, { desc }) => [desc(balanceSnapshots.date)],
+      limit: 30
+    });
+
+    const suggestions = await db.query.transferSuggestions.findMany({
+      where: and(
+        eq(transferSuggestions.userId, req.user.id),
+        eq(transferSuggestions.status, 'pending')
+      )
+    });
+
+    res.json({
+      success: true,
+      data: {
+        currentForecast: forecast.summary,
+        historicalSnapshots: history,
+        activeSuggestions: suggestions,
+        liquidityStatus: forecast.summary.endBalance > forecast.summary.startBalance ? 'positive' : 'decreasing'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
