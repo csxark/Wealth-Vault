@@ -23,6 +23,11 @@ DIRECT_URL=postgres://postgres.xxxx:password@aws-0-region.supabase.com:5432/post
 JWT_SECRET=wealth-vault-super-secret-jwt-key-2024
 JWT_EXPIRE=30d
 
+# Exchange Rate API Configuration
+# Get your free API key from: https://exchangerate-api.com/
+# Or use 'free' for limited free tier
+EXCHANGE_RATE_API_KEY=free
+
 # CORS Configuration
 FRONTEND_URL=http://localhost:3000
 `;

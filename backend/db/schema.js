@@ -86,12 +86,18 @@ export const expenses = pgTable('expenses', {
     }),
     // Tax-related fields
     isTaxDeductible: boolean('is_tax_deductible').default(false),
-    taxCategoryId: uuid('tax_category_id').references(() => taxCategories.id, { onDelete: 'set null' }),
+    taxCategoryId: uuid('tax_category_id'), // .references(() => taxCategories.id, { onDelete: 'set null' }), FIX: taxCategories not defined
     taxDeductibilityConfidence: doublePrecision('tax_deductibility_confidence').default(0), // AI confidence (0-1)
     taxNotes: text('tax_notes'), // User or AI notes about tax treatment
     taxYear: integer('tax_year'), // Which tax year this applies to
     createdAt: timestamp('created_at').defaultNow(),
+
     updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userDateIdx: index('idx_expenses_user_date').on(table.userId, table.date),
+        userCategoryIdx: index('idx_expenses_user_category').on(table.userId, table.categoryId),
+    };
 });
 
 // Vaults Table (Collaborative Shared Wallets)
@@ -257,6 +263,54 @@ export const exchangeRates = pgTable('exchange_rates', {
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Audit Snapshots Table (for Time Machine feature)
+export const auditSnapshots = pgTable('audit_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: timestamp('snapshot_date').notNull(),
+    totalBalance: numeric('total_balance', { precision: 12, scale: 2 }).notNull(),
+    accountState: jsonb('account_state').notNull(), // Complete state: { expenses, goals, categories, budgets }
+    transactionCount: integer('transaction_count').default(0),
+    checksum: text('checksum').notNull(), // SHA-256 hash for integrity verification
+    compressionType: text('compression_type').default('gzip'), // Compression method used
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// State Deltas Table (for incremental audit tracking)
+export const stateDeltas = pgTable('state_deltas', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceType: text('resource_type').notNull(), // 'expense', 'goal', 'category', 'budget'
+    resourceId: uuid('resource_id').notNull(),
+    operation: text('operation').notNull(), // 'CREATE', 'UPDATE', 'DELETE'
+    beforeState: jsonb('before_state'), // State before the change
+    afterState: jsonb('after_state'), // State after the change
+    changedFields: jsonb('changed_fields').default([]), // Array of field names that changed
+    triggeredBy: text('triggered_by').default('user'), // 'user', 'system', 'api', 'cron'
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    sessionId: text('session_id'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Forensic Queries Table (for tracking replay requests)
+export const forensicQueries = pgTable('forensic_queries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    queryType: text('query_type').notNull(), // 'replay', 'trace', 'explain'
+    targetDate: timestamp('target_date'), // For time-travel queries
+    targetResourceId: uuid('target_resource_id'), // For transaction tracing
+    queryParams: jsonb('query_params').default({}),
+    resultSummary: jsonb('result_summary'), // Cached result summary
+    aiExplanation: text('ai_explanation'), // Gemini-generated natural language explanation
+    executionTime: integer('execution_time'), // Milliseconds
+    status: text('status').default('pending'), // 'pending', 'completed', 'failed'
+    createdAt: timestamp('created_at').defaultNow(),
+    completedAt: timestamp('completed_at'),
 });
 
 // Forecast Snapshots Table (for Cash Flow Forecasting)
@@ -426,6 +480,112 @@ export const disputedTransactions = pgTable('disputed_transactions', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Portfolios Table
+export const portfolios = pgTable('portfolios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    currency: text('currency').default('USD'),
+    totalValue: numeric('total_value', { precision: 15, scale: 2 }).default('0'),
+    totalCost: numeric('total_cost', { precision: 15, scale: 2 }).default('0'),
+    totalGainLoss: numeric('total_gain_loss', { precision: 15, scale: 2 }).default('0'),
+    totalGainLossPercent: doublePrecision('total_gain_loss_percent').default(0),
+    isActive: boolean('is_active').default(true),
+    riskTolerance: text('risk_tolerance').default('moderate'), // conservative, moderate, aggressive
+    investmentStrategy: text('investment_strategy'), // growth, income, balanced, etc.
+    targetAllocation: jsonb('target_allocation').default({}), // { 'stocks': 60, 'bonds': 30, 'cash': 10 }
+    metadata: jsonb('metadata').default({
+        lastUpdated: null,
+        performanceHistory: [],
+        rebalancingNeeded: false
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Investments Table
+export const investments = pgTable('investments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    symbol: text('symbol').notNull(), // AAPL, GOOGL, etc.
+    name: text('name').notNull(), // Apple Inc., Alphabet Inc.
+    type: text('type').notNull(), // stock, etf, mutual_fund, bond, crypto
+    assetClass: text('asset_class').default('equity'), // equity, fixed_income, alternative, cash
+    sector: text('sector'), // technology, healthcare, financials, etc.
+    country: text('country').default('US'),
+    currency: text('currency').default('USD'),
+    quantity: numeric('quantity', { precision: 15, scale: 6 }).notNull(),
+    averageCost: numeric('average_cost', { precision: 12, scale: 4 }).notNull(),
+    currentPrice: numeric('current_price', { precision: 12, scale: 4 }),
+    marketValue: numeric('market_value', { precision: 15, scale: 2 }),
+    totalCost: numeric('total_cost', { precision: 15, scale: 2 }),
+    unrealizedGainLoss: numeric('unrealized_gain_loss', { precision: 15, scale: 2 }),
+    unrealizedGainLossPercent: doublePrecision('unrealized_gain_loss_percent'),
+    dividendYield: doublePrecision('dividend_yield'),
+    peRatio: doublePrecision('pe_ratio'),
+    marketCap: numeric('market_cap', { precision: 18, scale: 2 }),
+    lastPriceUpdate: timestamp('last_price_update'),
+    isActive: boolean('is_active').default(true),
+    tags: jsonb('tags').default([]),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({
+        exchange: null,
+        cusip: null,
+        isin: null,
+        lastDividend: null,
+        dividendFrequency: null
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Investment Transactions Table
+export const investmentTransactions = pgTable('investment_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    type: text('type').notNull(), // buy, sell, dividend, split, fee
+    quantity: numeric('quantity', { precision: 15, scale: 6 }).notNull(),
+    price: numeric('price', { precision: 12, scale: 4 }).notNull(),
+    totalAmount: numeric('total_amount', { precision: 15, scale: 2 }).notNull(),
+    fees: numeric('fees', { precision: 10, scale: 2 }).default('0'),
+    currency: text('currency').default('USD'),
+    exchangeRate: doublePrecision('exchange_rate').default(1),
+    date: timestamp('date').defaultNow().notNull(),
+    broker: text('broker'),
+    orderId: text('order_id'),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({
+        settlementDate: null,
+        commission: 0,
+        taxes: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Price History Table
+export const priceHistory = pgTable('price_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    symbol: text('symbol').notNull(),
+    date: timestamp('date').notNull(),
+    open: numeric('open', { precision: 12, scale: 4 }),
+    high: numeric('high', { precision: 12, scale: 4 }),
+    low: numeric('low', { precision: 12, scale: 4 }),
+    close: numeric('close', { precision: 12, scale: 4 }).notNull(),
+    volume: integer('volume'),
+    adjustedClose: numeric('adjusted_close', { precision: 12, scale: 4 }),
+    dividend: numeric('dividend', { precision: 10, scale: 4 }).default('0'),
+    splitRatio: doublePrecision('split_ratio').default(1),
+    currency: text('currency').default('USD'),
+    source: text('source').default('yahoo'), // yahoo, alpha_vantage, manual
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -509,6 +669,18 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
     }),
     expenses: many(expenses),
     goals: many(goals),
+    subscriptions: many(subscriptions),
+}));
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+    user: one(users, {
+        fields: [subscriptions.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [subscriptions.categoryId],
+        references: [categories.id],
+    }),
 }));
 
 export const expensesRelations = relations(expenses, ({ one, many }) => ({
@@ -651,6 +823,31 @@ export const disputedTransactionsRelations = relations(disputedTransactions, ({ 
     }),
     assignee: one(users, {
         fields: [disputedTransactions.assignedTo],
+        references: [users.id],
+    }),
+}));
+
+
+// Audit Snapshots Relations
+export const auditSnapshotsRelations = relations(auditSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [auditSnapshots.userId],
+        references: [users.id],
+    }),
+}));
+
+// State Deltas Relations
+export const stateDeltasRelations = relations(stateDeltas, ({ one }) => ({
+    user: one(users, {
+        fields: [stateDeltas.userId],
+        references: [users.id],
+    }),
+}));
+
+// Forensic Queries Relations
+export const forensicQueriesRelations = relations(forensicQueries, ({ one }) => ({
+    user: one(users, {
+        fields: [forensicQueries.userId],
         references: [users.id],
     }),
 }));

@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData } from '../types';
+import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert } from '../types';
 
 // Use environment variable for API URL
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -876,20 +876,20 @@ export const analyticsAPI = {
     endDate?: string;
   }) => {
     const token = localStorage.getItem('authToken');
-    
+
     // Handle dev mode
     if (token === 'dev-mock-token-123') {
       const mockData = generateMockExpenses(100);
-      
+
       if (params?.format === 'csv') {
         const csvHeader = 'Date,Amount,Currency,Description,Category,Payment Method\n';
-        const csvRows = mockData.map(expense => 
+        const csvRows = mockData.map(expense =>
           `${expense.date.split('T')[0]},${expense.amount},INR,"${expense.description}","${expense.category}","${expense.paymentMethod}"`
         ).join('\n');
-        
+
         const csvContent = csvHeader + csvRows;
         const blob = new Blob([csvContent], { type: 'text/csv' });
-        
+
         // Create a mock response that mimics the fetch API
         return {
           blob: () => Promise.resolve(blob),
@@ -905,7 +905,7 @@ export const analyticsAPI = {
           },
           expenses: mockData
         };
-        
+
         return {
           blob: () => Promise.resolve(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' })),
           json: () => Promise.resolve(jsonData)
@@ -932,6 +932,422 @@ export const analyticsAPI = {
   },
 };
 
+// Budget Alerts API
+export const budgetAlertsAPI = {
+  // Get all budget alerts
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
+    categoryId?: string;
+    threshold?: number;
+    period?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        alerts: BudgetAlert[];
+        pagination: {
+          currentPage: number;
+          totalPages: number;
+          totalItems: number;
+          itemsPerPage: number;
+        };
+      };
+    }>('/budget-alerts', {
+      method: 'GET',
+      params,
+    });
+  },
+
+  // Get budget alert by ID
+  getById: async (id: string) => {
+    return apiRequest<{ success: boolean; data: { alert: BudgetAlert } }>(`/budget-alerts/${id}`);
+  },
+
+  // Delete budget alert
+  delete: async (id: string) => {
+    return apiRequest<{ success: boolean; message: string }>(`/budget-alerts/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Get budget alerts statistics
+  getStats: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        summary: { total: number };
+        byThreshold: Array<{ threshold: number; count: number }>;
+        byCategory: Array<{ categoryName: string; count: number }>;
+      };
+    }>('/budget-alerts/stats/summary');
+  },
+
+  // Test budget alert triggering
+  test: async (data: { categoryId: string; amount: number }) => {
+    return apiRequest<{ success: boolean; message: string }>('/budget-alerts/test', {
+      method: 'POST',
+      data,
+    });
+  },
+};
+
+// Investment API Types
+export interface Portfolio {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  currency: string;
+  totalValue: string;
+  totalCost: string;
+  totalGainLoss: string;
+  totalGainLossPercent: string;
+  isActive: boolean;
+  riskTolerance: string;
+  investmentStrategy?: string;
+  targetAllocation: Record<string, number>;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Investment {
+  id: string;
+  portfolioId: string;
+  userId: string;
+  symbol: string;
+  name: string;
+  type: 'stock' | 'etf' | 'mutual_fund' | 'bond' | 'crypto';
+  assetClass: string;
+  sector?: string;
+  country: string;
+  currency: string;
+  quantity: string;
+  averageCost: string;
+  currentPrice?: string;
+  marketValue?: string;
+  totalCost: string;
+  unrealizedGainLoss?: string;
+  unrealizedGainLossPercent?: string;
+  dividendYield?: number;
+  peRatio?: number;
+  marketCap?: string;
+  lastPriceUpdate?: string;
+  isActive: boolean;
+  tags: string[];
+  notes?: string;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvestmentTransaction {
+  id: string;
+  investmentId: string;
+  portfolioId: string;
+  userId: string;
+  type: 'buy' | 'sell' | 'dividend' | 'split' | 'fee';
+  quantity: string;
+  price: string;
+  totalAmount: string;
+  fees: string;
+  currency: string;
+  exchangeRate: number;
+  date: string;
+  broker?: string;
+  orderId?: string;
+  notes?: string;
+  metadata: Record<string, any>;
+  createdAt: string;
+}
+
+// Investment API
+export const investmentsAPI = {
+  // Portfolio CRUD
+  portfolios: {
+    // Get all portfolios
+    getAll: async () => {
+      return apiRequest<{
+        success: boolean;
+        data: Portfolio[];
+      }>('/investments/portfolios');
+    },
+
+    // Get portfolio by ID
+    getById: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: Portfolio;
+      }>(`/investments/portfolios/${id}`);
+    },
+
+    // Create new portfolio
+    create: async (portfolioData: Omit<Portfolio, 'id' | 'userId' | 'totalValue' | 'totalCost' | 'totalGainLoss' | 'totalGainLossPercent' | 'createdAt' | 'updatedAt'>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: Portfolio;
+      }>('/investments/portfolios', {
+        method: 'POST',
+        data: portfolioData,
+      });
+    },
+
+    // Update portfolio
+    update: async (id: string, portfolioData: Partial<Portfolio>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: Portfolio;
+      }>(`/investments/portfolios/${id}`, {
+        method: 'PUT',
+        data: portfolioData,
+      });
+    },
+
+    // Delete portfolio
+    delete: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/investments/portfolios/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    // Get portfolio summary
+    getSummary: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          portfolio: Portfolio;
+          investments: Investment[];
+          totalValue: number;
+          totalCost: number;
+          totalGainLoss: number;
+          totalGainLossPercent: number;
+          investmentCount: number;
+        };
+      }>(`/investments/portfolios/${id}/summary`);
+    },
+
+    // Update portfolio prices
+    updatePrices: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: {
+          updated: number;
+          failed: number;
+          updates: Array<{
+            investmentId: string;
+            symbol: string;
+            oldPrice?: string;
+            newPrice: string;
+          }>;
+          failures: Array<{
+            investmentId: string;
+            symbol: string;
+            error: string;
+          }>;
+        };
+      }>(`/investments/portfolios/${id}/update-prices`, {
+        method: 'POST',
+      });
+    },
+  },
+
+  // Investment CRUD
+  investments: {
+    // Get all investments
+    getAll: async (params?: {
+      portfolioId?: string;
+      type?: string;
+      isActive?: boolean;
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        data: Investment[];
+      }>('/investments', {
+        method: 'GET',
+        params,
+      });
+    },
+
+    // Get investment by ID
+    getById: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: Investment;
+      }>(`/investments/${id}`);
+    },
+
+    // Create new investment
+    create: async (investmentData: Omit<Investment, 'id' | 'userId' | 'currentPrice' | 'marketValue' | 'unrealizedGainLoss' | 'unrealizedGainLossPercent' | 'lastPriceUpdate' | 'createdAt' | 'updatedAt'>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: Investment;
+      }>('/investments', {
+        method: 'POST',
+        data: investmentData,
+      });
+    },
+
+    // Update investment
+    update: async (id: string, investmentData: Partial<Investment>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: Investment;
+      }>(`/investments/${id}`, {
+        method: 'PUT',
+        data: investmentData,
+      });
+    },
+
+    // Delete investment
+    delete: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/investments/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    // Get investment transactions
+    getTransactions: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: InvestmentTransaction[];
+      }>(`/investments/${id}/transactions`);
+    },
+
+    // Add transaction to investment
+    addTransaction: async (id: string, transactionData: Omit<InvestmentTransaction, 'id' | 'investmentId' | 'portfolioId' | 'userId' | 'createdAt'>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: InvestmentTransaction;
+      }>(`/investments/${id}/transactions`, {
+        method: 'POST',
+        data: transactionData,
+      });
+    },
+
+    // Get price history
+    getPriceHistory: async (id: string, days: number = 30) => {
+      return apiRequest<{
+        success: boolean;
+        data: Array<{
+          id: string;
+          investmentId: string;
+          symbol: string;
+          date: string;
+          open?: string;
+          high?: string;
+          low?: string;
+          close: string;
+          volume?: number;
+          adjustedClose?: string;
+          dividend?: string;
+          splitRatio: number;
+          currency: string;
+          source: string;
+          createdAt: string;
+        }>;
+      }>(`/investments/${id}/price-history`, {
+        method: 'GET',
+        params: { days },
+      });
+    },
+
+    // Get investment analytics
+    getAnalytics: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          investmentId: string;
+          symbol: string;
+          name: string;
+          totalReturn: number;
+          totalReturnPercent: number;
+          annualizedReturn: number;
+          volatility: number;
+          sharpeRatio: number;
+          maxDrawdown: number;
+          beta?: number;
+          alpha?: number;
+          dividendYield?: number;
+          peRatio?: number;
+          marketCap?: string;
+          totalTransactions: number;
+          firstPurchaseDate: string;
+          lastTransactionDate: string;
+          holdingPeriodDays: number;
+          performanceHistory: Array<{
+            date: string;
+            value: number;
+            return: number;
+          }>;
+        };
+      }>(`/investments/${id}/analytics`);
+    },
+  },
+
+  // Analytics
+  analytics: {
+    // Get portfolio analytics
+    getPortfolioAnalytics: async (portfolioId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          portfolioId: string;
+          portfolioName: string;
+          totalValue: number;
+          totalCost: number;
+          totalReturn: number;
+          totalReturnPercent: number;
+          annualizedReturn: number;
+          volatility: number;
+          sharpeRatio: number;
+          maxDrawdown: number;
+          diversificationScore: number;
+          riskAdjustedReturn: number;
+          allocation: {
+            byAssetClass: Record<string, { value: number; percentage: number }>;
+            bySector: Record<string, { value: number; percentage: number }>;
+            byType: Record<string, { value: number; percentage: number }>;
+          };
+          topPerformers: Array<{
+            investmentId: string;
+            symbol: string;
+            name: string;
+            returnPercent: number;
+            contributionToPortfolio: number;
+          }>;
+          worstPerformers: Array<{
+            investmentId: string;
+            symbol: string;
+            name: string;
+            returnPercent: number;
+            contributionToPortfolio: number;
+          }>;
+          performanceHistory: Array<{
+            date: string;
+            value: number;
+            return: number;
+          }>;
+        };
+      }>(`/investments/portfolios/${portfolioId}/analytics`);
+    },
+  },
+};
+
 // Export all APIs
 export default {
   auth: authAPI,
@@ -939,5 +1355,7 @@ export default {
   categories: categoriesAPI,
   goals: goalsAPI,
   analytics: analyticsAPI,
+  investments: investmentsAPI,
   health: healthAPI,
+  vaults: vaultAPI,
 };
