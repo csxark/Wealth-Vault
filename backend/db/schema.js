@@ -32,6 +32,11 @@ export const users = pgTable('users', {
     savingsRoundUpEnabled: boolean('savings_round_up_enabled').default(false),
     savingsGoalId: uuid('savings_goal_id').references(() => goals.id, { onDelete: 'set null' }),
     roundUpToNearest: numeric('round_up_to_nearest', { precision: 5, scale: 2 }).default('1.00'), // Round up to nearest dollar or custom amount
+    // Peer Comparison Settings
+    peerComparisonConsent: boolean('peer_comparison_consent').default(false),
+    ageGroup: text('age_group'), // '18-24', '25-34', '35-44', '45-54', '55-64', '65+'
+    incomeRange: text('income_range'), // '0-25000', '25001-50000', '50001-75000', '75001-100000', '100001+'
+    location: text('location'), // City or region for grouping
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -102,6 +107,23 @@ export const expenses = pgTable('expenses', {
         userDateIdx: index('idx_expenses_user_date').on(table.userId, table.date),
         userCategoryIdx: index('idx_expenses_user_category').on(table.userId, table.categoryId),
     };
+});
+
+// Subscriptions Table
+export const subscriptions = pgTable('subscriptions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    billingCycle: text('billing_cycle').default('monthly'), // monthly, yearly, weekly
+    nextPaymentDate: timestamp('next_payment_date').notNull(),
+    description: text('description'),
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 // Vaults Table (Collaborative Shared Wallets)
@@ -358,6 +380,60 @@ export const forecastSnapshots = pgTable('forecast_snapshots', {
         forecastDays: 30
     }),
     createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Balance Snapshots Table (Daily balance tracking for historical analysis)
+export const balanceSnapshots = pgTable('balance_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    date: timestamp('date').defaultNow().notNull(),
+    balance: numeric('balance', { precision: 12, scale: 2 }).notNull(),
+    income: numeric('income', { precision: 12, scale: 2 }).default('0'),
+    expense: numeric('expense', { precision: 12, scale: 2 }).default('0'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => {
+    return {
+        userDateIdx: index('idx_balance_snapshots_user_date').on(table.userId, table.date),
+    };
+});
+
+// Liquidity Alerts Table
+export const liquidityAlerts = pgTable('liquidity_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    threshold: numeric('threshold', { precision: 12, scale: 2 }).notNull(),
+    alertDays: integer('alert_days').default(7), // alert if balance falls below threshold within X days
+    isActive: boolean('is_active').default(true),
+    lastTriggeredAt: timestamp('last_triggered_at'),
+    severity: text('severity').default('warning'), // 'warning', 'critical'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_liquidity_alerts_user_id').on(table.userId),
+    };
+});
+
+// Transfer Suggestions Table (AI-generated recommendations for account optimization)
+export const transferSuggestions = pgTable('transfer_suggestions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceVaultId: uuid('source_vault_id').references(() => vaults.id, { onDelete: 'set null' }),
+    destVaultId: uuid('dest_vault_id').references(() => vaults.id, { onDelete: 'set null' }),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    reason: text('reason'),
+    suggestedDate: timestamp('suggested_date'),
+    status: text('status').default('pending'), // 'pending', 'accepted', 'ignored', 'executed'
+    aiConfidence: doublePrecision('ai_confidence'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_transfer_suggestions_user_id').on(table.userId),
+    };
 });
 
 // Token Blacklist Table
@@ -626,6 +702,10 @@ export const usersRelations = relations(users, ({ many }) => ({
     auditLogs: many(auditLogs),
     securityMarkers: many(securityMarkers),
     disputedTransactions: many(disputedTransactions),
+    balanceSnapshots: many(balanceSnapshots),
+    forecastSnapshots: many(forecastSnapshots),
+    liquidityAlerts: many(liquidityAlerts),
+    transferSuggestions: many(transferSuggestions),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -1155,7 +1235,164 @@ export const inactivityTriggersRelations = relations(inactivityTriggers, ({ one 
         fields: [inactivityTriggers.userId],
         references: [users.id],
     }),
+}));// ============================================================================
+// DEBT CONSOLIDATION CALCULATOR TABLES
+// ============================================================================
+
+// Debts Table - Core debt tracking
+export const debts = pgTable('debts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    debtType: text('debt_type').notNull(), // 'credit_card', 'personal_loan', 'mortgage', 'auto_loan', 'student_loan', 'medical', 'other'
+    principalAmount: numeric('principal_amount', { precision: 12, scale: 2 }).notNull(),
+    currentBalance: numeric('current_balance', { precision: 12, scale: 2 }).notNull(),
+    apr: numeric('apr', { precision: 5, scale: 3 }).notNull(), // Annual Percentage Rate as decimal
+    minimumPayment: numeric('minimum_payment', { precision: 12, scale: 2 }).notNull(),
+    paymentDueDay: integer('payment_due_day'), // 1-28
+    termMonths: integer('term_months'), // null for revolving debts
+    startDate: timestamp('start_date'),
+    estimatedPayoffDate: timestamp('estimated_payoff_date'),
+    isActive: boolean('is_active').default(true),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_debts_user_id').on(table.userId),
+    };
+});
+
+// Debt Payments Table - Track payments made
+export const debtPayments = pgTable('debt_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    paymentAmount: numeric('payment_amount', { precision: 12, scale: 2 }).notNull(),
+    paymentDate: timestamp('payment_date').notNull(),
+    principalPayment: numeric('principal_payment', { precision: 12, scale: 2 }).notNull(),
+    interestPayment: numeric('interest_payment', { precision: 12, scale: 2 }).notNull(),
+    paymentMethod: text('payment_method'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_debt_payments_user_id').on(table.userId),
+        debtIdIdx: index('idx_debt_payments_debt_id').on(table.debtId),
+    };
+});
+
+// Payoff Strategies Table - Store user's selected payoff strategy
+export const payoffStrategies = pgTable('payoff_strategies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    strategyName: text('strategy_name').notNull(), // 'avalanche', 'snowball', 'custom'
+    customPriorityOrder: jsonb('custom_priority_order'), // Array of debt IDs in priority order
+    monthlyExtraPayment: numeric('monthly_extra_payment', { precision: 12, scale: 2 }).default('0'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_payoff_strategies_user_id').on(table.userId),
+    };
+});
+
+// Amortization Schedules Table - Generated payment schedules
+export const amortizationSchedules = pgTable('amortization_schedules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    strategyId: uuid('strategy_id').references(() => payoffStrategies.id, { onDelete: 'set null' }),
+    scheduledDate: timestamp('scheduled_date').notNull(),
+    paymentNumber: integer('payment_number').notNull(),
+    paymentAmount: numeric('payment_amount', { precision: 12, scale: 2 }).notNull(),
+    principalComponent: numeric('principal_component', { precision: 12, scale: 2 }).notNull(),
+    interestComponent: numeric('interest_component', { precision: 12, scale: 2 }).notNull(),
+    remainingBalance: numeric('remaining_balance', { precision: 12, scale: 2 }).notNull(),
+    isPaid: boolean('is_paid').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => {
+    return {
+        debtIdIdx: index('idx_amortization_debt_id').on(table.debtId),
+        strategyIdIdx: index('idx_amortization_strategy_id').on(table.strategyId),
+    };
+});
+
+// Refinance Opportunities Table - Detected refinancing opportunities
+export const refinanceOpportunities = pgTable('refinance_opportunities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    currentApr: numeric('current_apr', { precision: 5, scale: 3 }).notNull(),
+    suggestedApr: numeric('suggested_apr', { precision: 5, scale: 3 }).notNull(),
+    potentialSavings: numeric('potential_savings', { precision: 12, scale: 2 }).notNull(),
+    monthsSaved: integer('months_saved'),
+    recommendation: text('recommendation'),
+    marketRateEstimate: numeric('market_rate_estimate', { precision: 5, scale: 3 }),
+    isReviewed: boolean('is_reviewed').default(false),
+    reviewedAt: timestamp('reviewed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_refinance_user_id').on(table.userId),
+        debtIdIdx: index('idx_refinance_debt_id').on(table.debtId),
+    };
+});
+
+// ============================================================================
+// DEBT RELATIONS
+// ============================================================================
+
+export const debtsRelations = relations(debts, ({ one, many }) => ({
+    user: one(users, {
+        fields: [debts.userId],
+        references: [users.id],
+    }),
+    payments: many(debtPayments),
+    amortizationSchedules: many(amortizationSchedules),
+    refinanceOpportunities: many(refinanceOpportunities),
 }));
+
+export const debtPaymentsRelations = relations(debtPayments, ({ one }) => ({
+    debt: one(debts, {
+        fields: [debtPayments.debtId],
+        references: [debts.id],
+    }),
+    user: one(users, {
+        fields: [debtPayments.userId],
+        references: [users.id],
+    }),
+}));
+
+export const payoffStrategiesRelations = relations(payoffStrategies, ({ one, many }) => ({
+    user: one(users, {
+        fields: [payoffStrategies.userId],
+        references: [users.id],
+    }),
+    amortizationSchedules: many(amortizationSchedules),
+}));
+
+export const amortizationSchedulesRelations = relations(amortizationSchedules, ({ one }) => ({
+    debt: one(debts, {
+        fields: [amortizationSchedules.debtId],
+        references: [debts.id],
+    }),
+    strategy: one(payoffStrategies, {
+        fields: [amortizationSchedules.strategyId],
+        references: [payoffStrategies.id],
+    }),
+}));
+
+export const refinanceOpportunitiesRelations = relations(refinanceOpportunities, ({ one }) => ({
+    user: one(users, {
+        fields: [refinanceOpportunities.userId],
+        references: [users.id],
+    }),
+    debt: one(debts, {
+        fields: [refinanceOpportunities.debtId],
+        references: [debts.id],
+    }),
+}));
+
 
 // Tax Profiles (User Tax Configuration)
 export const taxProfiles = pgTable('tax_profiles', {
@@ -1250,5 +1487,34 @@ export const taxReportsRelations = relations(taxReports, ({ one }) => ({
     user: one(users, {
         fields: [taxReports.userId],
         references: [users.id],
+    }),
+}));
+
+export const balanceSnapshotsRelations = relations(balanceSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [balanceSnapshots.userId],
+        references: [users.id],
+    }),
+}));
+
+export const liquidityAlertsRelations = relations(liquidityAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [liquidityAlerts.userId],
+        references: [users.id],
+    }),
+}));
+
+export const transferSuggestionsRelations = relations(transferSuggestions, ({ one }) => ({
+    user: one(users, {
+        fields: [transferSuggestions.userId],
+        references: [users.id],
+    }),
+    sourceVault: one(vaults, {
+        fields: [transferSuggestions.sourceVaultId],
+        references: [vaults.id],
+    }),
+    destVault: one(vaults, {
+        fields: [transferSuggestions.destVaultId],
+        references: [vaults.id],
     }),
 }));
