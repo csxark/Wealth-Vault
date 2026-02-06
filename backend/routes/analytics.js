@@ -1,7 +1,7 @@
 import express from "express";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users } from "../db/schema.js";
+import { expenses, categories, users, debts, debtPayments, payoffStrategies, amortizationSchedules } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
 import assetService from "../services/assetService.js";
@@ -1145,6 +1145,99 @@ router.get("/asset-allocation", protect, async (req, res) => {
     });
   } catch (error) {
     console.error("Asset allocation error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================
+// DEBT ANALYTICS ENDPOINTS
+// ============================================
+
+/**
+ * @route   GET /analytics/debt-to-income
+ * @desc    Calculate debt-to-income ratio
+ */
+router.get("/debt-to-income", protect, async (req, res) => {
+  try {
+    // Get user's monthly income
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    const monthlyIncome = parseFloat(user.monthlyIncome || 0);
+
+    if (monthlyIncome <= 0) {
+      return res.status(400).json({ success: false, message: "Please set your monthly income in profile to calculate DTI" });
+    }
+
+    // Get all active debts
+    const userDebts = await db.select().from(debts).where(and(eq(debts.userId, req.user.id), eq(debts.isActive, true)));
+
+    // Calculate total monthly minimum payments
+    const totalMonthlyDebtPayments = userDebts.reduce((sum, debt) => sum + parseFloat(debt.minimumPayment), 0);
+
+    const dtiRatio = (totalMonthlyDebtPayments / monthlyIncome) * 100;
+
+    let healthStatus = 'good';
+    if (dtiRatio > 50) healthStatus = 'critical';
+    else if (dtiRatio > 43) healthStatus = 'danger';
+    else if (dtiRatio > 36) healthStatus = 'warning';
+
+    res.json({
+      success: true,
+      data: {
+        monthlyIncome,
+        totalMonthlyDebtPayments,
+        dtiRatio: parseFloat(dtiRatio.toFixed(2)),
+        healthStatus,
+        recommendation: dtiRatio > 36
+          ? "Your DTI is high. Consider debt consolidation and aggressive payoff strategies."
+          : "Your DTI is within healthy limits."
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   GET /analytics/debt-summary
+ * @desc    Get comprehensive debt summary and consolidation eligibility
+ */
+router.get("/debt-summary", protect, async (req, res) => {
+  try {
+    const userDebts = await db.select().from(debts).where(and(eq(debts.userId, req.user.id), eq(debts.isActive, true)));
+
+    if (userDebts.length === 0) {
+      return res.json({ success: true, data: { hasDebt: false, message: "No active debts found" } });
+    }
+
+    const totalBalance = userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0);
+    const weightedAvgApr = userDebts.reduce((sum, d) => sum + (parseFloat(d.apr) * parseFloat(d.currentBalance)), 0) / totalBalance;
+
+    // Consolidation analysis
+    let consolidationAnalysis = {
+      eligible: totalBalance >= 5000,
+      potentialBenefit: weightedAvgApr > 0.12 ? 'high' : weightedAvgAvgApr > 0.08 ? 'medium' : 'low',
+      recommendation: weightedAvgApr > 0.15
+        ? "Highly recommended to consolidate into a lower-interest personal loan."
+        : "Compare current rates to see if refinancing can save you money."
+    };
+
+    res.json({
+      success: true,
+      data: {
+        hasDebt: true,
+        totalBalance,
+        weightedAvgApr: parseFloat((weightedAvgApr * 100).toFixed(2)),
+        debtCount: userDebts.length,
+        consolidationAnalysis,
+        debtsBreakdown: userDebts.map(d => ({
+          name: d.name,
+          balance: d.currentBalance,
+          apr: d.apr,
+          type: d.debtType
+        }))
+      }
+    });
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });

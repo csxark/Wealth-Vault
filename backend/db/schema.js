@@ -648,6 +648,9 @@ export const usersRelations = relations(users, ({ many }) => ({
     auditLogs: many(auditLogs),
     securityMarkers: many(securityMarkers),
     disputedTransactions: many(disputedTransactions),
+    debts: many(debts),
+    payoffStrategies: many(payoffStrategies),
+    refinanceOpportunities: many(refinanceOpportunities),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -1177,7 +1180,164 @@ export const inactivityTriggersRelations = relations(inactivityTriggers, ({ one 
         fields: [inactivityTriggers.userId],
         references: [users.id],
     }),
+}));// ============================================================================
+// DEBT CONSOLIDATION CALCULATOR TABLES
+// ============================================================================
+
+// Debts Table - Core debt tracking
+export const debts = pgTable('debts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    debtType: text('debt_type').notNull(), // 'credit_card', 'personal_loan', 'mortgage', 'auto_loan', 'student_loan', 'medical', 'other'
+    principalAmount: numeric('principal_amount', { precision: 12, scale: 2 }).notNull(),
+    currentBalance: numeric('current_balance', { precision: 12, scale: 2 }).notNull(),
+    apr: numeric('apr', { precision: 5, scale: 3 }).notNull(), // Annual Percentage Rate as decimal
+    minimumPayment: numeric('minimum_payment', { precision: 12, scale: 2 }).notNull(),
+    paymentDueDay: integer('payment_due_day'), // 1-28
+    termMonths: integer('term_months'), // null for revolving debts
+    startDate: timestamp('start_date'),
+    estimatedPayoffDate: timestamp('estimated_payoff_date'),
+    isActive: boolean('is_active').default(true),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_debts_user_id').on(table.userId),
+    };
+});
+
+// Debt Payments Table - Track payments made
+export const debtPayments = pgTable('debt_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    paymentAmount: numeric('payment_amount', { precision: 12, scale: 2 }).notNull(),
+    paymentDate: timestamp('payment_date').notNull(),
+    principalPayment: numeric('principal_payment', { precision: 12, scale: 2 }).notNull(),
+    interestPayment: numeric('interest_payment', { precision: 12, scale: 2 }).notNull(),
+    paymentMethod: text('payment_method'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_debt_payments_user_id').on(table.userId),
+        debtIdIdx: index('idx_debt_payments_debt_id').on(table.debtId),
+    };
+});
+
+// Payoff Strategies Table - Store user's selected payoff strategy
+export const payoffStrategies = pgTable('payoff_strategies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    strategyName: text('strategy_name').notNull(), // 'avalanche', 'snowball', 'custom'
+    customPriorityOrder: jsonb('custom_priority_order'), // Array of debt IDs in priority order
+    monthlyExtraPayment: numeric('monthly_extra_payment', { precision: 12, scale: 2 }).default('0'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_payoff_strategies_user_id').on(table.userId),
+    };
+});
+
+// Amortization Schedules Table - Generated payment schedules
+export const amortizationSchedules = pgTable('amortization_schedules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    strategyId: uuid('strategy_id').references(() => payoffStrategies.id, { onDelete: 'set null' }),
+    scheduledDate: timestamp('scheduled_date').notNull(),
+    paymentNumber: integer('payment_number').notNull(),
+    paymentAmount: numeric('payment_amount', { precision: 12, scale: 2 }).notNull(),
+    principalComponent: numeric('principal_component', { precision: 12, scale: 2 }).notNull(),
+    interestComponent: numeric('interest_component', { precision: 12, scale: 2 }).notNull(),
+    remainingBalance: numeric('remaining_balance', { precision: 12, scale: 2 }).notNull(),
+    isPaid: boolean('is_paid').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => {
+    return {
+        debtIdIdx: index('idx_amortization_debt_id').on(table.debtId),
+        strategyIdIdx: index('idx_amortization_strategy_id').on(table.strategyId),
+    };
+});
+
+// Refinance Opportunities Table - Detected refinancing opportunities
+export const refinanceOpportunities = pgTable('refinance_opportunities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    currentApr: numeric('current_apr', { precision: 5, scale: 3 }).notNull(),
+    suggestedApr: numeric('suggested_apr', { precision: 5, scale: 3 }).notNull(),
+    potentialSavings: numeric('potential_savings', { precision: 12, scale: 2 }).notNull(),
+    monthsSaved: integer('months_saved'),
+    recommendation: text('recommendation'),
+    marketRateEstimate: numeric('market_rate_estimate', { precision: 5, scale: 3 }),
+    isReviewed: boolean('is_reviewed').default(false),
+    reviewedAt: timestamp('reviewed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => {
+    return {
+        userIdIdx: index('idx_refinance_user_id').on(table.userId),
+        debtIdIdx: index('idx_refinance_debt_id').on(table.debtId),
+    };
+});
+
+// ============================================================================
+// DEBT RELATIONS
+// ============================================================================
+
+export const debtsRelations = relations(debts, ({ one, many }) => ({
+    user: one(users, {
+        fields: [debts.userId],
+        references: [users.id],
+    }),
+    payments: many(debtPayments),
+    amortizationSchedules: many(amortizationSchedules),
+    refinanceOpportunities: many(refinanceOpportunities),
 }));
+
+export const debtPaymentsRelations = relations(debtPayments, ({ one }) => ({
+    debt: one(debts, {
+        fields: [debtPayments.debtId],
+        references: [debts.id],
+    }),
+    user: one(users, {
+        fields: [debtPayments.userId],
+        references: [users.id],
+    }),
+}));
+
+export const payoffStrategiesRelations = relations(payoffStrategies, ({ one, many }) => ({
+    user: one(users, {
+        fields: [payoffStrategies.userId],
+        references: [users.id],
+    }),
+    amortizationSchedules: many(amortizationSchedules),
+}));
+
+export const amortizationSchedulesRelations = relations(amortizationSchedules, ({ one }) => ({
+    debt: one(debts, {
+        fields: [amortizationSchedules.debtId],
+        references: [debts.id],
+    }),
+    strategy: one(payoffStrategies, {
+        fields: [amortizationSchedules.strategyId],
+        references: [payoffStrategies.id],
+    }),
+}));
+
+export const refinanceOpportunitiesRelations = relations(refinanceOpportunities, ({ one }) => ({
+    user: one(users, {
+        fields: [refinanceOpportunities.userId],
+        references: [users.id],
+    }),
+    debt: one(debts, {
+        fields: [refinanceOpportunities.debtId],
+        references: [debts.id],
+    }),
+}));
+
 
 // Tax Profiles (User Tax Configuration)
 export const taxProfiles = pgTable('tax_profiles', {
