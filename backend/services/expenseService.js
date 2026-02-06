@@ -2,6 +2,7 @@ import { eq, and, lte, isNotNull } from 'drizzle-orm';
 import db from '../config/db.js';
 import { expenses } from '../db/schema.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
+import savingsService from './savingsService.js';
 
 /**
  * Recurring Transaction Execution Service
@@ -232,6 +233,28 @@ export const disableRecurring = async (expenseId) => {
       updatedAt: new Date(),
     })
     .where(eq(expenses.id, expenseId));
+};
+
+/**
+ * Process round-up savings after expense creation
+ * @param {Object} expense - The created expense object
+ * @returns {Promise<Object|null>} - Round-up record if processed, null otherwise
+ */
+export const processRoundUpAfterExpenseCreation = async (expense) => {
+  try {
+    // Process round-up using savings service
+    const roundUpRecord = await savingsService.processRoundUp(expense);
+
+    if (roundUpRecord) {
+      console.log(`[RoundUp] Processed round-up for expense ${expense.id}: ${roundUpRecord.roundUpAmount} ${expense.currency}`);
+    }
+
+    return roundUpRecord;
+  } catch (error) {
+    console.error(`[RoundUp] Error processing round-up for expense ${expense.id}:`, error);
+    // Don't throw error to avoid breaking expense creation
+    return null;
+  }
 };
 
 export default {
