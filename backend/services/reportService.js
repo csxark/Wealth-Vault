@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, goals, reports, users, subscriptions, subscriptionUsage, cancellationSuggestions } from "../db/schema.js";
+import { expenses, categories, goals, reports, users, subscriptions, subscriptionUsage, cancellationSuggestions, debts, debtPayments } from "../db/schema.js";
 import geminiService from './geminiservice.js';
 import emailService from './emailService.js';
 
@@ -439,59 +439,82 @@ Please provide actionable insights about spending patterns, goal progress, miles
         progress: `${goal.progress.toFixed(1)}%`,
       });
     });
-  });
 
-  // Add Subscriptions sheet
-  const subSheet = workbook.addWorksheet('Subscription Analysis');
+    // Add Subscriptions sheet
+    const subSheet = workbook.addWorksheet('Subscription Analysis');
     subSheet.columns = [
-    { header: 'Monthly Cost (₹)', key: 'monthlyCost', width: 20 },
-    { header: 'Potential Savings (₹)', key: 'savings', width: 20 },
-    { header: 'Active Count', key: 'count', width: 15 },
-  ];
+      { header: 'Monthly Cost (₹)', key: 'monthlyCost', width: 20 },
+      { header: 'Potential Savings (₹)', key: 'savings', width: 20 },
+      { header: 'Active Count', key: 'count', width: 15 },
+    ];
 
     subSheet.addRow({
-    monthlyCost: subscriptionData.totalMonthlyCost.toFixed(2),
+      monthlyCost: subscriptionData.totalMonthlyCost.toFixed(2),
       savings: subscriptionData.totalPotentialAnnualSavings.toFixed(2),
-        count: subscriptionData.activeCount
+      count: subscriptionData.activeCount
     });
 
-if (subscriptionData.suggestions.length > 0) {
-  subSheet.addRow({});
-  subSheet.addRow({ monthlyCost: 'AI Suggestions' });
-  subscriptionData.suggestions.forEach(sug => {
-    subSheet.addRow({ monthlyCost: sug.reason });
-  });
-}
+    if (subscriptionData.suggestions.length > 0) {
+      subSheet.addRow({});
+      subSheet.addRow({ monthlyCost: 'AI Suggestions' });
+      subscriptionData.suggestions.forEach(sug => {
+        subSheet.addRow({ monthlyCost: sug.reason });
+      });
+    }
 
-return await workbook.xlsx.writeBuffer();
+    return await workbook.xlsx.writeBuffer();
   }
 
   async getSubscriptionData(userId) {
-  const activeSubs = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, 'active')));
+    const activeSubs = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, 'active')));
 
-  // Total monthly subscription cost
-  let totalMonthlyCost = 0;
-  activeSubs.forEach(sub => {
-    const amt = parseFloat(sub.amount);
-    if (sub.billingCycle === 'yearly') totalMonthlyCost += amt / 12;
-    else if (sub.billingCycle === 'quarterly') totalMonthlyCost += amt / 3;
-    else if (sub.billingCycle === 'weekly') totalMonthlyCost += amt * 4;
-    else totalMonthlyCost += amt;
-  });
+    // Total monthly subscription cost
+    let totalMonthlyCost = 0;
+    activeSubs.forEach(sub => {
+      const amt = parseFloat(sub.amount);
+      if (sub.billingCycle === 'yearly') totalMonthlyCost += amt / 12;
+      else if (sub.billingCycle === 'quarterly') totalMonthlyCost += amt / 3;
+      else if (sub.billingCycle === 'weekly') totalMonthlyCost += amt * 4;
+      else totalMonthlyCost += amt;
+    });
 
-  const pendingSuggestions = await db.select().from(cancellationSuggestions).where(
-    and(eq(cancellationSuggestions.userId, userId), eq(cancellationSuggestions.status, 'pending'))
-  );
+    const pendingSuggestions = await db.select().from(cancellationSuggestions).where(
+      and(eq(cancellationSuggestions.userId, userId), eq(cancellationSuggestions.status, 'pending'))
+    );
 
-  const totalPotentialAnnualSavings = pendingSuggestions.reduce((sum, sug) => sum + parseFloat(sug.potentialSavings || 0), 0);
+    const totalPotentialAnnualSavings = pendingSuggestions.reduce((sum, sug) => sum + parseFloat(sug.potentialSavings || 0), 0);
 
-  return {
-    activeCount: activeSubs.length,
-    totalMonthlyCost,
-    totalPotentialAnnualSavings,
-    suggestions: pendingSuggestions.slice(0, 5)
-  };
-}
+    return {
+      activeCount: activeSubs.length,
+      totalMonthlyCost,
+      totalPotentialAnnualSavings,
+      suggestions: pendingSuggestions.slice(0, 5)
+    };
+  }
+
+  async generateDebtSummaryReport(userId) {
+    try {
+      const userDebts = await db.select().from(debts).where(and(eq(debts.userId, userId), eq(debts.isActive, true)));
+
+      const reportData = {
+        generatedAt: new Date().toISOString(),
+        totalPrincipal: userDebts.reduce((sum, d) => sum + parseFloat(d.principalAmount), 0),
+        totalCurrentBalance: userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0),
+        debtCount: userDebts.length,
+        debts: userDebts.map(d => ({
+          name: d.name,
+          balance: d.currentBalance,
+          apr: d.apr,
+          payoffDate: d.estimatedPayoffDate
+        }))
+      };
+
+      return reportData;
+    } catch (error) {
+      console.error("Debt report generation error:", error);
+      throw error;
+    }
+  }
 }
 
 export default new ReportService();

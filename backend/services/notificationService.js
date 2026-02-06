@@ -314,6 +314,46 @@ class NotificationService {
       data: { deceased: deceasedName, beneficiary: beneficiaryName }
     });
   }
+
+  /**
+   * LIQUIDITY & CASH FLOW NOTIFICATIONS
+   */
+
+  /**
+   * Send liquidity threshold warning
+   */
+  async sendLiquidityWarning(userId, { threshold, projectedDate, projectedBalance, severity }) {
+    const isCritical = severity === 'critical' || projectedBalance < 0;
+    const title = isCritical ? "🚨 CRITICAL: Liquidity Shortfall" : "⚠️ Liquidity Warning";
+    const statusText = projectedBalance < 0 ? 'NEEDS ATTENTION' : 'LOW BALANCE';
+
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background-color: ${isCritical ? '#fde2e2' : '#fff3cd'}; border-radius: 8px; border: 1px solid ${isCritical ? '#f87171' : '#fbbf24'};">
+        <h3 style="margin-top: 0; color: ${isCritical ? '#991b1b' : '#92400e'};">${statusText}</h3>
+        <p>Our forecast indicates your balance may hit <strong>${parseFloat(projectedBalance).toFixed(2)}</strong> on <strong>${projectedDate}</strong>.</p>
+        <p>This is below your configured liquidity threshold of <strong>${parseFloat(threshold).toFixed(2)}</strong>.</p>
+        <p style="margin-bottom: 0;">Consider moving funds from your savings or reducing upcoming expenses to avoid a shortfall.</p>
+      </div>
+    `;
+
+    await this.sendEmailByUserId(userId, title, message);
+    await this.sendNotification(userId, {
+      title,
+      message: `Balance projected to hit ${parseFloat(projectedBalance).toFixed(2)} on ${projectedDate}`,
+      type: isCritical ? 'critical_liquidity' : 'liquidity_warning',
+      data: { threshold, projectedDate, projectedBalance, severity }
+    });
+  }
+
+  /**
+   * Helper to send email by userId
+   */
+  async sendEmailByUserId(userId, subject, message) {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (user && user.email) {
+      await this.sendEmail(user.email, subject, message);
+    }
+  }
 }
 
 export default new NotificationService();
