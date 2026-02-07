@@ -1,7 +1,7 @@
 import express from "express";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users, debts, debtPayments, payoffStrategies, amortizationSchedules } from "../db/schema.js";
+import { expenses, categories, users, debts, debtPayments, payoffStrategies, amortizationSchedules, currencyWallets } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
 import assetService from "../services/assetService.js";
@@ -1185,6 +1185,63 @@ router.get("/debt-summary", protect, async (req, res) => {
           apr: d.apr,
           type: d.debtType
         }))
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   GET /analytics/global-net-worth
+ * @desc    Get net worth aggregated across all multi-currency wallets
+ */
+router.get("/global-net-worth", protect, async (req, res) => {
+  try {
+    const baseCurrency = req.query.base || 'USD';
+    const wallets = await db.select().from(currencyWallets).where(eq(currencyWallets.userId, req.user.id));
+
+    // Get all rates for conversion
+    const rates = await db.query.fxRates.findMany();
+    const rateMap = rates.reduce((acc, r) => {
+      acc[r.pair] = parseFloat(r.rate);
+      return acc;
+    }, {});
+
+    let totalNetWorth = 0;
+    const walletBreakdown = wallets.map(wallet => {
+      const currency = wallet.currency;
+      const balance = parseFloat(wallet.balance);
+      let valueInBase = balance;
+
+      if (currency !== baseCurrency) {
+        const pair = `${baseCurrency}/${currency}`;
+        const inversePair = `${currency}/${baseCurrency}`;
+
+        if (rateMap[inversePair]) {
+          valueInBase = balance * rateMap[inversePair];
+        } else if (rateMap[pair]) {
+          valueInBase = balance / rateMap[pair];
+        } else {
+          // Fallback to 1 if no rate found (should not happen for major pairs)
+          valueInBase = balance;
+        }
+      }
+
+      totalNetWorth += valueInBase;
+      return {
+        currency,
+        balance,
+        valueInBase: parseFloat(valueInBase.toFixed(2))
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        baseCurrency,
+        totalNetWorth: parseFloat(totalNetWorth.toFixed(2)),
+        walletBreakdown
       }
     });
   } catch (error) {

@@ -603,6 +603,8 @@ export const usersRelations = relations(users, ({ many }) => ({
     debts: many(debts),
     payoffStrategies: many(payoffStrategies),
     refinanceOpportunities: many(refinanceOpportunities),
+    properties: many(properties),
+    tenantLeases: many(tenantLeases),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -1380,9 +1382,131 @@ export const taxDeductionsRelations = relations(taxDeductions, ({ one }) => ({
     }),
 }));
 
-export const taxReportsRelations = relations(taxReports, ({ one }) => ({
+// ============================================================================
+// REAL ESTATE & LEASE MANAGEMENT TABLES
+// ============================================================================
+
+// Properties Table (Extends Fixed Assets for Real Estate)
+export const properties = pgTable('properties', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    assetId: uuid('asset_id').references(() => fixedAssets.id, { onDelete: 'cascade' }),
+    propertyType: text('property_type').notNull(), // 'residential', 'commercial', 'industrial', 'land'
+    address: text('address').notNull(),
+    squareFootage: numeric('square_footage', { precision: 10, scale: 2 }),
+    lotSize: numeric('lot_size', { precision: 10, scale: 2 }),
+    yearBuilt: integer('year_built'),
+    bedrooms: integer('bedrooms'),
+    bathrooms: numeric('bathrooms', { precision: 3, scale: 1 }),
+    occupancyStatus: text('occupancy_status').default('vacant'), // 'occupied', 'vacant', 'under_maintenance'
+    monthlyHOA: numeric('monthly_hoa', { precision: 12, scale: 2 }).default('0'),
+    annualPropertyTax: numeric('annual_property_tax', { precision: 12, scale: 2 }).default('0'),
+    insurancePremium: numeric('insurance_premium', { precision: 12, scale: 2 }).default('0'),
+    metadata: jsonb('metadata'), // { zoning, amenities, heating, cooling }
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Tenant Leases Table
+export const tenantLeases = pgTable('tenant_leases', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantName: text('tenant_name').notNull(),
+    tenantEmail: text('tenant_email'),
+    tenantPhone: text('tenant_phone'),
+    leaseStart: timestamp('lease_start').notNull(),
+    leaseEnd: timestamp('lease_end').notNull(),
+    monthlyRent: numeric('monthly_rent', { precision: 12, scale: 2 }).notNull(),
+    securityDeposit: numeric('security_deposit', { precision: 12, scale: 2 }),
+    paymentDay: integer('payment_day').default(1),
+    status: text('status').default('active'), // 'active', 'expired', 'terminated', 'pending'
+    autoRenew: boolean('auto_renew').default(false),
+    metadata: jsonb('metadata'), // { utilities_included, pets_allowed, documents_url }
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Property Maintenance Logs
+export const propertyMaintenance = pgTable('property_maintenance', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    category: text('category').notNull(), // 'repair', 'upgrade', 'routine', 'inspection'
+    description: text('description').notNull(),
+    cost: numeric('cost', { precision: 12, scale: 2 }).notNull(),
+    date: timestamp('date').defaultNow(),
+    vendorName: text('vendor_name'),
+    vendorContact: text('vendor_contact'),
+    status: text('status').default('completed'), // 'pending', 'in_progress', 'completed'
+    isTaxDeductible: boolean('is_tax_deductible').default(true),
+    invoiceUrl: text('invoice_url'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Property ROI Snapshots
+export const propertyROISnapshots = pgTable('property_roi_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    date: timestamp('date').defaultNow(),
+    totalInvestment: numeric('total_investment', { precision: 12, scale: 2 }).notNull(),
+    totalRevenue: numeric('total_revenue', { precision: 12, scale: 2 }).notNull(),
+    totalExpenses: numeric('total_expenses', { precision: 12, scale: 2 }).notNull(),
+    netOperatingIncome: numeric('net_operating_income', { precision: 12, scale: 2 }).notNull(),
+    capRate: numeric('cap_rate', { precision: 5, scale: 2 }),
+    cashOnCashReturn: numeric('cash_on_cash_return', { precision: 5, scale: 2 }),
+    estimatedAppreciation: numeric('estimated_appreciation', { precision: 12, scale: 2 }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================================================
+// REAL ESTATE RELATIONS
+// ============================================================================
+
+export const propertiesRelations = relations(properties, ({ one, many }) => ({
     user: one(users, {
-        fields: [taxReports.userId],
+        fields: [properties.userId],
+        references: [users.id],
+    }),
+    asset: one(fixedAssets, {
+        fields: [properties.assetId],
+        references: [fixedAssets.id],
+    }),
+    leases: many(tenantLeases),
+    maintenanceLogs: many(propertyMaintenance),
+    roiSnapshots: many(propertyROISnapshots),
+}));
+
+export const tenantLeasesRelations = relations(tenantLeases, ({ one }) => ({
+    property: one(properties, {
+        fields: [tenantLeases.propertyId],
+        references: [properties.id],
+    }),
+    user: one(users, {
+        fields: [tenantLeases.userId],
+        references: [users.id],
+    }),
+}));
+
+export const propertyMaintenanceRelations = relations(propertyMaintenance, ({ one }) => ({
+    property: one(properties, {
+        fields: [propertyMaintenance.propertyId],
+        references: [properties.id],
+    }),
+    user: one(users, {
+        fields: [propertyMaintenance.userId],
+        references: [users.id],
+    }),
+}));
+
+export const propertyROISnapshotsRelations = relations(propertyROISnapshots, ({ one }) => ({
+    property: one(properties, {
+        fields: [propertyROISnapshots.propertyId],
+        references: [properties.id],
+    }),
+    user: one(users, {
+        fields: [propertyROISnapshots.userId],
         references: [users.id],
     }),
 }));

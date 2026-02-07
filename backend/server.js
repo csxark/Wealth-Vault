@@ -45,6 +45,8 @@ import assetRoutes from "./routes/assets.js";
 import governanceRoutes from "./routes/governance.js";
 import taxRoutes from "./routes/tax.js";
 import debtRoutes from "./routes/debts.js";
+import walletRoutes from "./routes/wallets.js";
+import fxRoutes from "./routes/fx_ledger.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
 import fxRateSync from "./jobs/fxRateSync.js";
@@ -52,6 +54,7 @@ import valuationUpdater from "./jobs/valuationUpdater.js";
 import inactivityMonitor from "./jobs/inactivityMonitor.js";
 import taxEstimator from "./jobs/taxEstimator.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
+import rateSyncer from "./jobs/rateSyncer.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import snapshotGenerator from "./jobs/snapshotGenerator.js";
@@ -214,6 +217,8 @@ app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
 app.use("/api/reimbursements", userLimiter, reimbursementsRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/debts", userLimiter, debtRoutes);
+app.use("/api/wallets", userLimiter, walletRoutes);
+app.use("/api/fx", userLimiter, fxRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
 app.use("/api/audit", userLimiter, auditRoutes);
@@ -271,6 +276,7 @@ app.listen(PORT, () => {
   inactivityMonitor.start();
   taxEstimator.start();
   debtRecalculator.start();
+  rateSyncer.start();
 
   // Initialize default tax categories and market indices
   initializeDefaultTaxCategories().catch(err => {
