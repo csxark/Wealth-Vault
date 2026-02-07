@@ -7,6 +7,8 @@ import { Goals } from '../components/Goals/Goals';
 import { DataImport } from '../components/Import/DataImport';
 import { Profile } from '../components/Profile/Profile';
 import Analytics from '../components/Analytics/Analytics';
+import Savings from '../components/Savings/Savings';
+import { Forecasting } from '../components/Budgets/Forecasting';
 import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
@@ -110,6 +112,14 @@ export const routes = [
     )
   },
   {
+    path: '/savings',
+    element: (
+      <ProtectedRoute>
+        <Savings />
+      </ProtectedRoute>
+    )
+  },
+  {
     path: '/import',
     element: (
       <ProtectedRoute>
@@ -130,6 +140,14 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <Analytics />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/forecasting',
+    element: (
+      <ProtectedRoute>
+        <Forecasting />
       </ProtectedRoute>
     )
   },

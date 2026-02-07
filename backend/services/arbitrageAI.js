@@ -1,7 +1,7 @@
-import geminiService from './geminiservice.js';
 import db from '../config/db.js';
-import { fxRates, arbitrageOpportunities } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { arbitrageOpportunities, fxRates } from '../db/schema.js';
+import geminiService from './geminiservice.js';
+import { desc, eq } from 'drizzle-orm';
 
 class ArbitrageAI {
     /**

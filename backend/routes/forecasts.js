@@ -1,338 +1,176 @@
 import express from 'express';
 import { protect } from '../middleware/auth.js';
-import {
-  projectCashFlow,
-  calculateProjectedBalance,
-  identifyNegativeMonths,
-  saveForecastSnapshot,
-  getForecastHistory
-} from '../services/forecastEngine.js';
-import {
-  generateSpendingInsights,
-  detectSeasonalAnomalies,
-  predictFinancialRisks
-} from '../services/predictiveAI.js';
-import { parseHistoricalData, identifyRecurringPatterns } from '../services/trendAnalyzer.js';
-import { body, query, validationResult } from 'express-validator';
+import forecastEngine from '../services/forecastEngine.js';
+import liquidityMonitor from '../services/liquidityMonitor.js';
+import { db } from '../config/db.js';
+import { liquidityAlerts, transferSuggestions } from '../db/schema.js';
+import { eq, and, desc } from 'drizzle-orm';
 
 const router = express.Router();
 
 /**
- * @route   GET /api/forecasts/generate
- * @desc    Generate cash flow forecast
- * @access  Private
+ * @route   GET /api/forecasts
+ * @desc    Get cash flow forecast for the next N days
  */
-router.get(
-  '/generate',
-  protect,
-  [
-    query('days')
-      .optional()
-      .isInt({ min: 7, max: 365 })
-      .withMessage('Days must be between 7 and 365')
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const userId = req.user.id;
-      const days = parseInt(req.query.days) || 30;
-
-      // Generate forecast
-      const forecast = await projectCashFlow(userId, days);
-      
-      // Identify danger zones
-      const dangerZoneAnalysis = await identifyNegativeMonths(userId, days);
-      
-      // Get recurring patterns
-      const recurringPatterns = await identifyRecurringPatterns(userId);
-      
-      // Detect anomalies
-      const anomalies = await detectSeasonalAnomalies(userId);
-
-      // Combine all data
-      const forecastData = {
-        ...forecast,
-        dangerZones: dangerZoneAnalysis.dangerZones,
-        hasDangerZones: dangerZoneAnalysis.hasDangerZones,
-        overallRisk: dangerZoneAnalysis.overallRisk,
-        recurringPatterns: recurringPatterns.slice(0, 10),
-        anomalies: anomalies.slice(0, 10)
-      };
-
-      // Generate AI insights
-      const aiInsights = await generateSpendingInsights(userId, forecastData);
-      forecastData.aiInsights = aiInsights;
-
-      // Save snapshot
-      const snapshot = await saveForecastSnapshot(userId, forecastData);
-
-      res.json({
-        success: true,
-        forecast: forecastData,
-        snapshotId: snapshot.id,
-        generatedAt: new Date().toISOString()
-      });
-    } catch (error) {
-      console.error('Error generating forecast:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to generate forecast',
-        message: error.message
-      });
-    }
-  }
-);
-
-/**
- * @route   GET /api/forecasts/danger-zones
- * @desc    Get danger zones (periods of potential negative balance)
- * @access  Private
- */
-router.get(
-  '/danger-zones',
-  protect,
-  [
-    query('days')
-      .optional()
-      .isInt({ min: 7, max: 365 })
-      .withMessage('Days must be between 7 and 365')
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const userId = req.user.id;
-      const days = parseInt(req.query.days) || 60;
-
-      const dangerZoneAnalysis = await identifyNegativeMonths(userId, days);
-      
-      // Get risk assessment
-      const forecast = await projectCashFlow(userId, days);
-      const riskAssessment = await predictFinancialRisks(userId, {
-        ...forecast,
-        dangerZones: dangerZoneAnalysis.dangerZones
-      });
-
-      res.json({
-        success: true,
-        ...dangerZoneAnalysis,
-        riskAssessment,
-        analyzedDays: days,
-        generatedAt: new Date().toISOString()
-      });
-    } catch (error) {
-      console.error('Error analyzing danger zones:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to analyze danger zones',
-        message: error.message
-      });
-    }
-  }
-);
-
-/**
- * @route   GET /api/forecasts/history
- * @desc    Get historical forecasts
- * @access  Private
- */
-router.get(
-  '/history',
-  protect,
-  [
-    query('limit')
-      .optional()
-      .isInt({ min: 1, max: 50 })
-      .withMessage('Limit must be between 1 and 50')
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const userId = req.user.id;
-      const limit = parseInt(req.query.limit) || 10;
-
-      const history = await getForecastHistory(userId, limit);
-
-      res.json({
-        success: true,
-        count: history.length,
-        forecasts: history
-      });
-    } catch (error) {
-      console.error('Error retrieving forecast history:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to retrieve forecast history',
-        message: error.message
-      });
-    }
-  }
-);
-
-/**
- * @route   GET /api/forecasts/insights
- * @desc    Get AI-powered spending insights
- * @access  Private
- */
-router.get('/insights', protect, async (req, res) => {
+router.get('/', protect, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const days = parseInt(req.query.days) || 30;
+    const forecast = await forecastEngine.projectCashFlow(req.user.id, days);
+    const runway = await liquidityMonitor.calculateRunway(req.user.id);
 
-    // Get recent forecast or generate new one
-    const history = await getForecastHistory(userId, 1);
-    let forecastData;
+    res.json({
+      success: true,
+      data: {
+        ...forecast,
+        runway
+      }
+    });
+  } catch (error) {
+    console.error('Forecast error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
-    if (history.length > 0) {
-      const lastForecast = history[0];
-      // Use cached forecast if less than 24 hours old
-      const ageHours = (Date.now() - new Date(lastForecast.createdAt).getTime()) / (1000 * 60 * 60);
-      
-      if (ageHours < 24) {
-        forecastData = {
-          summary: {
-            endBalance: lastForecast.projectedBalance
-          },
-          dangerZones: lastForecast.dangerZones
+/**
+ * @route   GET /api/forecasts/liquidity
+ * @desc    Get liquidity alerts and transfer suggestions
+ */
+router.get('/liquidity', protect, async (req, res) => {
+  try {
+    const alerts = await db.query.liquidityAlerts.findMany({
+      where: eq(liquidityAlerts.userId, req.user.id),
+      orderBy: (liquidityAlerts, { desc }) => [desc(liquidityAlerts.createdAt)]
+    });
+
+    const suggestions = await db.query.transferSuggestions.findMany({
+      where: and(
+        eq(transferSuggestions.userId, req.user.id),
+        eq(transferSuggestions.status, 'pending')
+      ),
+      orderBy: (transferSuggestions, { desc }) => [desc(transferSuggestions.createdAt)]
+    });
+
+    res.json({
+      success: true,
+      data: {
+        alerts,
+        suggestions
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   POST /api/forecasts/what-if
+ * @desc    Simulate a what-if scenario (e.g., large purchase)
+ */
+router.post('/what-if', protect, async (req, res) => {
+  try {
+    const { amount, date, description, days = 60 } = req.body;
+
+    // Target date for the event
+    const eventDate = new Date(date || new Date());
+    const forecast = await forecastEngine.projectCashFlow(req.user.id, days);
+
+    // Apply the "what-if" event to the forecast
+    const eventDateStr = eventDate.toISOString().split('T')[0];
+    let eventApplied = false;
+
+    const modifiedProjections = forecast.projections.map(p => {
+      if (p.date >= eventDateStr) {
+        eventApplied = true;
+        return {
+          ...p,
+          balance: p.balance - parseFloat(amount)
         };
       }
-    }
-
-    // Generate fresh forecast if needed
-    if (!forecastData) {
-      const forecast = await projectCashFlow(userId, 30);
-      const dangerZones = await identifyNegativeMonths(userId, 60);
-      forecastData = {
-        ...forecast,
-        dangerZones: dangerZones.dangerZones
-      };
-    }
-
-    const insights = await generateSpendingInsights(userId, forecastData);
-    const anomalies = await detectSeasonalAnomalies(userId);
-    const risks = await predictFinancialRisks(userId, forecastData);
-
-    res.json({
-      success: true,
-      insights,
-      anomalies: anomalies.slice(0, 5),
-      risks,
-      generatedAt: new Date().toISOString()
+      return p;
     });
-  } catch (error) {
-    console.error('Error generating insights:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate insights',
-      message: error.message
-    });
-  }
-});
 
-/**
- * @route   POST /api/forecasts/projected-balance
- * @desc    Calculate projected balance on a specific date
- * @access  Private
- */
-router.post(
-  '/projected-balance',
-  protect,
-  [
-    body('targetDate')
-      .notEmpty()
-      .isISO8601()
-      .withMessage('Valid target date is required (ISO 8601 format)')
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const userId = req.user.id;
-      const { targetDate } = req.body;
-
-      const projection = await calculateProjectedBalance(userId, new Date(targetDate));
-
-      res.json({
-        success: true,
-        projection
-      });
-    } catch (error) {
-      console.error('Error calculating projected balance:', error);
-      res.status(500).json({
+    if (!eventApplied) {
+      return res.status(400).json({
         success: false,
-        error: 'Failed to calculate projected balance',
-        message: error.message
+        message: "Event date is outside the forecast range"
       });
     }
-  }
-);
 
-/**
- * @route   GET /api/forecasts/trends
- * @desc    Get historical trends and patterns
- * @access  Private
- */
-router.get('/trends', protect, async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    const historicalData = await parseHistoricalData(userId, 12);
-    const recurringPatterns = await identifyRecurringPatterns(userId);
+    // Identify new danger zones
+    const dangerZones = [];
+    let currentZone = null;
+    modifiedProjections.forEach((p, idx) => {
+      if (p.balance < 0) {
+        if (!currentZone) {
+          currentZone = { startDate: p.date, lowestBalance: p.balance, duration: 1 };
+        } else {
+          currentZone.duration++;
+          if (p.balance < currentZone.lowestBalance) currentZone.lowestBalance = p.balance;
+        }
+      } else if (currentZone) {
+        currentZone.endDate = modifiedProjections[idx - 1].date;
+        dangerZones.push(currentZone);
+        currentZone = null;
+      }
+    });
 
     res.json({
       success: true,
-      historical: historicalData.summary,
-      monthlyBreakdown: historicalData.monthlyData,
-      recurringPatterns: recurringPatterns.slice(0, 15),
-      generatedAt: new Date().toISOString()
+      data: {
+        originalSummary: forecast.summary,
+        simulation: {
+          event: { amount, date: eventDateStr, description },
+          endBalance: modifiedProjections[modifiedProjections.length - 1].balance,
+          impact: -parseFloat(amount),
+          newDangerZones: dangerZones
+        },
+        projections: modifiedProjections
+      }
     });
   } catch (error) {
-    console.error('Error retrieving trends:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to retrieve trends',
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
 /**
- * @route   GET /api/forecasts/anomalies
- * @desc    Detect spending anomalies
- * @access  Private
+ * @route   POST /api/forecasts/alerts
+ * @desc    Configure a liquidity alert threshold
  */
-router.get('/anomalies', protect, async (req, res) => {
+router.post('/alerts', protect, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const { threshold, alertDays, severity } = req.body;
 
-    const anomalies = await detectSeasonalAnomalies(userId);
+    const [alert] = await db.insert(liquidityAlerts).values({
+      userId: req.user.id,
+      threshold: threshold.toString(),
+      alertDays: alertDays || 7,
+      severity: severity || 'warning',
+    }).returning();
 
-    res.json({
-      success: true,
-      count: anomalies.length,
-      anomalies,
-      generatedAt: new Date().toISOString()
-    });
+    res.json({ success: true, data: alert });
   } catch (error) {
-    console.error('Error detecting anomalies:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to detect anomalies',
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   PATCH /api/forecasts/suggestions/:id
+ * @desc    Update transfer suggestion status
+ */
+router.patch('/suggestions/:id', protect, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const [updated] = await db.update(transferSuggestions)
+      .set({ status, updatedAt: new Date() })
+      .where(and(
+        eq(transferSuggestions.id, req.params.id),
+        eq(transferSuggestions.userId, req.user.id)
+      ))
+      .returning();
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

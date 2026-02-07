@@ -47,6 +47,9 @@ import taxRoutes from "./routes/tax.js";
 import debtRoutes from "./routes/debts.js";
 import walletRoutes from "./routes/wallets.js";
 import fxRoutes from "./routes/fx_ledger.js";
+import debtEngine from "./services/debtEngine.js";
+import payoffOptimizer from "./services/payoffOptimizer.js";
+import refinanceScout from "./services/refinanceScout.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
 import fxRateSync from "./jobs/fxRateSync.js";
@@ -55,9 +58,10 @@ import inactivityMonitor from "./jobs/inactivityMonitor.js";
 import taxEstimator from "./jobs/taxEstimator.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
 import rateSyncer from "./jobs/rateSyncer.js";
+import forecastUpdater from "./jobs/forecastUpdater.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
-import snapshotGenerator from "./jobs/snapshotGenerator.js";
+import debtRecalculator from "./jobs/debtRecalculator.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
@@ -219,6 +223,7 @@ app.use("/api/reports", userLimiter, reportRoutes);
 app.use("/api/debts", userLimiter, debtRoutes);
 app.use("/api/wallets", userLimiter, walletRoutes);
 app.use("/api/fx", userLimiter, fxRoutes);
+app.use("/api/forecasts", userLimiter, forecastRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
 app.use("/api/audit", userLimiter, auditRoutes);
@@ -275,8 +280,14 @@ app.listen(PORT, () => {
   valuationUpdater.start();
   inactivityMonitor.start();
   taxEstimator.start();
-  debtRecalculator.start();
+  debtRecalculator.startScheduledJob();
   rateSyncer.start();
+  forecastUpdater.start();
+
+  // Add debt services to app.locals for middleware/route access
+  app.locals.debtEngine = debtEngine;
+  app.locals.payoffOptimizer = payoffOptimizer;
+  app.locals.refinanceScout = refinanceScout;
 
   // Initialize default tax categories and market indices
   initializeDefaultTaxCategories().catch(err => {
