@@ -707,6 +707,8 @@ export const usersRelations = relations(users, ({ many }) => ({
     refinanceOpportunities: many(refinanceOpportunities),
     properties: many(properties),
     tenantLeases: many(tenantLeases),
+    simulationResults: many(simulationResults),
+    riskProfile: one(riskProfiles),
     balanceSnapshots: many(balanceSnapshots),
     forecastSnapshots: many(forecastSnapshots),
     liquidityAlerts: many(liquidityAlerts),
@@ -1086,6 +1088,18 @@ export const simulationResults = pgTable('simulation_results', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Risk Profiles
+export const riskProfiles = pgTable('risk_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).unique().notNull(),
+    riskTolerance: text('risk_tolerance').notNull(), // 'low', 'medium', 'high', 'aggressive'
+    targetReturn: numeric('target_return', { precision: 5, scale: 2 }),
+    maxDrawdown: numeric('max_drawdown', { precision: 5, scale: 2 }),
+    preferredAssetMix: jsonb('preferred_asset_mix'), // { stocks: 60, bonds: 30, crypto: 10 }
+    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('createdAt').defaultNow(),
+});
+
 // Market Indices (for reference growth rates)
 export const marketIndices = pgTable('market_indices', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -1109,6 +1123,20 @@ export const assetValuationsRelations = relations(assetValuations, ({ one }) => 
     asset: one(fixedAssets, {
         fields: [assetValuations.assetId],
         references: [fixedAssets.id],
+    }),
+}));
+
+export const simulationResultsRelations = relations(simulationResults, ({ one }) => ({
+    user: one(users, {
+        fields: [simulationResults.userId],
+        references: [users.id],
+    }),
+}));
+
+export const riskProfilesRelations = relations(riskProfiles, ({ one }) => ({
+    user: one(users, {
+        fields: [riskProfiles.userId],
+        references: [users.id],
     }),
 }));
 

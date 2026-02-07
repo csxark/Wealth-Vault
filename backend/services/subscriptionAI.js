@@ -1,4 +1,4 @@
-import geminiService from './geminiService.js';
+import geminiService from './geminiservice.js';
 import db from '../config/db.js';
 import { subscriptions, subscriptionUsage, cancellationSuggestions } from '../db/schema.js';
 import { eq, and, desc, gte } from 'drizzle-orm';

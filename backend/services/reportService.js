@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import { eq, and, gte, lte, desc, sql, between } from "drizzle-orm";
 import db from "../config/db.js";
 import { expenses, categories, goals, reports, users, subscriptions, cancellationSuggestions, debts, debtPayments, refinanceOpportunities } from "../db/schema.js";
-import geminiService from './geminiService.js';
+import geminiService from './geminiservice.js';
 import emailService from './emailService.js';
 import debtEngine from './debtEngine.js';
 import payoffOptimizer from './payoffOptimizer.js';

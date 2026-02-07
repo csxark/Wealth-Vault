@@ -47,6 +47,7 @@ import taxRoutes from "./routes/tax.js";
 import debtRoutes from "./routes/debts.js";
 import walletRoutes from "./routes/wallets.js";
 import fxRoutes from "./routes/fx_ledger.js";
+import simulationRoutes from "./routes/simulations.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -55,6 +56,8 @@ import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
 import fxRateSync from "./jobs/fxRateSync.js";
 import valuationUpdater from "./jobs/valuationUpdater.js";
 import inactivityMonitor from "./jobs/inactivityMonitor.js";
+import snapshotGenerator from "./jobs/snapshotGenerator.js";
+import riskAuditor from "./jobs/riskAuditor.js";
 import taxEstimator from "./jobs/taxEstimator.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
 import rateSyncer from "./jobs/rateSyncer.js";
@@ -232,6 +235,7 @@ app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
 app.use("/api/assets", userLimiter, assetRoutes);
 app.use("/api/governance", userLimiter, governanceRoutes);
 app.use("/api/tax", userLimiter, taxRoutes);
+app.use("/api/simulations", userLimiter, simulationRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -283,6 +287,7 @@ app.listen(PORT, () => {
   debtRecalculator.startScheduledJob();
   rateSyncer.start();
   forecastUpdater.start();
+  riskAuditor.start();
 
   // Add debt services to app.locals for middleware/route access
   app.locals.debtEngine = debtEngine;
