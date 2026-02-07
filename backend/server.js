@@ -45,6 +45,8 @@ import assetRoutes from "./routes/assets.js";
 import governanceRoutes from "./routes/governance.js";
 import taxRoutes from "./routes/tax.js";
 import debtsRouter from "./routes/debts.js";
+import propertyRoutes from "./routes/properties.js";
+import leaseRoutes from "./routes/leases.js";
 
 // Import debt management services
 import debtEngine from "./services/debtEngine.js";
@@ -60,6 +62,7 @@ import forecastUpdater from "./jobs/forecastUpdater.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
+import leaseMonitor from "./jobs/leaseMonitor.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
@@ -228,6 +231,8 @@ app.use("/api/assets", userLimiter, assetRoutes);
 app.use("/api/governance", userLimiter, governanceRoutes);
 app.use("/api/tax", userLimiter, taxRoutes);
 app.use("/api/debts", userLimiter, debtsRouter);
+app.use("/api/properties", userLimiter, propertyRoutes);
+app.use("/api/leases", userLimiter, leaseRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -276,9 +281,10 @@ app.listen(PORT, () => {
   valuationUpdater.start();
   inactivityMonitor.start();
   taxEstimator.start();
-  
+
   // Start debt recalculator scheduled job
   debtRecalculator.startScheduledJob();
+  leaseMonitor.start();
 
   // Add debt services to app.locals for middleware/route access
   app.locals.debtEngine = debtEngine;
