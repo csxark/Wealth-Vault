@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { X, Receipt, Calendar, CreditCard, MapPin, Tag, RotateCcw, Clock } from 'lucide-react';
 import type { Expense } from '../../types';
+import { expenseFormSchema, type ExpenseFormData } from '../../schemas/validationSchemas';
 
 interface ExpenseFormModalProps {
   expense?: Expense;
@@ -9,24 +12,38 @@ interface ExpenseFormModalProps {
 }
 
 export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onSave, onCancel }) => {
-  const [formData, setFormData] = useState({
-    amount: '',
-    description: '',
-    category: 'safe' as 'safe' | 'impulsive' | 'anxious',
-    date: new Date().toISOString().split('T')[0],
-    paymentMethod: 'card' as 'cash' | 'card' | 'upi' | 'netbanking' | 'other',
-    location: '',
-    tags: '',
-    notes: '',
-    isRecurring: false,
-    recurringFrequency: 'monthly' as 'daily' | 'weekly' | 'monthly' | 'yearly',
-    recurringInterval: '1',
-    recurringEndDate: ''
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    formState: { errors },
+  } = useForm<ExpenseFormData>({
+    resolver: zodResolver(expenseFormSchema),
+    defaultValues: {
+      amount: '',
+      description: '',
+      category: 'safe',
+      date: new Date().toISOString().split('T')[0],
+      paymentMethod: 'card',
+      location: '',
+      tags: '',
+      notes: '',
+      isRecurring: false,
+      recurringFrequency: 'monthly',
+      recurringInterval: '1',
+      recurringEndDate: '',
+    },
   });
+
+  const isRecurring = watch('isRecurring');
+  const recurringFrequency = watch('recurringFrequency');
+  const recurringInterval = watch('recurringInterval');
+  const recurringEndDate = watch('recurringEndDate');
 
   useEffect(() => {
     if (expense) {
-      setFormData({
+      reset({
         amount: Math.abs(expense.amount).toString(),
         description: expense.description,
         category: expense.category as 'safe' | 'impulsive' | 'anxious',
@@ -38,47 +55,45 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
         isRecurring: expense.isRecurring,
         recurringFrequency: expense.recurringPattern?.frequency || 'monthly',
         recurringInterval: expense.recurringPattern?.interval?.toString() || '1',
-        recurringEndDate: expense.recurringPattern?.endDate?.split('T')[0] || ''
+        recurringEndDate: expense.recurringPattern?.endDate?.split('T')[0] || '',
       });
     }
-  }, [expense]);
+  }, [expense, reset]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const onFormSubmit = (data: ExpenseFormData) => {
     const expenseData: Partial<Expense> = {
-      amount: parseFloat(formData.amount),
-      description: formData.description,
-      category: formData.category,
-      date: formData.date,
-      paymentMethod: formData.paymentMethod,
+      amount: parseFloat(data.amount),
+      description: data.description,
+      category: data.category,
+      date: data.date,
+      paymentMethod: data.paymentMethod,
       currency: 'INR',
-      isRecurring: formData.isRecurring,
-      status: 'completed'
+      isRecurring: data.isRecurring,
+      status: 'completed',
     };
 
     // Add optional fields if they have values
-    if (formData.location.trim()) {
-      expenseData.location = { name: formData.location.trim() };
+    if (data.location?.trim()) {
+      expenseData.location = { name: data.location.trim() };
     }
 
-    if (formData.tags.trim()) {
-      expenseData.tags = formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
+    if (data.tags?.trim()) {
+      expenseData.tags = data.tags.split(',').map((tag) => tag.trim()).filter((tag) => tag);
     }
 
-    if (formData.notes.trim()) {
-      expenseData.notes = formData.notes.trim();
+    if (data.notes?.trim()) {
+      expenseData.notes = data.notes.trim();
     }
 
     // Add recurring pattern if recurring is enabled
-    if (formData.isRecurring) {
+    if (data.isRecurring) {
       expenseData.recurringPattern = {
-        frequency: formData.recurringFrequency,
-        interval: parseInt(formData.recurringInterval) || 1
+        frequency: data.recurringFrequency,
+        interval: parseInt(data.recurringInterval) || 1,
       };
 
-      if (formData.recurringEndDate) {
-        expenseData.recurringPattern.endDate = formData.recurringEndDate;
+      if (data.recurringEndDate) {
+        expenseData.recurringPattern.endDate = data.recurringEndDate;
       }
     }
 
@@ -100,7 +115,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit(onFormSubmit)} className="p-6 space-y-4">
           {/* Amount and Description */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -110,13 +125,14 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               <input
                 type="number"
                 step="0.01"
-                min="0"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                {...register('amount')}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent dark:bg-slate-700 dark:text-white ${errors.amount ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                  }`}
                 placeholder="0.00"
-                required
               />
+              {errors.amount && (
+                <p className="mt-1 text-sm text-red-500">{errors.amount.message}</p>
+              )}
             </div>
 
             <div>
@@ -126,12 +142,14 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               </label>
               <input
                 type="text"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                {...register('description')}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent dark:bg-slate-700 dark:text-white ${errors.description ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                  }`}
                 placeholder="e.g., Grocery shopping"
-                required
               />
+              {errors.description && (
+                <p className="mt-1 text-sm text-red-500">{errors.description.message}</p>
+              )}
             </div>
           </div>
 
@@ -142,14 +160,17 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
                 Category
               </label>
               <select
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value as 'safe' | 'impulsive' | 'anxious' })}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                {...register('category')}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent dark:bg-slate-700 dark:text-white ${errors.category ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                  }`}
               >
                 <option value="safe">Safe Spending</option>
                 <option value="impulsive">Impulsive Spending</option>
                 <option value="anxious">Anxious Spending</option>
               </select>
+              {errors.category && (
+                <p className="mt-1 text-sm text-red-500">{errors.category.message}</p>
+              )}
             </div>
 
             <div>
@@ -158,9 +179,9 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
                 Payment Method
               </label>
               <select
-                value={formData.paymentMethod}
-                onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as 'cash' | 'card' | 'upi' | 'netbanking' | 'other' })}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                {...register('paymentMethod')}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent dark:bg-slate-700 dark:text-white ${errors.paymentMethod ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                  }`}
               >
                 <option value="card">Card</option>
                 <option value="upi">UPI</option>
@@ -168,6 +189,9 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
                 <option value="netbanking">Net Banking</option>
                 <option value="other">Other</option>
               </select>
+              {errors.paymentMethod && (
+                <p className="mt-1 text-sm text-red-500">{errors.paymentMethod.message}</p>
+              )}
             </div>
           </div>
 
@@ -180,11 +204,13 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               </label>
               <input
                 type="date"
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                required
+                {...register('date')}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent dark:bg-slate-700 dark:text-white ${errors.date ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                  }`}
               />
+              {errors.date && (
+                <p className="mt-1 text-sm text-red-500">{errors.date.message}</p>
+              )}
             </div>
 
             <div>
@@ -194,8 +220,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               </label>
               <input
                 type="text"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                {...register('location')}
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                 placeholder="e.g., Local Market"
               />
@@ -211,8 +236,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               </label>
               <input
                 type="text"
-                value={formData.tags}
-                onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                {...register('tags')}
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                 placeholder="e.g., food, monthly"
               />
@@ -224,11 +248,14 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               </label>
               <input
                 type="text"
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                {...register('notes')}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent dark:bg-slate-700 dark:text-white ${errors.notes ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                  }`}
                 placeholder="Additional notes..."
               />
+              {errors.notes && (
+                <p className="mt-1 text-sm text-red-500">{errors.notes.message}</p>
+              )}
             </div>
           </div>
 
@@ -238,8 +265,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               <input
                 type="checkbox"
                 id="isRecurring"
-                checked={formData.isRecurring}
-                onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
+                {...register('isRecurring')}
                 className="w-4 h-4 text-cyan-600 bg-slate-100 border-slate-300 rounded focus:ring-cyan-500 dark:focus:ring-cyan-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
               />
               <label htmlFor="isRecurring" className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center">
@@ -248,7 +274,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               </label>
             </div>
 
-            {formData.isRecurring && (
+            {isRecurring && (
               <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
@@ -257,8 +283,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
                       Frequency
                     </label>
                     <select
-                      value={formData.recurringFrequency}
-                      onChange={(e) => setFormData({ ...formData, recurringFrequency: e.target.value as 'daily' | 'weekly' | 'monthly' | 'yearly' })}
+                      {...register('recurringFrequency')}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                     >
                       <option value="daily">Daily</option>
@@ -275,11 +300,14 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
                     <input
                       type="number"
                       min="1"
-                      value={formData.recurringInterval}
-                      onChange={(e) => setFormData({ ...formData, recurringInterval: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                      {...register('recurringInterval')}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent dark:bg-slate-700 dark:text-white ${errors.recurringInterval ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                        }`}
                       placeholder="1"
                     />
+                    {errors.recurringInterval && (
+                      <p className="mt-1 text-sm text-red-500">{errors.recurringInterval.message}</p>
+                    )}
                   </div>
 
                   <div>
@@ -288,17 +316,16 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
                     </label>
                     <input
                       type="date"
-                      value={formData.recurringEndDate}
-                      onChange={(e) => setFormData({ ...formData, recurringEndDate: e.target.value })}
+                      {...register('recurringEndDate')}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                     />
                   </div>
                 </div>
 
                 <div className="text-sm text-slate-600 dark:text-slate-400">
-                  This expense will repeat {formData.recurringInterval === '1' ? '' : `every ${formData.recurringInterval} `}{formData.recurringFrequency}
-                  {formData.recurringInterval === '1' ? '' : 's'}
-                  {formData.recurringEndDate && ` until ${new Date(formData.recurringEndDate).toLocaleDateString()}`}.
+                  This expense will repeat {recurringInterval === '1' ? '' : `every ${recurringInterval} `}{recurringFrequency}
+                  {recurringInterval === '1' ? '' : 's'}
+                  {recurringEndDate && ` until ${new Date(recurringEndDate).toLocaleDateString()}`}.
                 </div>
               </div>
             )}
