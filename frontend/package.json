@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "setup": "node setup.js",
     "verify": "node verify-db.js",
-    "test-db": "echo 'Use the Test DB panel in the app to test database operations'"
+    "test-db": "echo 'Use the Test DB panel in the app to test database operations'",
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@google/genai": "^1.35.0",
