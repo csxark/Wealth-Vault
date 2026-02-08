@@ -190,6 +190,51 @@ export const familySettings = pgTable('family_settings', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Shared Budgets Table (for collaborative budgeting)
+export const sharedBudgets = pgTable('shared_budgets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    totalBudget: numeric('total_budget', { precision: 12, scale: 2 }).notNull(),
+    currentSpent: numeric('current_spent', { precision: 12, scale: 2 }).default('0'),
+    currency: text('currency').default('USD'),
+    period: text('period').default('monthly'), // monthly, yearly
+    startDate: timestamp('start_date').defaultNow(),
+    endDate: timestamp('end_date'),
+    approvalRequired: boolean('approval_required').default(false),
+    approvalThreshold: numeric('approval_threshold', { precision: 12, scale: 2 }), // Expenses above this need approval
+    isActive: boolean('is_active').default(true),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    metadata: jsonb('metadata').default({
+        categories: [], // Allowed categories
+        contributors: [], // User IDs who can contribute
+        approvers: [] // User IDs who can approve
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Expense Approvals Table (for approval workflows)
+export const expenseApprovals = pgTable('expense_approvals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    approvedBy: uuid('approved_by').references(() => users.id, { onDelete: 'set null' }),
+    status: text('status').default('pending'), // pending, approved, rejected
+    approvalNotes: text('approval_notes'),
+    requestedAt: timestamp('requested_at').defaultNow(),
+    approvedAt: timestamp('approved_at'),
+    metadata: jsonb('metadata').default({
+        budgetId: null,
+        amount: 0,
+        category: null
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Goals Table
 export const goals = pgTable('goals', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -749,6 +794,40 @@ export const familySettingsRelations = relations(familySettings, ({ one }) => ({
     }),
 }));
 
+// Shared Budgets Relations
+export const sharedBudgetsRelations = relations(sharedBudgets, ({ one, many }) => ({
+    vault: one(vaults, {
+        fields: [sharedBudgets.vaultId],
+        references: [vaults.id],
+    }),
+    createdBy: one(users, {
+        fields: [sharedBudgets.createdBy],
+        references: [users.id],
+    }),
+}));
+
+// Expense Approvals Relations
+export const expenseApprovalsRelations = relations(expenseApprovals, ({ one }) => ({
+    expense: one(expenses, {
+        fields: [expenseApprovals.expenseId],
+        references: [expenses.id],
+    }),
+    vault: one(vaults, {
+        fields: [expenseApprovals.vaultId],
+        references: [vaults.id],
+    }),
+    requestedBy: one(users, {
+        fields: [expenseApprovals.requestedBy],
+        references: [users.id],
+        relationName: 'expense_approvals_requested_by'
+    }),
+    approvedBy: one(users, {
+        fields: [expenseApprovals.approvedBy],
+        references: [users.id],
+        relationName: 'expense_approvals_approved_by'
+    }),
+}));
+
 // Update vaults relations to include family tables
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
     owner: one(users, {
@@ -763,6 +842,8 @@ export const vaultsRelations = relations(vaults, ({ one, many }) => ({
     expenseShares: many(expenseShares),
     reimbursements: many(reimbursements),
     familySettings: one(familySettings),
+    sharedBudgets: many(sharedBudgets),
+    expenseApprovals: many(expenseApprovals),
 }));
 
 // Update expenses relations to include shares
