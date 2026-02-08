@@ -1,81 +1,51 @@
+
 import db from '../config/db.js';
-import { fxRates, fxTransactions, currencyWallets } from '../db/schema.js';
-import { eq, sql } from 'drizzle-orm';
+import { fxTransactions, fxRates, currencyWallets } from '../db/schema.js';
 import walletService from './walletService.js';
+import { eq, and } from 'drizzle-orm';
 
 class FXEngine {
     /**
-     * Convert currency between wallets
+     * Perform currency conversion
      */
-    async convertCurrency(userId, sourceCurrency, targetCurrency, amount, metadata = {}) {
+    async convertCurrency(userId, { sourceCurrency, targetCurrency, amount }) {
         const pair = `${sourceCurrency.toUpperCase()}/${targetCurrency.toUpperCase()}`;
-        const inversePair = `${targetCurrency.toUpperCase()}/${sourceCurrency.toUpperCase()}`;
 
-        // Get live rate
-        let rateData = await db.query.fxRates.findFirst({
-            where: eq(fxRates.pair, pair)
-        });
+        // 1. Get current exchange rate
+        const [rateData] = await db.select().from(fxRates).where(eq(fxRates.pair, pair));
+        if (!rateData) throw new Error(`Exchange rate for ${pair} not found`);
 
-        let rate;
-        if (rateData) {
-            rate = parseFloat(rateData.rate);
-        } else {
-            // Try inverse
-            const inverseRateData = await db.query.fxRates.findFirst({
-                where: eq(fxRates.pair, inversePair)
-            });
-            if (!inverseRateData) throw new Error(`Exchange rate for ${pair} not available`);
-            rate = 1 / parseFloat(inverseRateData.rate);
-        }
+        const rate = parseFloat(rateData.rate);
+        const feePercent = 0.005; // 0.5% standard fee
+        const sourceAmount = parseFloat(amount);
+        const targetAmount = sourceAmount * rate * (1 - feePercent);
+        const fee = sourceAmount * rate * feePercent;
 
-        // Wallets
-        const sourceWallet = await walletService.getWallet(userId, sourceCurrency);
-        let targetWallet = await walletService.getWallet(userId, targetCurrency);
-
-        if (!sourceWallet || parseFloat(sourceWallet.balance) < amount) {
-            throw new Error('Insufficient balance in source wallet');
-        }
-
-        if (!targetWallet) {
-            // Auto-create wallet if target currency doesn't exist for user
-            targetWallet = await walletService.createWallet(userId, targetCurrency);
-        }
-
-        const targetAmount = amount * rate;
-        const fee = amount * 0.001; // 0.1% fee base cost
-
-        // Execute atomic transaction
         return await db.transaction(async (tx) => {
-            // 1. Deduct from source
-            await tx.update(currencyWallets)
-                .set({
-                    balance: sql`${currencyWallets.balance} - ${amount.toString()}`,
-                    updatedAt: new Date()
-                })
-                .where(eq(currencyWallets.id, sourceWallet.id));
+            // 2. Load/Create wallets
+            const sourceWallet = await walletService.getOrCreateWallet(userId, sourceCurrency);
+            const targetWallet = await walletService.getOrCreateWallet(userId, targetCurrency);
 
-            // 2. Add to target (minus fee)
-            const afterFee = targetAmount - (fee * rate);
-            await tx.update(currencyWallets)
-                .set({
-                    balance: sql`${currencyWallets.balance} + ${afterFee.toFixed(8)}`,
-                    updatedAt: new Date()
-                })
-                .where(eq(currencyWallets.id, targetWallet.id));
+            if (parseFloat(sourceWallet.balance) < sourceAmount) {
+                throw new Error('Insufficient funds in source wallet');
+            }
 
-            // 3. Record transaction
+            // 3. Update balances
+            await walletService.updateBalance(sourceWallet.id, -sourceAmount, tx);
+            await walletService.updateBalance(targetWallet.id, targetAmount, tx);
+
+            // 4. Record transaction
             const [transaction] = await tx.insert(fxTransactions).values({
                 userId,
                 sourceWalletId: sourceWallet.id,
                 targetWalletId: targetWallet.id,
-                sourceCurrency: sourceCurrency.toUpperCase(),
-                targetCurrency: targetCurrency.toUpperCase(),
-                sourceAmount: amount.toString(),
-                targetAmount: afterFee.toFixed(8),
-                exchangeRate: rate.toFixed(8),
-                fee: fee.toFixed(2),
-                status: 'completed',
-                metadata
+                sourceCurrency,
+                targetCurrency,
+                sourceAmount: sourceAmount.toString(),
+                targetAmount: targetAmount.toString(),
+                exchangeRate: rate.toString(),
+                fee: fee.toString(),
+                status: 'completed'
             }).returning();
 
             return transaction;
@@ -83,19 +53,12 @@ class FXEngine {
     }
 
     /**
-     * Fetch all live rates
+     * Get transaction history
      */
-    async getLiveRates() {
-        return await db.query.fxRates.findMany();
-    }
-
-    /**
-     * Get specific pair rate
-     */
-    async getRate(pair) {
-        return await db.query.fxRates.findFirst({
-            where: eq(fxRates.pair, pair.toUpperCase())
-        });
+    async getHistory(userId) {
+        return await db.select().from(fxTransactions)
+            .where(eq(fxTransactions.userId, userId))
+            .orderBy(fxTransactions.createdAt);
     }
 }
 

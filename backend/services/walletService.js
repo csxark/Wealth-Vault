@@ -1,80 +1,40 @@
+
 import db from '../config/db.js';
 import { currencyWallets } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 
 class WalletService {
     /**
-     * Get all wallets for a user
+     * Create or retrieve a wallet for a specific currency
      */
-    async getUserWallets(userId) {
-        return await db.query.currencyWallets.findMany({
-            where: eq(currencyWallets.userId, userId),
-            orderBy: (currencyWallets, { desc }) => [desc(currencyWallets.isDefault)]
-        });
-    }
-
-    /**
-     * Get specific wallet by ID or Currency
-     */
-    async getWallet(userId, currencyOrId) {
-        if (!currencyOrId) return null;
-
-        // Check if it's a UUID (ID)
-        const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(currencyOrId);
-
-        if (isUuid) {
-            return await db.query.currencyWallets.findFirst({
-                where: and(
-                    eq(currencyWallets.userId, userId),
-                    eq(currencyWallets.id, currencyOrId)
-                )
-            });
-        }
-
-        // Otherwise treat as currency code
-        return await db.query.currencyWallets.findFirst({
-            where: and(
+    async getOrCreateWallet(userId, currency, vaultId = null) {
+        let [wallet] = await db.select().from(currencyWallets).where(
+            and(
                 eq(currencyWallets.userId, userId),
-                eq(currencyWallets.currency, currencyOrId.toUpperCase())
+                eq(currencyWallets.currency, currency.toUpperCase())
             )
-        });
-    }
+        );
 
-    /**
-     * Create a new wallet
-     */
-    async createWallet(userId, currency, isDefault = false) {
-        // Check if wallet already exists
-        const existing = await this.getWallet(userId, currency);
-        if (existing) return existing;
-
-        // If setting as default, unset other defaults
-        if (isDefault) {
-            await db.update(currencyWallets)
-                .set({ isDefault: false })
-                .where(eq(currencyWallets.userId, userId));
+        if (!wallet) {
+            [wallet] = await db.insert(currencyWallets).values({
+                userId,
+                currency: currency.toUpperCase(),
+                vaultId,
+                balance: '0',
+                isDefault: currency.toUpperCase() === 'USD'
+            }).returning();
         }
-
-        const [wallet] = await db.insert(currencyWallets).values({
-            userId,
-            currency: currency.toUpperCase(),
-            balance: '0',
-            isDefault
-        }).returning();
 
         return wallet;
     }
 
     /**
-     * Update balance with sub-millisecond precision logic
+     * Update wallet balance atomically
      */
-    async updateBalance(walletId, amount, type = 'add') {
-        const amountStr = amount.toString();
-        const sign = type === 'add' ? '+' : '-';
-
-        return await db.update(currencyWallets)
+    async updateBalance(walletId, amount, tx = db) {
+        return await tx.update(currencyWallets)
             .set({
-                balance: sql`${currencyWallets.balance} ${sql.raw(sign)} ${amountStr}`,
+                balance: sql`${currencyWallets.balance} + ${amount.toString()}`,
                 updatedAt: new Date()
             })
             .where(eq(currencyWallets.id, walletId))
@@ -82,15 +42,31 @@ class WalletService {
     }
 
     /**
-     * Ensure user has at least a default USD wallet
+     * Set default wallet
      */
-    async ensureBaseWallets(userId) {
-        const wallets = await this.getUserWallets(userId);
-        if (wallets.length === 0) {
-            const usdWallet = await this.createWallet(userId, 'USD', true);
-            return [usdWallet];
-        }
-        return wallets;
+    async setDefaultWallet(userId, walletId) {
+        return await db.transaction(async (tx) => {
+            // Unset current default
+            await tx.update(currencyWallets)
+                .set({ isDefault: false })
+                .where(eq(currencyWallets.userId, userId));
+
+            // Set new default
+            return await tx.update(currencyWallets)
+                .set({ isDefault: true })
+                .where(eq(currencyWallets.id, walletId))
+                .returning();
+        });
+    }
+
+    /**
+     * Get user net worth in base currency
+     */
+    async calculateNetWorth(userId, baseCurrency = 'USD') {
+        const wallets = await db.select().from(currencyWallets).where(eq(currencyWallets.userId, userId));
+        // Note: Real conversion logic would use FX rates table.
+        // For now returning raw balances.
+        return wallets.reduce((acc, w) => acc + parseFloat(w.balance), 0);
     }
 }
 
