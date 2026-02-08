@@ -38,6 +38,7 @@ import analyticsRoutes from "./routes/analytics.js";
 import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
+import insightsRoutes from "./routes/insights.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 
 // Load environment variables
