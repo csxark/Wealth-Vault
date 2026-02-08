@@ -713,6 +713,8 @@ export const usersRelations = relations(users, ({ many }) => ({
     forecastSnapshots: many(forecastSnapshots),
     liquidityAlerts: many(liquidityAlerts),
     transferSuggestions: many(transferSuggestions),
+    properties: many(properties),
+    tenantLeases: many(tenantLeases),
 }));
 
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
@@ -1110,6 +1112,77 @@ export const marketIndices = pgTable('market_indices', {
     lastUpdated: timestamp('last_updated').defaultNow(),
 });
 
+// Properties Table (Extended Real Estate Details)
+export const properties = pgTable('properties', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    assetId: uuid('asset_id').references(() => fixedAssets.id, { onDelete: 'cascade' }),
+    propertyType: text('property_type').notNull(), // 'residential', 'commercial', 'industrial', 'land'
+    address: text('address').notNull(),
+    units: integer('units').default(1),
+    squareFootage: integer('square_footage'),
+    lotSize: numeric('lot_size', { precision: 10, scale: 2 }),
+    yearBuilt: integer('year_built'),
+    amenities: jsonb('amenities').default([]),
+    noi: numeric('noi', { precision: 12, scale: 2 }), // Net Operating Income
+    capRate: numeric('cap_rate', { precision: 5, scale: 2 }),
+    occupancyStatus: text('occupancy_status').default('vacant'), // 'occupied', 'vacant', 'maintenance'
+    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tenant Leases Table
+export const tenantLeases = pgTable('tenant_leases', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantName: text('tenant_name').notNull(),
+    tenantContact: text('tenant_contact'),
+    leaseStart: timestamp('lease_start').notNull(),
+    leaseEnd: timestamp('lease_end').notNull(),
+    monthlyRent: numeric('monthly_rent', { precision: 12, scale: 2 }).notNull(),
+    securityDeposit: numeric('security_deposit', { precision: 12, scale: 2 }),
+    status: text('status').default('active'), // 'active', 'expired', 'terminated', 'pending'
+    paymentStatus: text('payment_status').default('paid'), // 'paid', 'overdue', 'partial'
+    renewalWindowDays: integer('renewal_window_days').default(30),
+    autoRenew: boolean('auto_renew').default(false),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Property Maintenance Logs
+export const propertyMaintenance = pgTable('property_maintenance', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    taskName: text('task_name').notNull(),
+    description: text('description'),
+    category: text('category').notNull(), // 'repair', 'renovation', 'routine', 'emergency'
+    cost: numeric('cost', { precision: 12, scale: 2 }).default('0'),
+    vendorInfo: text('vendor_info'),
+    status: text('status').default('pending'), // 'pending', 'in_progress', 'completed'
+    scheduledDate: timestamp('scheduled_date'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Property ROI Snapshots
+export const propertyROISnapshots = pgTable('property_roi_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: timestamp('snapshot_date').defaultNow(),
+    grossIncome: numeric('gross_income', { precision: 12, scale: 2 }),
+    operatingExpenses: numeric('operating_expenses', { precision: 12, scale: 2 }),
+    noi: numeric('noi', { precision: 12, scale: 2 }),
+    cashOnCashReturn: numeric('cash_on_cash_return', { precision: 5, scale: 2 }),
+    capRate: numeric('cap_rate', { precision: 5, scale: 2 }),
+    occupancyRate: numeric('occupancy_rate', { precision: 5, scale: 2 }),
+    totalAppreciation: numeric('total_appreciation', { precision: 12, scale: 2 }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Asset Relations
 export const fixedAssetsRelations = relations(fixedAssets, ({ one, many }) => ({
     user: one(users, {
@@ -1117,6 +1190,7 @@ export const fixedAssetsRelations = relations(fixedAssets, ({ one, many }) => ({
         references: [users.id],
     }),
     valuations: many(assetValuations),
+    property: one(properties),
 }));
 
 export const assetValuationsRelations = relations(assetValuations, ({ one }) => ({

@@ -1,7 +1,6 @@
-import React from 'react';
-import { Vault, Menu, User, LogOut, Sun, Moon } from 'lucide-react';
+import { Vault, Menu, User, LogOut } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { useTheme } from '../../hooks/useTheme';
+import { ThemeToggle } from '../Navbar/ThemeToggle';
 
 interface HeaderProps {
   onMenuToggle: () => void;
@@ -9,7 +8,8 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const { user, signOut } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  // useTheme is now used inside ThemeToggle, but we might need it for other things if we used to use isDark
+  // In this file, isDark was only used for the button. So we don't need it here anymore if we replace the button.
 
   const handleSignOut = async () => {
     await signOut();
@@ -40,14 +40,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
-              className="p-2.5 rounded-xl text-neutral-600 dark:text-slate-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-slate-700 transition-all"
-              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-              aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
+            <ThemeToggle />
             <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-100 dark:bg-slate-700 text-sm text-neutral-700 dark:text-slate-300">
               <User className="h-4 w-4" />
               <span className="max-w-[150px] truncate font-medium">{user?.email}</span>

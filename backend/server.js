@@ -65,6 +65,7 @@ import forecastUpdater from "./jobs/forecastUpdater.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
+import leaseMonitor from "./jobs/leaseMonitor.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
