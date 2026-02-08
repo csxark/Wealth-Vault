@@ -1,83 +1,73 @@
 import db from '../config/db.js';
 import { arbitrageOpportunities, fxRates } from '../db/schema.js';
-import geminiService from './geminiService.js';
+import geminiService from './geminiservice.js';
 import { desc, eq } from 'drizzle-orm';
 
 class ArbitrageAI {
     /**
-     * analyzeMarket: Scans for arbitrage opportunities
+     * Scan global rates and user wallets for arbitrage opportunities
      */
-    async analyzeMarket() {
-        console.log('[Arbitrage AI] Analyzing market conditions...');
+    async scanForOpportunities(userId) {
+        const rates = await db.query.fxRates.findMany();
 
-        // 1. Get recent rates
-        const rates = await db.select().from(fxRates).orderBy(desc(fxRates.lastUpdated)).limit(20);
+        // Create a matrix of rates for Gemini to analyze
+        const rateMatrix = rates.map(r => `${r.pair}: ${r.rate} (Change: ${r.change24h}%, Vol: ${r.volatility}%)`).join('\n');
 
-        if (rates.length === 0) return;
-
-        const rateContext = rates.map(r => `${r.pair}: ${r.rate} (Volatility: ${r.volatility})`).join('\n');
-
-        // 2. Ask Gemini
         const prompt = `
-        Analyze the following FX market data for triangular arbitrage or favorable conversion windows:
-        
-        ${rateContext}
+      You are a high-frequency FX arbitrage bot for the Wealth-Vault platform. 
+      Analyze the current market FX rates provided below:
 
-        Identify 1-2 potential opportunities.
-        For each, provide:
-        - Pair (e.g. USD/EUR)
-        - Action (Buy/Sell)
-        - Confidence Score (0-100)
-        - Expected Profit %
-        - Reasoning
+      ${rateMatrix}
 
-        Format response as JSON array of objects: [{ "pair": "...", "action": "...", "confidence": 85, "profit": 0.5, "reason": "..." }]
-        Only return the JSON.
-        `;
+      Identify 2-3 specific arbitrage opportunities (buy/sell signals) or "juggling" strategies that could yield a profit due to current volatility or rate mismatches between pairs.
+      
+      Format your response ONLY as a JSON array of objects with this structure (no markdown blocks):
+      [
+        {
+          "pair": "USD/EUR",
+          "type": "buy_signal",
+          "confidence": 85,
+          "expectedProfit": 1.2,
+          "recommendation": "Buy USD now, hold for 2 hours for expected spike against EUR"
+        }
+      ]
+    `;
 
         try {
-            const rawResponse = await geminiService.generateInsights(prompt);
-            // Basic cleanup of markdown if Gemini adds it
-            const jsonStr = rawResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-            const opportunities = JSON.parse(jsonStr);
+            const response = await geminiService.generateInsights(prompt);
 
-            if (Array.isArray(opportunities)) {
-                await this.storeOpportunities(opportunities);
+            // Basic cleaning in case AI includes markdowns
+            const cleanJson = response.replace(/```json|```/g, '').trim();
+            const opportunities = JSON.parse(cleanJson);
+
+            const savedOps = [];
+
+            // Save to database
+            for (const op of opportunities) {
+                const [saved] = await db.insert(arbitrageOpportunities).values({
+                    pair: op.pair,
+                    type: op.type,
+                    confidence: op.confidence.toString(),
+                    expectedProfit: op.expectedProfit.toString(),
+                    status: 'active',
+                    validUntil: new Date(Date.now() + 3600000) // Valid for 1 hour
+                }).returning();
+                savedOps.push(saved);
             }
+
+            return savedOps;
         } catch (error) {
-            console.error('[Arbitrage AI] Analysis failed:', error.message);
+            console.error('Arbitrage AI Error:', error);
+            return [];
         }
     }
 
-    async storeOpportunities(opps) {
-        const timestamp = new Date();
-        const validUntil = new Date(timestamp.getTime() + 15 * 60000); // Valid for 15 mins
-
-        for (const opp of opps) {
-            if (opp.confidence < 70) continue; // Filter low confidence
-
-            await db.insert(arbitrageOpportunities).values({
-                pair: opp.pair,
-                type: opp.action === 'Buy' ? 'buy_signal' : 'sell_signal',
-                confidence: opp.confidence.toString(),
-                expectedProfit: opp.profit.toString(),
-                currentRate: '0', // Ideally fetch current real-time rate here
-                status: 'active',
-                validUntil,
-                createdAt: timestamp
-            });
-            console.log(`[Arbitrage AI] New signal: ${opp.action} ${opp.pair} (${opp.profit}% potential)`);
-        }
-    }
-
+    /**
+     * Get all active opportunities
+     */
     async getActiveOpportunities() {
-        // Implement query logic
         return await db.query.arbitrageOpportunities.findMany({
-            where: (opps, { gt, eq }) => and(
-                gt(opps.validUntil, new Date()),
-                eq(opps.status, 'active')
-            ),
-            orderBy: (opps, { desc }) => [desc(opps.confidence)]
+            where: eq(arbitrageOpportunities.status, 'active')
         });
     }
 }

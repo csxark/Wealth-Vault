@@ -44,11 +44,10 @@ import subscriptionRoutes from "./routes/subscriptions.js";
 import assetRoutes from "./routes/assets.js";
 import governanceRoutes from "./routes/governance.js";
 import taxRoutes from "./routes/tax.js";
-import debtsRouter from "./routes/debts.js";
-import propertyRoutes from "./routes/properties.js";
-import leaseRoutes from "./routes/leases.js";
-
-// Import debt management services
+import debtRoutes from "./routes/debts.js";
+import walletRoutes from "./routes/wallets.js";
+import fxRoutes from "./routes/fx_ledger.js";
+import simulationRoutes from "./routes/simulations.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -57,7 +56,11 @@ import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
 import fxRateSync from "./jobs/fxRateSync.js";
 import valuationUpdater from "./jobs/valuationUpdater.js";
 import inactivityMonitor from "./jobs/inactivityMonitor.js";
+import snapshotGenerator from "./jobs/snapshotGenerator.js";
+import riskAuditor from "./jobs/riskAuditor.js";
 import taxEstimator from "./jobs/taxEstimator.js";
+import debtRecalculator from "./jobs/debtRecalculator.js";
+import rateSyncer from "./jobs/rateSyncer.js";
 import forecastUpdater from "./jobs/forecastUpdater.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
@@ -221,6 +224,9 @@ app.use("/api/budgets", userLimiter, budgetRoutes);
 app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
 app.use("/api/reimbursements", userLimiter, reimbursementsRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
+app.use("/api/debts", userLimiter, debtRoutes);
+app.use("/api/wallets", userLimiter, walletRoutes);
+app.use("/api/fx", userLimiter, fxRoutes);
 app.use("/api/forecasts", userLimiter, forecastRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
@@ -230,9 +236,7 @@ app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
 app.use("/api/assets", userLimiter, assetRoutes);
 app.use("/api/governance", userLimiter, governanceRoutes);
 app.use("/api/tax", userLimiter, taxRoutes);
-app.use("/api/debts", userLimiter, debtsRouter);
-app.use("/api/properties", userLimiter, propertyRoutes);
-app.use("/api/leases", userLimiter, leaseRoutes);
+app.use("/api/simulations", userLimiter, simulationRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -281,10 +285,10 @@ app.listen(PORT, () => {
   valuationUpdater.start();
   inactivityMonitor.start();
   taxEstimator.start();
-
-  // Start debt recalculator scheduled job
   debtRecalculator.startScheduledJob();
-  leaseMonitor.start();
+  rateSyncer.start();
+  forecastUpdater.start();
+  riskAuditor.start();
 
   // Add debt services to app.locals for middleware/route access
   app.locals.debtEngine = debtEngine;

@@ -1,7 +1,14 @@
 import express from "express";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users, debts as debtsTable, debtPayments } from "../db/schema.js";
+import {
+  expenses, categories, users,
+  debts as debtsTable,
+  debtPayments,
+  payoffStrategies,
+  amortizationSchedules,
+  currencyWallets
+} from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
 import assetService from "../services/assetService.js";
@@ -1212,10 +1219,10 @@ router.get("/debt-to-income", protect, async (req, res) => {
   try {
     // Get user's monthly income
     const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
-    const monthlyIncome = req.body.monthlyIncome 
-      ? parseFloat(req.body.monthlyIncome) 
-      : user?.monthlyIncome 
-        ? parseFloat(user.monthlyIncome) 
+    const monthlyIncome = req.body.monthlyIncome
+      ? parseFloat(req.body.monthlyIncome)
+      : user?.monthlyIncome
+        ? parseFloat(user.monthlyIncome)
         : 0;
 
     if (monthlyIncome <= 0) {
@@ -1452,8 +1459,8 @@ router.get("/debt-summary", protect, async (req, res) => {
     const yearlyInterest = monthlyInterest * 12;
 
     Object.keys(debtByType).forEach(type => {
-      debtByType[type].percentage = totalDebt > 0 
-        ? (debtByType[type].balance / totalDebt) * 100 
+      debtByType[type].percentage = totalDebt > 0
+        ? (debtByType[type].balance / totalDebt) * 100
         : 0;
       debtByType[type].balance = Math.round(debtByType[type].balance * 100) / 100;
       debtByType[type].percentage = Math.round(debtByType[type].percentage * 100) / 100;
@@ -1721,8 +1728,8 @@ router.get("/debt-health", protect, async (req, res) => {
         summary: {
           totalDebts: userDebts.length,
           totalBalance: Math.round(userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0) * 100) / 100,
-          avgApr: userDebts.length > 0 
-            ? Math.round((userDebts.reduce((sum, d) => sum + parseFloat(d.apr), 0) / userDebts.length) * 1000) / 10 
+          avgApr: userDebts.length > 0
+            ? Math.round((userDebts.reduce((sum, d) => sum + parseFloat(d.apr), 0) / userDebts.length) * 1000) / 10
             : 0
         }
       }
@@ -1805,7 +1812,7 @@ router.get("/debt-insights", protect, async (req, res) => {
       consolidationAnalysis = {
         eligible: totalBalance >= 5000,
         potentialBenefit: weightedAvgApr > 0.12 ? 'high' : weightedAvgApr > 0.08 ? 'medium' : 'low',
-        recommendation: weightedAvgApr > 0.15 
+        recommendation: weightedAvgApr > 0.15
           ? 'Consider a debt consolidation loan to simplify payments and reduce interest.'
           : 'Your current rates are relatively good. Consolidation may not provide significant savings.'
       };
@@ -1845,6 +1852,63 @@ router.get("/debt-insights", protect, async (req, res) => {
       message: "Server error generating debt insights",
       error: error.message
     });
+  }
+});
+
+/**
+ * @route   GET /analytics/global-net-worth
+ * @desc    Get net worth aggregated across all multi-currency wallets
+ */
+router.get("/global-net-worth", protect, async (req, res) => {
+  try {
+    const baseCurrency = req.query.base || 'USD';
+    const wallets = await db.select().from(currencyWallets).where(eq(currencyWallets.userId, req.user.id));
+
+    // Get all rates for conversion
+    const rates = await db.query.fxRates.findMany();
+    const rateMap = rates.reduce((acc, r) => {
+      acc[r.pair] = parseFloat(r.rate);
+      return acc;
+    }, {});
+
+    let totalNetWorth = 0;
+    const walletBreakdown = wallets.map(wallet => {
+      const currency = wallet.currency;
+      const balance = parseFloat(wallet.balance);
+      let valueInBase = balance;
+
+      if (currency !== baseCurrency) {
+        const pair = `${baseCurrency}/${currency}`;
+        const inversePair = `${currency}/${baseCurrency}`;
+
+        if (rateMap[inversePair]) {
+          valueInBase = balance * rateMap[inversePair];
+        } else if (rateMap[pair]) {
+          valueInBase = balance / rateMap[pair];
+        } else {
+          // Fallback to 1 if no rate found (should not happen for major pairs)
+          valueInBase = balance;
+        }
+      }
+
+      totalNetWorth += valueInBase;
+      return {
+        currency,
+        balance,
+        valueInBase: parseFloat(valueInBase.toFixed(2))
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        baseCurrency,
+        totalNetWorth: parseFloat(totalNetWorth.toFixed(2)),
+        walletBreakdown
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

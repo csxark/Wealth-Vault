@@ -5,6 +5,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import assetService from '../services/assetService.js';
 import projectionEngine from '../services/projectionEngine.js';
 import marketData from '../services/marketData.js';
+import riskEngine from '../services/riskEngine.js';
 
 const router = express.Router();
 
@@ -109,6 +110,24 @@ router.get('/simulations/history', protect, asyncHandler(async (req, res) => {
 router.get('/market/indices', protect, asyncHandler(async (req, res) => {
     const indices = await marketData.getAllIndices();
     res.success(indices);
+}));
+
+
+/**
+ * @route   GET /api/assets/risk-summary
+ * @desc    Get quick risk overview for the asset dashboard
+ */
+router.get('/risk-summary', protect, asyncHandler(async (req, res) => {
+    const [varMetric, beta] = await Promise.all([
+        riskEngine.calculatePortfolioVaR(req.user.id),
+        riskEngine.calculatePortfolioBeta(req.user.id)
+    ]);
+
+    res.success({
+        valueAtRisk: varMetric,
+        portfolioBeta: beta,
+        riskLevel: beta > 1.2 ? 'high' : beta > 0.8 ? 'moderate' : 'low'
+    });
 }));
 
 export default router;
