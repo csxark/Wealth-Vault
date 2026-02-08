@@ -409,15 +409,34 @@ export const priceHistory = pgTable('price_history', {
     date: timestamp('date').notNull(),
 });
 
-export const debts = pgTable('debts', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    name: text('name').notNull(),
-    principalAmount: numeric('principal_amount', { precision: 12, scale: 2 }).notNull(),
-    currentBalance: numeric('current_balance', { precision: 12, scale: 2 }).notNull(),
-    apr: numeric('apr', { precision: 5, scale: 3 }).notNull(),
-    isActive: boolean('is_active').default(true),
-});
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+    categories: many(categories),
+    expenses: many(expenses),
+    goals: many(goals),
+    deviceSessions: many(deviceSessions),
+    vaultMemberships: many(vaultMembers),
+    ownedVaults: many(vaults),
+    securityEvents: many(securityEvents),
+    reports: many(reports),
+    budgetAlerts: many(budgetAlerts),
+    auditLogs: many(auditLogs),
+    securityMarkers: many(securityMarkers),
+    disputedTransactions: many(disputedTransactions),
+    debts: many(debts),
+    payoffStrategies: many(payoffStrategies),
+    refinanceOpportunities: many(refinanceOpportunities),
+    properties: many(properties),
+    tenantLeases: many(tenantLeases),
+    simulationResults: many(simulationResults),
+    riskProfile: one(riskProfiles),
+    balanceSnapshots: many(balanceSnapshots),
+    forecastSnapshots: many(forecastSnapshots),
+    liquidityAlerts: many(liquidityAlerts),
+    transferSuggestions: many(transferSuggestions),
+    properties: many(properties),
+    tenantLeases: many(tenantLeases),
+}));
 
 export const debtPayments = pgTable('debt_payments', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -495,12 +514,145 @@ export const fixedAssets = pgTable('fixed_assets', {
 export const properties = pgTable('properties', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    assetId: uuid('asset_id').references(() => fixedAssets.id, { onDelete: 'cascade' }),
-    address: text('address').notNull(),
-    occupancyStatus: text('occupancy_status').default('vacant'),
+    scenarioName: text('scenario_name').notNull(),
+    configurations: jsonb('configurations'), // { inflationRate, investmentReturn, timeHorizon }
+    results: jsonb('results'), // { p10, p50, p90, yearlyProjections: [] }
+    createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Risk Profiles
+export const riskProfiles = pgTable('risk_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).unique().notNull(),
+    riskTolerance: text('risk_tolerance').notNull(), // 'low', 'medium', 'high', 'aggressive'
+    targetReturn: numeric('target_return', { precision: 5, scale: 2 }),
+    maxDrawdown: numeric('max_drawdown', { precision: 5, scale: 2 }),
+    preferredAssetMix: jsonb('preferred_asset_mix'), // { stocks: 60, bonds: 30, crypto: 10 }
+    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('createdAt').defaultNow(),
+});
+
+// Market Indices (for reference growth rates)
+export const marketIndices = pgTable('market_indices', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull().unique(), // 'S&P500', 'Gold', 'RealEstate_US'
+    currentValue: numeric('current_value', { precision: 12, scale: 2 }),
+    avgAnnualReturn: numeric('avg_annual_return', { precision: 5, scale: 2 }),
+    volatility: numeric('volatility', { precision: 5, scale: 2 }),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+});
+
+// Properties Table (Extended Real Estate Details)
+export const properties = pgTable('properties', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    assetId: uuid('asset_id').references(() => fixedAssets.id, { onDelete: 'cascade' }),
+    propertyType: text('property_type').notNull(), // 'residential', 'commercial', 'industrial', 'land'
+    address: text('address').notNull(),
+    units: integer('units').default(1),
+    squareFootage: integer('square_footage'),
+    lotSize: numeric('lot_size', { precision: 10, scale: 2 }),
+    yearBuilt: integer('year_built'),
+    amenities: jsonb('amenities').default([]),
+    noi: numeric('noi', { precision: 12, scale: 2 }), // Net Operating Income
+    capRate: numeric('cap_rate', { precision: 5, scale: 2 }),
+    occupancyStatus: text('occupancy_status').default('vacant'), // 'occupied', 'vacant', 'maintenance'
+    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tenant Leases Table
 export const tenantLeases = pgTable('tenant_leases', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantName: text('tenant_name').notNull(),
+    tenantContact: text('tenant_contact'),
+    leaseStart: timestamp('lease_start').notNull(),
+    leaseEnd: timestamp('lease_end').notNull(),
+    monthlyRent: numeric('monthly_rent', { precision: 12, scale: 2 }).notNull(),
+    securityDeposit: numeric('security_deposit', { precision: 12, scale: 2 }),
+    status: text('status').default('active'), // 'active', 'expired', 'terminated', 'pending'
+    paymentStatus: text('payment_status').default('paid'), // 'paid', 'overdue', 'partial'
+    renewalWindowDays: integer('renewal_window_days').default(30),
+    autoRenew: boolean('auto_renew').default(false),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Property Maintenance Logs
+export const propertyMaintenance = pgTable('property_maintenance', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    taskName: text('task_name').notNull(),
+    description: text('description'),
+    category: text('category').notNull(), // 'repair', 'renovation', 'routine', 'emergency'
+    cost: numeric('cost', { precision: 12, scale: 2 }).default('0'),
+    vendorInfo: text('vendor_info'),
+    status: text('status').default('pending'), // 'pending', 'in_progress', 'completed'
+    scheduledDate: timestamp('scheduled_date'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Property ROI Snapshots
+export const propertyROISnapshots = pgTable('property_roi_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: timestamp('snapshot_date').defaultNow(),
+    grossIncome: numeric('gross_income', { precision: 12, scale: 2 }),
+    operatingExpenses: numeric('operating_expenses', { precision: 12, scale: 2 }),
+    noi: numeric('noi', { precision: 12, scale: 2 }),
+    cashOnCashReturn: numeric('cash_on_cash_return', { precision: 5, scale: 2 }),
+    capRate: numeric('cap_rate', { precision: 5, scale: 2 }),
+    occupancyRate: numeric('occupancy_rate', { precision: 5, scale: 2 }),
+    totalAppreciation: numeric('total_appreciation', { precision: 12, scale: 2 }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Asset Relations
+export const fixedAssetsRelations = relations(fixedAssets, ({ one, many }) => ({
+    user: one(users, {
+        fields: [fixedAssets.userId],
+        references: [users.id],
+    }),
+    valuations: many(assetValuations),
+    property: one(properties),
+}));
+
+export const assetValuationsRelations = relations(assetValuations, ({ one }) => ({
+    asset: one(fixedAssets, {
+        fields: [assetValuations.assetId],
+        references: [fixedAssets.id],
+    }),
+}));
+
+export const simulationResultsRelations = relations(simulationResults, ({ one }) => ({
+    user: one(users, {
+        fields: [simulationResults.userId],
+        references: [users.id],
+    }),
+}));
+
+export const riskProfilesRelations = relations(riskProfiles, ({ one }) => ({
+    user: one(users, {
+        fields: [riskProfiles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const simulationResultsRelations = relations(simulationResults, ({ one }) => ({
+    user: one(users, {
+        fields: [simulationResults.userId],
+        references: [users.id],
+    }),
+}));
+
+// Family Roles (Hierarchical Governance)
+export const familyRoles = pgTable('family_roles', {
     id: uuid('id').defaultRandom().primaryKey(),
     propertyId: uuid('property_id').references(() => properties.id, { onDelete: 'cascade' }).notNull(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
