@@ -675,3 +675,61 @@ export const consolidatedAnalytics = pgTable('consolidated_analytics', {
     typeIdx: index('idx_ca_type').on(table.analysisType),
     dateIdx: index('idx_ca_date').on(table.analysisDate),
 }));
+
+// ============================================================================
+// ADVANCED TRANSACTION CATEGORIZATION (#299)
+// ============================================================================
+
+// Merchants - Recognized merchant entities
+export const merchants = pgTable('merchants', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    normalizedName: text('normalized_name').notNull(),
+    defaultCategoryId: uuid('default_category_id').references(() => categories.id, { onDelete: 'set null' }),
+    website: text('website'),
+    logoUrl: text('logo_url'),
+    industry: text('industry'),
+    isVerified: boolean('is_verified').default(false),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_merchants_user').on(table.userId),
+    nameIdx: index('idx_merchants_name').on(table.normalizedName),
+}));
+
+// Categorization Rules - User-defined or system rules
+export const categorizationRules = pgTable('categorization_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    priority: integer('priority').default(0),
+    conditionType: text('condition_type').notNull(), // text_match, amount_range, date_range, combined
+    conditionConfig: jsonb('condition_config').notNull(),
+    isActive: boolean('is_active').default(true),
+    matchCount: integer('match_count').default(0),
+    lastMatchAt: timestamp('last_match_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_cat_rules_user').on(table.userId),
+}));
+
+// Categorization Patterns - ML-derived or frequent patterns
+export const categorizationPatterns = pgTable('categorization_patterns', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    pattern: text('pattern').notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    confidence: doublePrecision('confidence').default(0.0),
+    occurrenceCount: integer('occurrence_count').default(1),
+    isSystemPattern: boolean('is_system_pattern').default(false),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_cat_patterns_user').on(table.userId),
+    patternIdx: index('idx_cat_patterns_text').on(table.pattern),
+}));
