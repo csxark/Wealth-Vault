@@ -48,8 +48,8 @@ import debtRoutes from "./routes/debts.js";
 import walletRoutes from "./routes/wallets.js";
 import fxRoutes from "./routes/fx_ledger.js";
 import simulationRoutes from "./routes/simulations.js";
-import replayRoutes from "./routes/replay.js";
-import backtestRoutes from "./routes/backtest.js";
+import liquidityRoutes from "./routes/liquidity.js";
+import runwayRoutes from "./routes/runway.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -64,9 +64,9 @@ import taxEstimator from "./jobs/taxEstimator.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
 import rateSyncer from "./jobs/rateSyncer.js";
 import forecastUpdater from "./jobs/forecastUpdater.js";
+import liquidityMaintenanceJob from "./jobs/liquidityMaintenanceJob.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
-import debtRecalculator from "./jobs/debtRecalculator.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
 import dividendProcessor from "./jobs/dividendProcessor.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
@@ -240,8 +240,8 @@ app.use("/api/assets", userLimiter, assetRoutes);
 app.use("/api/governance", userLimiter, governanceRoutes);
 app.use("/api/tax", userLimiter, taxRoutes);
 app.use("/api/simulations", userLimiter, simulationRoutes);
-app.use("/api/replay", userLimiter, replayRoutes);
-app.use("/api/backtest", userLimiter, backtestRoutes);
+app.use("/api/liquidity", userLimiter, liquidityRoutes);
+app.use("/api/runway", userLimiter, runwayRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -294,8 +294,7 @@ app.listen(PORT, () => {
   rateSyncer.start();
   forecastUpdater.start();
   riskAuditor.start();
-  leaseMonitor.start();
-  dividendProcessor.start();
+  liquidityMaintenanceJob.start();
 
   // Add debt services to app.locals for middleware/route access
   app.locals.debtEngine = debtEngine;
