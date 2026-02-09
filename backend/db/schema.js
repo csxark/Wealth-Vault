@@ -495,3 +495,72 @@ export const tenantLeasesRelations = relations(tenantLeases, ({ one }) => ({
     property: one(properties, { fields: [tenantLeases.propertyId], references: [properties.id] }),
     user: one(users, { fields: [tenantLeases.userId], references: [users.id] }),
 }));
+
+// ============================================================================
+// MULTI-VAULT CONSOLIDATION (#274)
+// ============================================================================
+
+// Vault Groups - Logical groupings of multiple vaults
+export const vaultGroups = pgTable('vault_groups', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    isDefault: boolean('is_default').default(false),
+    settings: jsonb('settings').default({}),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_vault_groups_user').on(table.userId),
+}));
+
+// Vault Group Mappings - Links vaults to groups
+export const vaultGroupMappings = pgTable('vault_group_mappings', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    groupId: uuid('group_id').references(() => vaultGroups.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').notNull(), // Assuming vaultId is handled by vault service
+    role: text('role').default('member'), // owner, contributor, viewer
+    addedAt: timestamp('added_at').defaultNow(),
+}, (table) => ({
+    groupIdx: index('idx_vgm_group').on(table.groupId),
+    vaultIdx: index('idx_vgm_vault').on(table.vaultId),
+}));
+
+// Consolidated Snapshots - Historical performance data for vault groups
+export const consolidatedSnapshots = pgTable('consolidated_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    groupId: uuid('group_id').references(() => vaultGroups.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: timestamp('snapshot_date').notNull(),
+    totalValue: numeric('total_value', { precision: 18, scale: 2 }).notNull(),
+    cashBalance: numeric('cash_balance', { precision: 18, scale: 2 }),
+    assetValue: numeric('asset_value', { precision: 18, scale: 2 }),
+    liabilityValue: numeric('liability_value', { precision: 18, scale: 2 }),
+    netWorth: numeric('net_worth', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    vaultCount: integer('vault_count').default(0),
+    performanceMetrics: jsonb('performance_metrics').default({}),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    groupIdx: index('idx_cs_group').on(table.groupId),
+    dateIdx: index('idx_cs_date').on(table.snapshotDate),
+}));
+
+// Consolidated Analytics - Aggregated analytics across vaults
+export const consolidatedAnalytics = pgTable('consolidated_analytics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    groupId: uuid('group_id').references(() => vaultGroups.id, { onDelete: 'cascade' }).notNull(),
+    analysisType: text('analysis_type').notNull(), // asset_allocation, risk_exposure, yield_analysis, tax_efficiency
+    analysisDate: timestamp('analysis_date').notNull(),
+    data: jsonb('data').notNull(),
+    insights: jsonb('insights').default([]),
+    timeframe: text('timeframe').default('month'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    groupIdx: index('idx_ca_group').on(table.groupId),
+    typeIdx: index('idx_ca_type').on(table.analysisType),
+    dateIdx: index('idx_ca_date').on(table.analysisDate),
+}));

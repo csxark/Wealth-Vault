@@ -50,6 +50,7 @@ import fxRoutes from "./routes/fx_ledger.js";
 import simulationRoutes from "./routes/simulations.js";
 import businessRoutes from "./routes/business.js";
 import payrollRoutes from "./routes/payroll.js";
+import vaultConsolidationRoutes from "./routes/vault-consolidation.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -64,9 +65,9 @@ import taxEstimator from "./jobs/taxEstimator.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
 import rateSyncer from "./jobs/rateSyncer.js";
 import forecastUpdater from "./jobs/forecastUpdater.js";
+import consolidationSync from "./jobs/consolidationSync.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
-import debtRecalculator from "./jobs/debtRecalculator.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
 import dividendProcessor from "./jobs/dividendProcessor.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
@@ -242,6 +243,8 @@ app.use("/api/tax", userLimiter, taxRoutes);
 app.use("/api/simulations", userLimiter, simulationRoutes);
 app.use("/api/business", userLimiter, businessRoutes);
 app.use("/api/payroll", userLimiter, payrollRoutes);
+app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
+
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -296,6 +299,8 @@ app.listen(PORT, () => {
   riskAuditor.start();
   leaseMonitor.start();
   dividendProcessor.start();
+  consolidationSync.start();
+
 
   // Add debt services to app.locals for middleware/route access
   app.locals.debtEngine = debtEngine;
