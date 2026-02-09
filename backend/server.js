@@ -48,6 +48,8 @@ import debtRoutes from "./routes/debts.js";
 import walletRoutes from "./routes/wallets.js";
 import fxRoutes from "./routes/fx_ledger.js";
 import simulationRoutes from "./routes/simulations.js";
+import replayRoutes from "./routes/replay.js";
+import backtestRoutes from "./routes/backtest.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -237,6 +239,8 @@ app.use("/api/assets", userLimiter, assetRoutes);
 app.use("/api/governance", userLimiter, governanceRoutes);
 app.use("/api/tax", userLimiter, taxRoutes);
 app.use("/api/simulations", userLimiter, simulationRoutes);
+app.use("/api/replay", userLimiter, replayRoutes);
+app.use("/api/backtest", userLimiter, backtestRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
