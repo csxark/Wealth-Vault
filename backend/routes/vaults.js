@@ -227,7 +227,147 @@ router.get(
             .innerJoin(users, eq(vaultMembers.userId, users.id))
             .where(eq(vaultMembers.vaultId, req.params.vaultId));
 
-        res.success(members, "Vault members retrieved successfully");
+    res.success(members, "Vault members retrieved successfully");
+    })
+);
+
+/**
+ * @swagger
+ * /vaults/:vaultId/shared-budgets:
+ *   post:
+ *     summary: Create a shared budget for a vault
+ *     tags: [Vaults]
+ */
+router.post(
+    "/:vaultId/shared-budgets",
+    protect,
+    checkVaultAccess(),
+    [
+        body("name").trim().isLength({ min: 1, max: 100 }),
+        body("description").optional().trim().isLength({ max: 500 }),
+        body("totalBudget").isNumeric(),
+        body("period").optional().isIn(['monthly', 'yearly']),
+        body("approvalRequired").optional().isBoolean(),
+        body("approvalThreshold").optional().isNumeric(),
+        body("categories").optional().isArray(),
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new ValidationError("Validation failed", errors.array());
+        }
+
+        const { vaultId } = req.params;
+        const budget = await createSharedBudget(vaultId, req.body, req.user.id);
+
+        res.status(201).json({
+            success: true,
+            message: "Shared budget created successfully",
+            data: budget,
+        });
+    })
+);
+
+/**
+ * @swagger
+ * /vaults/:vaultId/shared-budgets:
+ *   get:
+ *     summary: Get shared budgets for a vault
+ *     tags: [Vaults]
+ */
+router.get(
+    "/:vaultId/shared-budgets",
+    protect,
+    checkVaultAccess(),
+    asyncHandler(async (req, res) => {
+        const { vaultId } = req.params;
+        const budgets = await getSharedBudgets(vaultId, req.user.id);
+
+        res.success(budgets, "Shared budgets retrieved successfully");
+    })
+);
+
+/**
+ * @swagger
+ * /vaults/:vaultId/expense-approvals:
+ *   get:
+ *     summary: Get pending expense approvals for a vault
+ *     tags: [Vaults]
+ */
+router.get(
+    "/:vaultId/expense-approvals",
+    protect,
+    checkVaultAccess(),
+    asyncHandler(async (req, res) => {
+        const { vaultId } = req.params;
+        const approvals = await getPendingApprovals(vaultId, req.user.id);
+
+        res.success(approvals, "Pending approvals retrieved successfully");
+    })
+);
+
+/**
+ * @swagger
+ * /vaults/:vaultId/expense-approvals/:approvalId/approve:
+ *   post:
+ *     summary: Approve an expense
+ *     tags: [Vaults]
+ */
+router.post(
+    "/:vaultId/expense-approvals/:approvalId/approve",
+    protect,
+    checkVaultAccess(),
+    [body("notes").optional().trim().isLength({ max: 500 })],
+    asyncHandler(async (req, res) => {
+        const { approvalId } = req.params;
+        const { notes } = req.body;
+
+        const result = await processExpenseApproval(approvalId, req.user.id, true, notes);
+
+        res.success(result, "Expense approved successfully");
+    })
+);
+
+/**
+ * @swagger
+ * /vaults/:vaultId/expense-approvals/:approvalId/reject:
+ *   post:
+ *     summary: Reject an expense
+ *     tags: [Vaults]
+ */
+router.post(
+    "/:vaultId/expense-approvals/:approvalId/reject",
+    protect,
+    checkVaultAccess(),
+    [body("notes").optional().trim().isLength({ max: 500 })],
+    asyncHandler(async (req, res) => {
+        const { approvalId } = req.params;
+        const { notes } = req.body;
+
+        const result = await processExpenseApproval(approvalId, req.user.id, false, notes);
+
+        res.success(result, "Expense rejected successfully");
+    })
+);
+
+/**
+ * @swagger
+ * /vaults/:vaultId/budget-utilization:
+ *   get:
+ *     summary: Get budget utilization report for a vault
+ *     tags: [Vaults]
+ */
+router.get(
+    "/:vaultId/budget-utilization",
+    protect,
+    checkVaultAccess(),
+    asyncHandler(async (req, res) => {
+        const { vaultId } = req.params;
+        const { period } = req.query;
+
+        const utilization = await getBudgetUtilization(vaultId, req.user.id, period);
+
+        res.success(utilization, "Budget utilization retrieved successfully");
     })
 );
 
