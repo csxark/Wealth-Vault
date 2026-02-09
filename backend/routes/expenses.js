@@ -888,4 +888,169 @@ router.get("/recurring/list", protect, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/expenses/categorize
+ * Bulk categorize expenses using ML
+ */
+router.post('/categorize', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { expenseIds, autoApply = true } = req.body;
+
+    if (!expenseIds || !Array.isArray(expenseIds) || expenseIds.length === 0) {
+      return res.status(400).json({
+        error: 'expenseIds array is required and must not be empty'
+      });
+    }
+
+    // Limit bulk categorization to prevent abuse
+    if (expenseIds.length > 100) {
+      return res.status(400).json({
+        error: 'Cannot categorize more than 100 expenses at once'
+      });
+    }
+
+    const results = await bulkCategorizeExpenses(userId, expenseIds);
+
+    // Log audit event
+    await logAuditEventAsync({
+      userId,
+      action: AuditActions.EXPENSE_UPDATE,
+      resourceType: ResourceTypes.EXPENSE,
+      resourceId: null, // Bulk operation
+      metadata: {
+        bulkCategorization: true,
+        expenseCount: expenseIds.length,
+        appliedCount: results.filter(r => r.applied).length,
+        autoApply
+      },
+      status: 'success',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      data: {
+        results,
+        summary: {
+          total: results.length,
+          applied: results.filter(r => r.applied).length,
+          skipped: results.filter(r => !r.applied).length
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error in bulk categorization:', error);
+
+    // Log failed audit event
+    await logAuditEventAsync({
+      userId: req.user.id,
+      action: AuditActions.EXPENSE_UPDATE,
+      resourceType: ResourceTypes.EXPENSE,
+      metadata: {
+        bulkCategorization: true,
+        error: error.message
+      },
+      status: 'failure',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.status(500).json({ error: 'Failed to categorize expenses' });
+  }
+});
+
+/**
+ * POST /api/expenses/train-model
+ * Train the categorization model for the user
+ */
+router.post('/train-model', async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await trainCategorizationModel(userId);
+
+    if (result.success) {
+      // Log audit event
+      await logAuditEventAsync({
+        userId,
+        action: 'MODEL_TRAIN',
+        resourceType: 'AI_MODEL',
+        resourceId: null,
+        metadata: {
+          modelType: 'expense_categorization',
+          trainingDataSize: result.status.trainingDataSize,
+          categoriesCount: result.status.categoriesCount
+        },
+        status: 'success',
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      res.json({
+        data: result.status,
+        message: 'Model trained successfully'
+      });
+    } else {
+      res.status(400).json({
+        error: result.error,
+        message: 'Failed to train model'
+      });
+    }
+  } catch (error) {
+    console.error('Error training model:', error);
+    res.status(500).json({ error: 'Failed to train categorization model' });
+  }
+});
+
+/**
+ * POST /api/expenses/retrain-model
+ * Retrain the model with user corrections
+ */
+router.post('/retrain-model', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { corrections } = req.body;
+
+    if (!corrections || !Array.isArray(corrections)) {
+      return res.status(400).json({
+        error: 'corrections array is required'
+      });
+    }
+
+    const result = await retrainWithCorrections(userId, corrections);
+
+    if (result.success) {
+      // Log audit event
+      await logAuditEventAsync({
+        userId,
+        action: 'MODEL_RETRAIN',
+        resourceType: 'AI_MODEL',
+        resourceId: null,
+        metadata: {
+          modelType: 'expense_categorization',
+          correctionsCount: corrections.length,
+          trainingDataSize: result.status.trainingDataSize
+        },
+        status: 'success',
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      res.json({
+        data: result.status,
+        message: 'Model retrained successfully with corrections'
+      });
+    } else {
+      res.status(400).json({
+        error: result.error,
+        message: 'Failed to retrain model'
+      });
+    }
+  } catch (error) {
+    console.error('Error retraining model:', error);
+    res.status(500).json({ error: 'Failed to retrain categorization model' });
+  }
+});
+
 export default router;
