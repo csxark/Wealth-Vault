@@ -524,4 +524,54 @@ router.get('/portfolios/:id/analytics', [
   }
 });
 
+/**
+ * @route POST /api/investments/portfolios/:id/optimize
+ * @desc Optimize portfolio using Modern Portfolio Theory
+ * @access Private
+ */
+router.post('/portfolios/:id/optimize', [
+  param('id').isUUID(),
+  body('riskTolerance').optional().isIn(['conservative', 'moderate', 'aggressive']),
+  body('targetReturn').optional().isFloat({ min: 0, max: 1 }),
+  body('constraints').optional().isObject(),
+  handleValidationErrors,
+], async (req, res) => {
+  try {
+    const optimizationParams = {
+      riskTolerance: req.body.riskTolerance || 'moderate',
+      targetReturn: req.body.targetReturn,
+      constraints: req.body.constraints || {},
+    };
+
+    const optimizationResult = await portfolioService.optimizePortfolio(req.params.id, req.user.id, optimizationParams);
+
+    res.json({
+      success: true,
+      message: 'Portfolio optimization completed',
+      data: optimizationResult,
+    });
+  } catch (error) {
+    console.error('Error optimizing portfolio:', error);
+
+    if (error.message.includes('not found')) {
+      return res.status(404).json({
+        success: false,
+        message: 'Portfolio not found',
+      });
+    }
+
+    if (error.message.includes('at least 2 investments')) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to optimize portfolio',
+    });
+  }
+});
+
 export default router;

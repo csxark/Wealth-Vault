@@ -68,6 +68,7 @@ import liquidityMaintenanceJob from "./jobs/liquidityMaintenanceJob.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
+import dividendProcessor from "./jobs/dividendProcessor.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";

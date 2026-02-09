@@ -3,6 +3,7 @@ import db from '../config/db.js';
 import { expenses } from '../db/schema.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
 import savingsService from './savingsService.js';
+import categorizationService from './categorizationService.js';
 
 /**
  * Recurring Transaction Execution Service
@@ -254,6 +255,124 @@ export const processRoundUpAfterExpenseCreation = async (expense) => {
     console.error(`[RoundUp] Error processing round-up for expense ${expense.id}:`, error);
     // Don't throw error to avoid breaking expense creation
     return null;
+  }
+};
+
+/**
+ * Auto-categorize a single expense using ML
+ * @param {Object} expense - The expense object
+ * @returns {Promise<Object>} - Categorization result
+ */
+export const autoCategorizeExpense = async (expense) => {
+  try {
+    const prediction = await categorizationService.predictCategory(expense);
+
+    if (prediction.categoryId && prediction.confidence > 0.5) {
+      // Update expense with predicted category
+      await db
+        .update(expenses)
+        .set({
+          categoryId: prediction.categoryId,
+          updatedAt: new Date()
+        })
+        .where(eq(expenses.id, expense.id));
+
+      // Log audit event
+      await logAuditEventAsync({
+        userId: expense.userId,
+        action: AuditActions.EXPENSE_UPDATE,
+        resourceType: ResourceTypes.EXPENSE,
+        resourceId: expense.id,
+        metadata: {
+          autoCategorized: true,
+          predictedCategory: prediction.categoryName,
+          confidence: prediction.confidence
+        },
+        status: 'success',
+        ipAddress: 'system',
+        userAgent: 'ExpenseService'
+      });
+
+      return {
+        expenseId: expense.id,
+        predictedCategory: prediction.categoryName,
+        confidence: prediction.confidence,
+        applied: true
+      };
+    }
+
+    return {
+      expenseId: expense.id,
+      predictedCategory: prediction.categoryName,
+      confidence: prediction.confidence,
+      applied: false
+    };
+
+  } catch (error) {
+    console.error(`Error auto-categorizing expense ${expense.id}:`, error);
+    return {
+      expenseId: expense.id,
+      applied: false,
+      error: error.message
+    };
+  }
+};
+
+/**
+ * Bulk categorize expenses using ML
+ * @param {string} userId - User ID
+ * @param {Array} expenseIds - Array of expense IDs to categorize
+ * @returns {Promise<Array>} - Array of categorization results
+ */
+export const bulkCategorizeExpenses = async (userId, expenseIds) => {
+  try {
+    return await categorizationService.bulkCategorize(userId, expenseIds);
+  } catch (error) {
+    console.error('Error in bulk categorization:', error);
+    throw error;
+  }
+};
+
+/**
+ * Train categorization model for a user
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Training result
+ */
+export const trainCategorizationModel = async (userId) => {
+  try {
+    await categorizationService.trainModel(userId);
+    return {
+      success: true,
+      status: categorizationService.getModelStatus()
+    };
+  } catch (error) {
+    console.error('Error training categorization model:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+/**
+ * Retrain model with user corrections
+ * @param {string} userId - User ID
+ * @param {Array} corrections - Array of correction objects {expenseId, correctCategoryId}
+ * @returns {Promise<Object>} - Retraining result
+ */
+export const retrainWithCorrections = async (userId, corrections) => {
+  try {
+    await categorizationService.retrainWithCorrections(userId, corrections);
+    return {
+      success: true,
+      status: categorizationService.getModelStatus()
+    };
+  } catch (error) {
+    console.error('Error retraining with corrections:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 };
 

@@ -28,18 +28,58 @@ interface Recommendation {
   priority: 'low' | 'medium' | 'high';
 }
 
+interface OptimizationSuggestion {
+  symbol: string;
+  name: string;
+  action: 'buy' | 'sell';
+  currentWeight: number;
+  optimalWeight: number;
+  amount: number;
+  priority: 'low' | 'medium' | 'high';
+}
+
+interface OptimizationResult {
+  portfolioId: string;
+  currentAllocation: Array<{
+    symbol: string;
+    name: string;
+    currentWeight: number;
+    optimalWeight: number;
+  }>;
+  optimalPortfolio: {
+    expectedReturn: number;
+    expectedVolatility: number;
+    sharpeRatio: number;
+  };
+  recommendations: OptimizationSuggestion[];
+  diversificationAnalysis: {
+    byAssetClass: Record<string, number>;
+    bySector: Record<string, number>;
+    concentration: {
+      herfindahlIndex: number;
+      concentrationRatio: number;
+      diversificationScore: number;
+    };
+  };
+}
+
 interface InvestmentRecommendationsProps {
   portfolioId?: string;
 }
 
 const InvestmentRecommendations: React.FC<InvestmentRecommendationsProps> = ({ portfolioId }) => {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
 
   useEffect(() => {
     loadRecommendations();
+    if (portfolioId) {
+      loadOptimization();
+    }
   }, [portfolioId]);
 
   const loadRecommendations = async () => {
@@ -56,12 +96,45 @@ const InvestmentRecommendations: React.FC<InvestmentRecommendationsProps> = ({ p
     }
   };
 
+  const loadOptimization = async () => {
+    if (!portfolioId) return;
+
+    try {
+      const response = await investmentsAPI.portfolios.optimize(portfolioId, {
+        riskTolerance: 'moderate',
+      });
+      setOptimizationResult(response.data);
+    } catch (error) {
+      console.warn('Error loading optimization:', error);
+      // Don't set error for optimization, it's optional
+    }
+  };
+
   const refreshRecommendations = async () => {
     try {
       setRefreshing(true);
       await loadRecommendations();
+      if (portfolioId) {
+        await loadOptimization();
+      }
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const runOptimization = async () => {
+    if (!portfolioId) return;
+
+    try {
+      setOptimizing(true);
+      const response = await investmentsAPI.portfolios.optimize(portfolioId, {
+        riskTolerance: 'moderate',
+      });
+      setOptimizationResult(response.data);
+    } catch (error) {
+      console.error('Error running optimization:', error);
+    } finally {
+      setOptimizing(false);
     }
   };
 
