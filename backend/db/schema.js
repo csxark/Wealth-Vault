@@ -495,3 +495,97 @@ export const tenantLeasesRelations = relations(tenantLeases, ({ one }) => ({
     property: one(properties, { fields: [tenantLeases.propertyId], references: [properties.id] }),
     user: one(users, { fields: [tenantLeases.userId], references: [users.id] }),
 }));
+
+// ============================================================================
+// SETTLEMENT ENGINE (#290)
+// ============================================================================
+
+// Settlements - Main settlement tracking
+export const settlements = pgTable('settlements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+    creatorId: uuid('creator_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    totalAmount: numeric('total_amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    splitType: text('split_type').notNull(), // equal, percentage, custom, weighted
+    splitRule: jsonb('split_rule').notNull(), // { type, participants: [{ userId, amount/percentage/weight }] }
+    status: text('status').default('pending'), // pending, partial, completed, cancelled
+    settledAmount: numeric('settled_amount', { precision: 12, scale: 2 }).default('0'),
+    remainingAmount: numeric('remaining_amount', { precision: 12, scale: 2 }),
+    dueDate: timestamp('due_date'),
+    isRecurring: boolean('is_recurring').default(false),
+    recurringFrequency: text('recurring_frequency'), // weekly, monthly, quarterly
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    completedAt: timestamp('completed_at'),
+}, (table) => ({
+    creatorIdx: index('idx_settlements_creator').on(table.creatorId),
+    statusIdx: index('idx_settlements_status').on(table.status),
+    expenseIdx: index('idx_settlements_expense').on(table.expenseId),
+}));
+
+// Settlement Transactions - Individual payment tracking
+export const settlementTransactions = pgTable('settlement_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    settlementId: uuid('settlement_id').references(() => settlements.id, { onDelete: 'cascade' }).notNull(),
+    payerId: uuid('payer_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    payeeId: uuid('payee_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    amountDue: numeric('amount_due', { precision: 12, scale: 2 }).notNull(),
+    amountPaid: numeric('amount_paid', { precision: 12, scale: 2 }).default('0'),
+    amountRemaining: numeric('amount_remaining', { precision: 12, scale: 2 }),
+    status: text('status').default('pending'), // pending, partial, paid, overdue, cancelled
+    paymentMethod: text('payment_method'), // cash, card, bank_transfer, venmo, paypal, zelle
+    paymentReference: text('payment_reference'), // Transaction ID from payment platform
+    notes: text('notes'),
+    paidAt: timestamp('paid_at'),
+    dueDate: timestamp('due_date'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    settlementIdx: index('idx_settlement_txn_settlement').on(table.settlementId),
+    payerIdx: index('idx_settlement_txn_payer').on(table.payerId),
+    payeeIdx: index('idx_settlement_txn_payee').on(table.payeeId),
+    statusIdx: index('idx_settlement_txn_status').on(table.status),
+}));
+
+// Split Rules - Reusable split configurations
+export const splitRules = pgTable('split_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    splitType: text('split_type').notNull(), // equal, percentage, custom, weighted
+    participants: jsonb('participants').notNull(), // [{ userId, name, amount/percentage/weight }]
+    isDefault: boolean('is_default').default(false),
+    usageCount: integer('usage_count').default(0),
+    lastUsedAt: timestamp('last_used_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_split_rules_user').on(table.userId),
+}));
+
+// Payment Reminders - Automated reminder tracking
+export const paymentReminders = pgTable('payment_reminders', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    settlementId: uuid('settlement_id').references(() => settlements.id, { onDelete: 'cascade' }).notNull(),
+    transactionId: uuid('transaction_id').references(() => settlementTransactions.id, { onDelete: 'cascade' }),
+    recipientId: uuid('recipient_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    reminderType: text('reminder_type').notNull(), // initial, follow_up, escalation, final
+    message: text('message').notNull(),
+    status: text('status').default('pending'), // pending, sent, delivered, failed
+    scheduledFor: timestamp('scheduled_for').notNull(),
+    sentAt: timestamp('sent_at'),
+    deliveryMethod: text('delivery_method').default('email'), // email, sms, push, in_app
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    settlementIdx: index('idx_reminders_settlement').on(table.settlementId),
+    recipientIdx: index('idx_reminders_recipient').on(table.recipientId),
+    statusIdx: index('idx_reminders_status').on(table.status),
+    scheduledIdx: index('idx_reminders_scheduled').on(table.scheduledFor),
+}));
