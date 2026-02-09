@@ -497,7 +497,7 @@ export const tenantLeasesRelations = relations(tenantLeases, ({ one }) => ({
 }));
 
 // ============================================================================
-// MULTI-VAULT CONSOLIDATION (#274)
+// MULTI-VAULT CONSOLIDATION (#288)
 // ============================================================================
 
 // Vault Groups - Logical groupings of multiple vaults

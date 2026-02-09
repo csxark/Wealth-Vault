@@ -58,4 +58,4 @@ Aggregation is performed in background jobs to ensure that manual sync requests 
 
 ---
 **Version**: 1.0.0
-**Issue**: #274
+**Issue**: #288
