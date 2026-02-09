@@ -791,3 +791,119 @@ export const subscriptionTracking = pgTable('subscription_tracking', {
     statusIdx: index('idx_subscription_status').on(table.status),
     renewalIdx: index('idx_subscription_renewal').on(table.renewalDate),
 }));
+
+// ============================================================================
+// ADVANCED TRANSACTION CATEGORIZATION (#296)
+// ============================================================================
+
+// Merchants - Recognized merchant entities
+export const merchants = pgTable('merchants', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    normalizedName: text('normalized_name').notNull(),
+    defaultCategoryId: uuid('default_category_id').references(() => categories.id, { onDelete: 'set null' }),
+    website: text('website'),
+    logoUrl: text('logo_url'),
+    industry: text('industry'),
+    isVerified: boolean('is_verified').default(false),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_merchants_user').on(table.userId),
+    nameIdx: index('idx_merchants_name').on(table.normalizedName),
+}));
+
+// Categorization Rules - User-defined or system rules
+export const categorizationRules = pgTable('categorization_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    priority: integer('priority').default(0),
+    conditionType: text('condition_type').notNull(), // text_match, amount_range, date_range, combined
+    conditionConfig: jsonb('condition_config').notNull(),
+    isActive: boolean('is_active').default(true),
+    matchCount: integer('match_count').default(0),
+    lastMatchAt: timestamp('last_match_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_cat_rules_user').on(table.userId),
+}));
+
+// Categorization Patterns - ML-derived or frequent patterns
+export const categorizationPatterns = pgTable('categorization_patterns', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    pattern: text('pattern').notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    confidence: doublePrecision('confidence').default(0.0),
+    occurrenceCount: integer('occurrence_count').default(1),
+    isSystemPattern: boolean('is_system_pattern').default(false),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_cat_patterns_user').on(table.userId),
+    patternIdx: index('idx_cat_patterns_text').on(table.pattern),
+}));
+
+// ============================================================================
+// MULTI-CURRENCY PORTFOLIO MANAGER (#297)
+// ============================================================================
+
+// User Currencies - Tracks which currencies a user uses and their preferences
+export const userCurrencies = pgTable('user_currencies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    currencyCode: text('currency_code').notNull(), // USD, EUR, INR, etc.
+    isBaseCurrency: boolean('is_base_currency').default(false),
+    exchangeRateSource: text('exchange_rate_source').default('market'), // market, manual
+    manualRate: numeric('manual_rate', { precision: 18, scale: 6 }),
+    autoRefresh: boolean('auto_refresh').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_user_curr_user').on(table.userId),
+    codeIdx: index('idx_user_curr_code').on(table.currencyCode),
+}));
+
+// Exchange Rate History - Historical FX rates
+export const exchangeRateHistory = pgTable('exchange_rate_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    fromCurrency: text('from_currency').notNull(),
+    toCurrency: text('to_currency').notNull(),
+    rate: numeric('rate', { precision: 18, scale: 6 }).notNull(),
+    source: text('source').default('open_exchange_rates'),
+    rateTimestamp: timestamp('rate_timestamp').notNull(),
+    metadata: jsonb('metadata').default({}),
+}, (table) => ({
+    fromIdx: index('idx_fx_from').on(table.fromCurrency),
+    toIdx: index('idx_fx_to').on(table.toCurrency),
+    dateIdx: index('idx_fx_date').on(table.rateTimestamp),
+}));
+
+// Currency Hedging Positions - Tracking hedges against FX volatility
+export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id'), // Optional link to specific portfolio
+    baseCurrency: text('base_currency').notNull(),
+    targetCurrency: text('target_currency').notNull(),
+    notionalAmount: numeric('notional_amount', { precision: 18, scale: 2 }).notNull(),
+    hedgeType: text('hedge_type').notNull(), // forward, option, swap
+    entryRate: numeric('entry_rate', { precision: 18, scale: 6 }).notNull(),
+    expiryDate: timestamp('expiry_date'),
+    status: text('status').default('active'), // active, closed, expired
+    gainLoss: numeric('gain_loss', { precision: 18, scale: 2 }),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_hedge_user').on(table.userId),
+    statusIdx: index('idx_hedge_status').on(table.status),
+}));
+
