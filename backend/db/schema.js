@@ -495,3 +495,115 @@ export const tenantLeasesRelations = relations(tenantLeases, ({ one }) => ({
     property: one(properties, { fields: [tenantLeases.propertyId], references: [properties.id] }),
     user: one(users, { fields: [tenantLeases.userId], references: [users.id] }),
 }));
+
+// ============================================================================
+// SMART BUDGET AI (#289)
+// ============================================================================
+
+// Budget Predictions - ML-based spending forecasts
+export const budgetPredictions = pgTable('budget_predictions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
+    predictionMonth: timestamp('prediction_month').notNull(),
+    predictedAmount: numeric('predicted_amount', { precision: 12, scale: 2 }).notNull(),
+    actualAmount: numeric('actual_amount', { precision: 12, scale: 2 }),
+    confidenceScore: doublePrecision('confidence_score').default(0.85), // 0-1 scale
+    modelType: text('model_type').default('arima'), // arima, lstm, prophet, moving_average
+    seasonalFactor: doublePrecision('seasonal_factor').default(1.0),
+    trendFactor: doublePrecision('trend_factor').default(1.0),
+    variance: doublePrecision('variance'),
+    upperBound: numeric('upper_bound', { precision: 12, scale: 2 }),
+    lowerBound: numeric('lower_bound', { precision: 12, scale: 2 }),
+    accuracy: doublePrecision('accuracy'), // Calculated after actual amount is known
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_budget_predictions_user').on(table.userId),
+    categoryIdx: index('idx_budget_predictions_category').on(table.categoryId),
+    monthIdx: index('idx_budget_predictions_month').on(table.predictionMonth),
+}));
+
+// Spending Patterns - Historical pattern analysis
+export const spendingPatterns = pgTable('spending_patterns', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
+    patternType: text('pattern_type').notNull(), // seasonal, trending, cyclical, irregular
+    frequency: text('frequency'), // daily, weekly, monthly, quarterly, yearly
+    averageAmount: numeric('average_amount', { precision: 12, scale: 2 }).notNull(),
+    medianAmount: numeric('median_amount', { precision: 12, scale: 2 }),
+    standardDeviation: doublePrecision('standard_deviation'),
+    minAmount: numeric('min_amount', { precision: 12, scale: 2 }),
+    maxAmount: numeric('max_amount', { precision: 12, scale: 2 }),
+    growthRate: doublePrecision('growth_rate'), // Percentage growth per period
+    seasonalityIndex: jsonb('seasonality_index').default({}), // Monthly seasonality factors
+    anomalyCount: integer('anomaly_count').default(0),
+    lastAnomaly: timestamp('last_anomaly'),
+    dataPoints: integer('data_points').default(0), // Number of transactions analyzed
+    analysisStartDate: timestamp('analysis_start_date').notNull(),
+    analysisEndDate: timestamp('analysis_end_date').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_spending_patterns_user').on(table.userId),
+    categoryIdx: index('idx_spending_patterns_category').on(table.categoryId),
+    patternIdx: index('idx_spending_patterns_type').on(table.patternType),
+}));
+
+// Budget Adjustments - Auto-adjustment history
+export const budgetAdjustments = pgTable('budget_adjustments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
+    adjustmentType: text('adjustment_type').notNull(), // auto, manual, suggested
+    previousAmount: numeric('previous_amount', { precision: 12, scale: 2 }).notNull(),
+    newAmount: numeric('new_amount', { precision: 12, scale: 2 }).notNull(),
+    adjustmentPercentage: doublePrecision('adjustment_percentage'),
+    reason: text('reason').notNull(), // overspending, underspending, seasonal, trend
+    confidence: doublePrecision('confidence').default(0.8),
+    appliedAt: timestamp('applied_at'),
+    status: text('status').default('pending'), // pending, applied, rejected, reverted
+    triggeredBy: text('triggered_by').default('system'), // system, user, scheduler
+    effectiveMonth: timestamp('effective_month').notNull(),
+    recommendations: jsonb('recommendations').default([]),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_budget_adjustments_user').on(table.userId),
+    categoryIdx: index('idx_budget_adjustments_category').on(table.categoryId),
+    statusIdx: index('idx_budget_adjustments_status').on(table.status),
+    monthIdx: index('idx_budget_adjustments_month').on(table.effectiveMonth),
+}));
+
+// Category Insights - AI-generated spending insights
+export const categoryInsights = pgTable('category_insights', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    insightType: text('insight_type').notNull(), // overspending, saving_opportunity, anomaly, trend
+    severity: text('severity').default('medium'), // low, medium, high, critical
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    currentValue: numeric('current_value', { precision: 12, scale: 2 }),
+    expectedValue: numeric('expected_value', { precision: 12, scale: 2 }),
+    deviation: doublePrecision('deviation'), // Percentage deviation from expected
+    actionable: boolean('actionable').default(true),
+    suggestedActions: jsonb('suggested_actions').default([]),
+    potentialSavings: numeric('potential_savings', { precision: 12, scale: 2 }),
+    timeframe: text('timeframe'), // week, month, quarter, year
+    isRead: boolean('is_read').default(false),
+    isDismissed: boolean('is_dismissed').default(false),
+    expiresAt: timestamp('expires_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_category_insights_user').on(table.userId),
+    categoryIdx: index('idx_category_insights_category').on(table.categoryId),
+    typeIdx: index('idx_category_insights_type').on(table.insightType),
+    severityIdx: index('idx_category_insights_severity').on(table.severity),
+    readIdx: index('idx_category_insights_read').on(table.isRead),
+}));
