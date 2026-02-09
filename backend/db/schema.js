@@ -608,113 +608,70 @@ export const tenantLeasesRelations = relations(tenantLeases, ({ one }) => ({
 }));
 
 // ============================================================================
-// SMART BUDGET AI (#289)
+// MULTI-VAULT CONSOLIDATION (#288)
 // ============================================================================
 
-// Budget Predictions - ML-based spending forecasts
-export const budgetPredictions = pgTable('budget_predictions', {
+// Vault Groups - Logical groupings of multiple vaults
+export const vaultGroups = pgTable('vault_groups', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
-    predictionMonth: timestamp('prediction_month').notNull(),
-    predictedAmount: numeric('predicted_amount', { precision: 12, scale: 2 }).notNull(),
-    actualAmount: numeric('actual_amount', { precision: 12, scale: 2 }),
-    confidenceScore: doublePrecision('confidence_score').default(0.85), // 0-1 scale
-    modelType: text('model_type').default('arima'), // arima, lstm, prophet, moving_average
-    seasonalFactor: doublePrecision('seasonal_factor').default(1.0),
-    trendFactor: doublePrecision('trend_factor').default(1.0),
-    variance: doublePrecision('variance'),
-    upperBound: numeric('upper_bound', { precision: 12, scale: 2 }),
-    lowerBound: numeric('lower_bound', { precision: 12, scale: 2 }),
-    accuracy: doublePrecision('accuracy'), // Calculated after actual amount is known
+    name: text('name').notNull(),
+    description: text('description'),
+    isDefault: boolean('is_default').default(false),
+    settings: jsonb('settings').default({}),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
-    userIdx: index('idx_budget_predictions_user').on(table.userId),
-    categoryIdx: index('idx_budget_predictions_category').on(table.categoryId),
-    monthIdx: index('idx_budget_predictions_month').on(table.predictionMonth),
+    userIdx: index('idx_vault_groups_user').on(table.userId),
 }));
 
-// Spending Patterns - Historical pattern analysis
-export const spendingPatterns = pgTable('spending_patterns', {
+// Vault Group Mappings - Links vaults to groups
+export const vaultGroupMappings = pgTable('vault_group_mappings', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
-    patternType: text('pattern_type').notNull(), // seasonal, trending, cyclical, irregular
-    frequency: text('frequency'), // daily, weekly, monthly, quarterly, yearly
-    averageAmount: numeric('average_amount', { precision: 12, scale: 2 }).notNull(),
-    medianAmount: numeric('median_amount', { precision: 12, scale: 2 }),
-    standardDeviation: doublePrecision('standard_deviation'),
-    minAmount: numeric('min_amount', { precision: 12, scale: 2 }),
-    maxAmount: numeric('max_amount', { precision: 12, scale: 2 }),
-    growthRate: doublePrecision('growth_rate'), // Percentage growth per period
-    seasonalityIndex: jsonb('seasonality_index').default({}), // Monthly seasonality factors
-    anomalyCount: integer('anomaly_count').default(0),
-    lastAnomaly: timestamp('last_anomaly'),
-    dataPoints: integer('data_points').default(0), // Number of transactions analyzed
-    analysisStartDate: timestamp('analysis_start_date').notNull(),
-    analysisEndDate: timestamp('analysis_end_date').notNull(),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
+    groupId: uuid('group_id').references(() => vaultGroups.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').notNull(), // Assuming vaultId is handled by vault service
+    role: text('role').default('member'), // owner, contributor, viewer
+    addedAt: timestamp('added_at').defaultNow(),
 }, (table) => ({
-    userIdx: index('idx_spending_patterns_user').on(table.userId),
-    categoryIdx: index('idx_spending_patterns_category').on(table.categoryId),
-    patternIdx: index('idx_spending_patterns_type').on(table.patternType),
+    groupIdx: index('idx_vgm_group').on(table.groupId),
+    vaultIdx: index('idx_vgm_vault').on(table.vaultId),
 }));
 
-// Budget Adjustments - Auto-adjustment history
-export const budgetAdjustments = pgTable('budget_adjustments', {
+// Consolidated Snapshots - Historical performance data for vault groups
+export const consolidatedSnapshots = pgTable('consolidated_snapshots', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
-    adjustmentType: text('adjustment_type').notNull(), // auto, manual, suggested
-    previousAmount: numeric('previous_amount', { precision: 12, scale: 2 }).notNull(),
-    newAmount: numeric('new_amount', { precision: 12, scale: 2 }).notNull(),
-    adjustmentPercentage: doublePrecision('adjustment_percentage'),
-    reason: text('reason').notNull(), // overspending, underspending, seasonal, trend
-    confidence: doublePrecision('confidence').default(0.8),
-    appliedAt: timestamp('applied_at'),
-    status: text('status').default('pending'), // pending, applied, rejected, reverted
-    triggeredBy: text('triggered_by').default('system'), // system, user, scheduler
-    effectiveMonth: timestamp('effective_month').notNull(),
-    recommendations: jsonb('recommendations').default([]),
+    groupId: uuid('group_id').references(() => vaultGroups.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: timestamp('snapshot_date').notNull(),
+    totalValue: numeric('total_value', { precision: 18, scale: 2 }).notNull(),
+    cashBalance: numeric('cash_balance', { precision: 18, scale: 2 }),
+    assetValue: numeric('asset_value', { precision: 18, scale: 2 }),
+    liabilityValue: numeric('liability_value', { precision: 18, scale: 2 }),
+    netWorth: numeric('net_worth', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    vaultCount: integer('vault_count').default(0),
+    performanceMetrics: jsonb('performance_metrics').default({}),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    groupIdx: index('idx_cs_group').on(table.groupId),
+    dateIdx: index('idx_cs_date').on(table.snapshotDate),
+}));
+
+// Consolidated Analytics - Aggregated analytics across vaults
+export const consolidatedAnalytics = pgTable('consolidated_analytics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    groupId: uuid('group_id').references(() => vaultGroups.id, { onDelete: 'cascade' }).notNull(),
+    analysisType: text('analysis_type').notNull(), // asset_allocation, risk_exposure, yield_analysis, tax_efficiency
+    analysisDate: timestamp('analysis_date').notNull(),
+    data: jsonb('data').notNull(),
+    insights: jsonb('insights').default([]),
+    timeframe: text('timeframe').default('month'),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
-    userIdx: index('idx_budget_adjustments_user').on(table.userId),
-    categoryIdx: index('idx_budget_adjustments_category').on(table.categoryId),
-    statusIdx: index('idx_budget_adjustments_status').on(table.status),
-    monthIdx: index('idx_budget_adjustments_month').on(table.effectiveMonth),
-}));
-
-// Category Insights - AI-generated spending insights
-export const categoryInsights = pgTable('category_insights', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
-    insightType: text('insight_type').notNull(), // overspending, saving_opportunity, anomaly, trend
-    severity: text('severity').default('medium'), // low, medium, high, critical
-    title: text('title').notNull(),
-    description: text('description').notNull(),
-    currentValue: numeric('current_value', { precision: 12, scale: 2 }),
-    expectedValue: numeric('expected_value', { precision: 12, scale: 2 }),
-    deviation: doublePrecision('deviation'), // Percentage deviation from expected
-    actionable: boolean('actionable').default(true),
-    suggestedActions: jsonb('suggested_actions').default([]),
-    potentialSavings: numeric('potential_savings', { precision: 12, scale: 2 }),
-    timeframe: text('timeframe'), // week, month, quarter, year
-    isRead: boolean('is_read').default(false),
-    isDismissed: boolean('is_dismissed').default(false),
-    expiresAt: timestamp('expires_at'),
-    metadata: jsonb('metadata').default({}),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => ({
-    userIdx: index('idx_category_insights_user').on(table.userId),
-    categoryIdx: index('idx_category_insights_category').on(table.categoryId),
-    typeIdx: index('idx_category_insights_type').on(table.insightType),
-    severityIdx: index('idx_category_insights_severity').on(table.severity),
-    readIdx: index('idx_category_insights_read').on(table.isRead),
+    groupIdx: index('idx_ca_group').on(table.groupId),
+    typeIdx: index('idx_ca_type').on(table.analysisType),
+    dateIdx: index('idx_ca_date').on(table.analysisDate),
 }));
