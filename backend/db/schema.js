@@ -608,95 +608,113 @@ export const tenantLeasesRelations = relations(tenantLeases, ({ one }) => ({
 }));
 
 // ============================================================================
-// SETTLEMENT ENGINE (#290)
+// SMART BUDGET AI (#289)
 // ============================================================================
 
-// Settlements - Main settlement tracking
-export const settlements = pgTable('settlements', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
-    creatorId: uuid('creator_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    title: text('title').notNull(),
-    description: text('description'),
-    totalAmount: numeric('total_amount', { precision: 12, scale: 2 }).notNull(),
-    currency: text('currency').default('USD'),
-    splitType: text('split_type').notNull(), // equal, percentage, custom, weighted
-    splitRule: jsonb('split_rule').notNull(), // { type, participants: [{ userId, amount/percentage/weight }] }
-    status: text('status').default('pending'), // pending, partial, completed, cancelled
-    settledAmount: numeric('settled_amount', { precision: 12, scale: 2 }).default('0'),
-    remainingAmount: numeric('remaining_amount', { precision: 12, scale: 2 }),
-    dueDate: timestamp('due_date'),
-    isRecurring: boolean('is_recurring').default(false),
-    recurringFrequency: text('recurring_frequency'), // weekly, monthly, quarterly
-    metadata: jsonb('metadata').default({}),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-    completedAt: timestamp('completed_at'),
-}, (table) => ({
-    creatorIdx: index('idx_settlements_creator').on(table.creatorId),
-    statusIdx: index('idx_settlements_status').on(table.status),
-    expenseIdx: index('idx_settlements_expense').on(table.expenseId),
-}));
-
-// Settlement Transactions - Individual payment tracking
-export const settlementTransactions = pgTable('settlement_transactions', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    settlementId: uuid('settlement_id').references(() => settlements.id, { onDelete: 'cascade' }).notNull(),
-    payerId: uuid('payer_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    payeeId: uuid('payee_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
-    amountDue: numeric('amount_due', { precision: 12, scale: 2 }).notNull(),
-    amountPaid: numeric('amount_paid', { precision: 12, scale: 2 }).default('0'),
-    amountRemaining: numeric('amount_remaining', { precision: 12, scale: 2 }),
-    status: text('status').default('pending'), // pending, partial, paid, overdue, cancelled
-    paymentMethod: text('payment_method'), // cash, card, bank_transfer, venmo, paypal, zelle
-    paymentReference: text('payment_reference'), // Transaction ID from payment platform
-    notes: text('notes'),
-    paidAt: timestamp('paid_at'),
-    dueDate: timestamp('due_date'),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => ({
-    settlementIdx: index('idx_settlement_txn_settlement').on(table.settlementId),
-    payerIdx: index('idx_settlement_txn_payer').on(table.payerId),
-    payeeIdx: index('idx_settlement_txn_payee').on(table.payeeId),
-    statusIdx: index('idx_settlement_txn_status').on(table.status),
-}));
-
-// Split Rules - Reusable split configurations
-export const splitRules = pgTable('split_rules', {
+// Budget Predictions - ML-based spending forecasts
+export const budgetPredictions = pgTable('budget_predictions', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    name: text('name').notNull(),
-    description: text('description'),
-    splitType: text('split_type').notNull(), // equal, percentage, custom, weighted
-    participants: jsonb('participants').notNull(), // [{ userId, name, amount/percentage/weight }]
-    isDefault: boolean('is_default').default(false),
-    usageCount: integer('usage_count').default(0),
-    lastUsedAt: timestamp('last_used_at'),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
+    predictionMonth: timestamp('prediction_month').notNull(),
+    predictedAmount: numeric('predicted_amount', { precision: 12, scale: 2 }).notNull(),
+    actualAmount: numeric('actual_amount', { precision: 12, scale: 2 }),
+    confidenceScore: doublePrecision('confidence_score').default(0.85), // 0-1 scale
+    modelType: text('model_type').default('arima'), // arima, lstm, prophet, moving_average
+    seasonalFactor: doublePrecision('seasonal_factor').default(1.0),
+    trendFactor: doublePrecision('trend_factor').default(1.0),
+    variance: doublePrecision('variance'),
+    upperBound: numeric('upper_bound', { precision: 12, scale: 2 }),
+    lowerBound: numeric('lower_bound', { precision: 12, scale: 2 }),
+    accuracy: doublePrecision('accuracy'), // Calculated after actual amount is known
+    metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
-    userIdx: index('idx_split_rules_user').on(table.userId),
+    userIdx: index('idx_budget_predictions_user').on(table.userId),
+    categoryIdx: index('idx_budget_predictions_category').on(table.categoryId),
+    monthIdx: index('idx_budget_predictions_month').on(table.predictionMonth),
 }));
 
-// Payment Reminders - Automated reminder tracking
-export const paymentReminders = pgTable('payment_reminders', {
+// Spending Patterns - Historical pattern analysis
+export const spendingPatterns = pgTable('spending_patterns', {
     id: uuid('id').defaultRandom().primaryKey(),
-    settlementId: uuid('settlement_id').references(() => settlements.id, { onDelete: 'cascade' }).notNull(),
-    transactionId: uuid('transaction_id').references(() => settlementTransactions.id, { onDelete: 'cascade' }),
-    recipientId: uuid('recipient_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    reminderType: text('reminder_type').notNull(), // initial, follow_up, escalation, final
-    message: text('message').notNull(),
-    status: text('status').default('pending'), // pending, sent, delivered, failed
-    scheduledFor: timestamp('scheduled_for').notNull(),
-    sentAt: timestamp('sent_at'),
-    deliveryMethod: text('delivery_method').default('email'), // email, sms, push, in_app
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
+    patternType: text('pattern_type').notNull(), // seasonal, trending, cyclical, irregular
+    frequency: text('frequency'), // daily, weekly, monthly, quarterly, yearly
+    averageAmount: numeric('average_amount', { precision: 12, scale: 2 }).notNull(),
+    medianAmount: numeric('median_amount', { precision: 12, scale: 2 }),
+    standardDeviation: doublePrecision('standard_deviation'),
+    minAmount: numeric('min_amount', { precision: 12, scale: 2 }),
+    maxAmount: numeric('max_amount', { precision: 12, scale: 2 }),
+    growthRate: doublePrecision('growth_rate'), // Percentage growth per period
+    seasonalityIndex: jsonb('seasonality_index').default({}), // Monthly seasonality factors
+    anomalyCount: integer('anomaly_count').default(0),
+    lastAnomaly: timestamp('last_anomaly'),
+    dataPoints: integer('data_points').default(0), // Number of transactions analyzed
+    analysisStartDate: timestamp('analysis_start_date').notNull(),
+    analysisEndDate: timestamp('analysis_end_date').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_spending_patterns_user').on(table.userId),
+    categoryIdx: index('idx_spending_patterns_category').on(table.categoryId),
+    patternIdx: index('idx_spending_patterns_type').on(table.patternType),
+}));
+
+// Budget Adjustments - Auto-adjustment history
+export const budgetAdjustments = pgTable('budget_adjustments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
+    adjustmentType: text('adjustment_type').notNull(), // auto, manual, suggested
+    previousAmount: numeric('previous_amount', { precision: 12, scale: 2 }).notNull(),
+    newAmount: numeric('new_amount', { precision: 12, scale: 2 }).notNull(),
+    adjustmentPercentage: doublePrecision('adjustment_percentage'),
+    reason: text('reason').notNull(), // overspending, underspending, seasonal, trend
+    confidence: doublePrecision('confidence').default(0.8),
+    appliedAt: timestamp('applied_at'),
+    status: text('status').default('pending'), // pending, applied, rejected, reverted
+    triggeredBy: text('triggered_by').default('system'), // system, user, scheduler
+    effectiveMonth: timestamp('effective_month').notNull(),
+    recommendations: jsonb('recommendations').default([]),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
-    settlementIdx: index('idx_reminders_settlement').on(table.settlementId),
-    recipientIdx: index('idx_reminders_recipient').on(table.recipientId),
-    statusIdx: index('idx_reminders_status').on(table.status),
-    scheduledIdx: index('idx_reminders_scheduled').on(table.scheduledFor),
+    userIdx: index('idx_budget_adjustments_user').on(table.userId),
+    categoryIdx: index('idx_budget_adjustments_category').on(table.categoryId),
+    statusIdx: index('idx_budget_adjustments_status').on(table.status),
+    monthIdx: index('idx_budget_adjustments_month').on(table.effectiveMonth),
+}));
+
+// Category Insights - AI-generated spending insights
+export const categoryInsights = pgTable('category_insights', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    insightType: text('insight_type').notNull(), // overspending, saving_opportunity, anomaly, trend
+    severity: text('severity').default('medium'), // low, medium, high, critical
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    currentValue: numeric('current_value', { precision: 12, scale: 2 }),
+    expectedValue: numeric('expected_value', { precision: 12, scale: 2 }),
+    deviation: doublePrecision('deviation'), // Percentage deviation from expected
+    actionable: boolean('actionable').default(true),
+    suggestedActions: jsonb('suggested_actions').default([]),
+    potentialSavings: numeric('potential_savings', { precision: 12, scale: 2 }),
+    timeframe: text('timeframe'), // week, month, quarter, year
+    isRead: boolean('is_read').default(false),
+    isDismissed: boolean('is_dismissed').default(false),
+    expiresAt: timestamp('expires_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_category_insights_user').on(table.userId),
+    categoryIdx: index('idx_category_insights_category').on(table.categoryId),
+    typeIdx: index('idx_category_insights_type').on(table.insightType),
+    severityIdx: index('idx_category_insights_severity').on(table.severity),
+    readIdx: index('idx_category_insights_read').on(table.isRead),
 }));

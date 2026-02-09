@@ -50,7 +50,7 @@ import fxRoutes from "./routes/fx_ledger.js";
 import simulationRoutes from "./routes/simulations.js";
 import businessRoutes from "./routes/business.js";
 import payrollRoutes from "./routes/payroll.js";
-import expenseSplitsRoutes from "./routes/expenseSplits.js";
+import smartBudgetRoutes from "./routes/smart-budget.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -65,7 +65,7 @@ import taxEstimator from "./jobs/taxEstimator.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
 import rateSyncer from "./jobs/rateSyncer.js";
 import forecastUpdater from "./jobs/forecastUpdater.js";
-import settlementReminderJob from "./jobs/settlementReminderJob.js";
+import budgetOptimizerJob from "./jobs/budgetOptimizer.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
@@ -243,7 +243,7 @@ app.use("/api/tax", userLimiter, taxRoutes);
 app.use("/api/simulations", userLimiter, simulationRoutes);
 app.use("/api/business", userLimiter, businessRoutes);
 app.use("/api/payroll", userLimiter, payrollRoutes);
-app.use("/api/expense-splits", userLimiter, expenseSplitsRoutes);
+app.use("/api/smart-budget", userLimiter, smartBudgetRoutes);
 
 
 // Secur fil servr for uploddd fils
@@ -299,7 +299,7 @@ app.listen(PORT, () => {
   riskAuditor.start();
   leaseMonitor.start();
   dividendProcessor.start();
-  settlementReminderJob.start();
+  budgetOptimizerJob.start();
 
 
   // Add debt services to app.locals for middleware/route access
