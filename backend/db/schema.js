@@ -1,6 +1,10 @@
 
 import { pgTable, uuid, text, boolean, integer, numeric, timestamp, jsonb, doublePrecision, index } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
+
+// ============================================================================
+// CORE LAYER
+// ============================================================================
 
 // ============================================================================
 // CORE TABLES
@@ -24,8 +28,6 @@ export const users = pgTable('users', {
     lastLogin: timestamp('last_login').defaultNow(),
     mfaEnabled: boolean('mfa_enabled').default(false),
     mfaSecret: text('mfa_secret'),
-    mfaRecoveryCodes: jsonb('mfa_recovery_codes').default([]),
-    mfaBackupCodes: jsonb('mfa_backup_codes').default([]),
     preferences: jsonb('preferences').default({
         notifications: { email: true, push: true, sms: false },
         theme: 'auto',
@@ -42,7 +44,6 @@ export const users = pgTable('users', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// Categories Table
 export const categories = pgTable('categories', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -62,7 +63,6 @@ export const categories = pgTable('categories', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// Expenses Table
 export const expenses = pgTable('expenses', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -71,7 +71,6 @@ export const expenses = pgTable('expenses', {
     amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
     currency: text('currency').default('USD'),
     description: text('description').notNull(),
-    subcategory: text('subcategory'),
     date: timestamp('date').defaultNow().notNull(),
     paymentMethod: text('payment_method').default('other'),
     location: jsonb('location'),
@@ -121,7 +120,6 @@ export const vaultBalances = pgTable('vault_balances', {
     balance: numeric('balance', { precision: 12, scale: 2 }).default('0').notNull(),
     currency: text('currency').default('USD'),
     createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 // Goals Module
@@ -161,7 +159,6 @@ export const investments = pgTable('investments', {
     averageCost: numeric('average_cost', { precision: 12, scale: 4 }).notNull(),
     currentPrice: numeric('current_price', { precision: 12, scale: 4 }),
     createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 export const fixedAssets = pgTable('fixed_assets', {
@@ -173,7 +170,6 @@ export const fixedAssets = pgTable('fixed_assets', {
     currentValue: numeric('current_value', { precision: 12, scale: 2 }).notNull(),
     appreciationRate: numeric('appreciation_rate', { precision: 5, scale: 2 }),
     createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 // ============================================================================
@@ -349,7 +345,6 @@ export const corporateEntities = pgTable('corporate_entities', {
     status: text('status').default('active'),
     metadata: jsonb('metadata').default({ employeesLimit: 50, fiscalYearEnd: '12-31' }),
     createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 export const employees = pgTable('employees', {
@@ -366,7 +361,6 @@ export const employees = pgTable('employees', {
     status: text('status').default('active'),
     bankDetails: jsonb('bank_details'),
     createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 export const payrollRuns = pgTable('payroll_runs', {
