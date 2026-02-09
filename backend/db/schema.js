@@ -675,3 +675,119 @@ export const consolidatedAnalytics = pgTable('consolidated_analytics', {
     typeIdx: index('idx_ca_type').on(table.analysisType),
     dateIdx: index('idx_ca_date').on(table.analysisDate),
 }));
+
+// ============================================================================
+// RECURRING PAYMENTS & BILL AUTOMATION (#298)
+// ============================================================================
+
+// Recurring Transactions - Detected recurring patterns
+export const recurringTransactions = pgTable('recurring_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    merchantName: text('merchant_name'),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    frequency: text('frequency').notNull(), // daily, weekly, biweekly, monthly, quarterly, yearly
+    nextDueDate: timestamp('next_due_date').notNull(),
+    lastProcessedDate: timestamp('last_processed_date'),
+    status: text('status').default('active'), // active, paused, cancelled, completed
+    isAutoPayEnabled: boolean('is_auto_pay_enabled').default(false),
+    confidence: doublePrecision('confidence').default(0.85), // Detection confidence
+    detectionMethod: text('detection_method').default('pattern'), // pattern, manual, imported
+    occurrenceCount: integer('occurrence_count').default(0),
+    totalPaid: numeric('total_paid', { precision: 12, scale: 2 }).default(0),
+    averageAmount: numeric('average_amount', { precision: 12, scale: 2 }),
+    varianceAmount: doublePrecision('variance_amount'),
+    paymentMethod: text('payment_method'), // credit_card, bank_account, cash, etc
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_recurring_user').on(table.userId),
+    statusIdx: index('idx_recurring_status').on(table.status),
+    dueDateIdx: index('idx_recurring_due_date').on(table.nextDueDate),
+}));
+
+// Scheduled Payments - Upcoming bill payments
+export const scheduledPayments = pgTable('scheduled_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }),
+    payeeName: text('payee_name').notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    scheduledDate: timestamp('scheduled_date').notNull(),
+    dueDate: timestamp('due_date'),
+    status: text('status').default('pending'), // pending, processing, completed, failed, cancelled
+    paymentMethod: text('payment_method'),
+    accountId: text('account_id'), // Reference to payment account
+    confirmationNumber: text('confirmation_number'),
+    failureReason: text('failure_reason'),
+    isAutoPay: boolean('is_auto_pay').default(false),
+    reminderSent: boolean('reminder_sent').default(false),
+    reminderSentAt: timestamp('reminder_sent_at'),
+    processedAt: timestamp('processed_at'),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_scheduled_user').on(table.userId),
+    statusIdx: index('idx_scheduled_status').on(table.status),
+    scheduledDateIdx: index('idx_scheduled_date').on(table.scheduledDate),
+    recurringIdx: index('idx_scheduled_recurring').on(table.recurringTransactionId),
+}));
+
+// Payment Reminders - Notification tracking
+export const paymentRemindersTracking = pgTable('payment_reminders_tracking', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scheduledPaymentId: uuid('scheduled_payment_id').references(() => scheduledPayments.id, { onDelete: 'cascade' }),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }),
+    reminderType: text('reminder_type').notNull(), // upcoming, due_today, overdue, confirmation
+    reminderDate: timestamp('reminder_date').notNull(),
+    sentAt: timestamp('sent_at'),
+    deliveryMethod: text('delivery_method').default('email'), // email, sms, push, in_app
+    status: text('status').default('pending'), // pending, sent, failed
+    message: text('message'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_reminder_user').on(table.userId),
+    statusIdx: index('idx_reminder_status').on(table.status),
+    dateIdx: index('idx_reminder_date').on(table.reminderDate),
+}));
+
+// Subscription Tracking - Manage subscriptions
+export const subscriptionTracking = pgTable('subscription_tracking', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'set null' }),
+    serviceName: text('service_name').notNull(),
+    category: text('category'), // streaming, software, utilities, etc
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    billingCycle: text('billing_cycle').notNull(), // monthly, yearly, etc
+    startDate: timestamp('start_date').notNull(),
+    renewalDate: timestamp('renewal_date').notNull(),
+    cancellationDate: timestamp('cancellation_date'),
+    status: text('status').default('active'), // active, cancelled, expired, trial
+    paymentMethod: text('payment_method'),
+    website: text('website'),
+    cancellationUrl: text('cancellation_url'),
+    customerSupportContact: text('customer_support_contact'),
+    trialEndDate: timestamp('trial_end_date'),
+    autoRenew: boolean('auto_renew').default(true),
+    totalSpent: numeric('total_spent', { precision: 12, scale: 2 }).default(0),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_subscription_user').on(table.userId),
+    statusIdx: index('idx_subscription_status').on(table.status),
+    renewalIdx: index('idx_subscription_renewal').on(table.renewalDate),
+}));
