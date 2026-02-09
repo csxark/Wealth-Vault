@@ -48,8 +48,9 @@ import debtRoutes from "./routes/debts.js";
 import walletRoutes from "./routes/wallets.js";
 import fxRoutes from "./routes/fx_ledger.js";
 import simulationRoutes from "./routes/simulations.js";
-import liquidityRoutes from "./routes/liquidity.js";
-import runwayRoutes from "./routes/runway.js";
+import businessRoutes from "./routes/business.js";
+import payrollRoutes from "./routes/payroll.js";
+import expenseSplitsRoutes from "./routes/expenseSplits.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -64,7 +65,7 @@ import taxEstimator from "./jobs/taxEstimator.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
 import rateSyncer from "./jobs/rateSyncer.js";
 import forecastUpdater from "./jobs/forecastUpdater.js";
-import liquidityMaintenanceJob from "./jobs/liquidityMaintenanceJob.js";
+import settlementReminderJob from "./jobs/settlementReminderJob.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
@@ -240,8 +241,10 @@ app.use("/api/assets", userLimiter, assetRoutes);
 app.use("/api/governance", userLimiter, governanceRoutes);
 app.use("/api/tax", userLimiter, taxRoutes);
 app.use("/api/simulations", userLimiter, simulationRoutes);
-app.use("/api/liquidity", userLimiter, liquidityRoutes);
-app.use("/api/runway", userLimiter, runwayRoutes);
+app.use("/api/business", userLimiter, businessRoutes);
+app.use("/api/payroll", userLimiter, payrollRoutes);
+app.use("/api/expense-splits", userLimiter, expenseSplitsRoutes);
+
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -294,7 +297,10 @@ app.listen(PORT, () => {
   rateSyncer.start();
   forecastUpdater.start();
   riskAuditor.start();
-  liquidityMaintenanceJob.start();
+  leaseMonitor.start();
+  dividendProcessor.start();
+  settlementReminderJob.start();
+
 
   // Add debt services to app.locals for middleware/route access
   app.locals.debtEngine = debtEngine;
