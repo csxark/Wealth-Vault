@@ -388,6 +388,63 @@ export const updateInvestmentPrices = async (priceUpdates, userId) => {
   }
 };
 
+/**
+ * Calculate investment metrics (expected return, volatility, etc.)
+ * @param {string} investmentId - Investment ID
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Investment metrics
+ */
+export const calculateInvestmentMetrics = async (investmentId, userId) => {
+  try {
+    // Get price history for the investment
+    const priceHistory = await priceService.getPriceHistory(investmentId, 365); // 1 year
+
+    if (priceHistory.length < 30) {
+      // Insufficient data, return defaults
+      return {
+        expectedReturn: 0.08, // 8% annual return
+        volatility: 0.15, // 15% volatility
+        sharpeRatio: 0.53, // Return / volatility
+      };
+    }
+
+    // Calculate daily returns
+    const returns = [];
+    for (let i = 1; i < priceHistory.length; i++) {
+      const prevPrice = parseFloat(priceHistory[i - 1].close);
+      const currPrice = parseFloat(priceHistory[i].close);
+      const dailyReturn = (currPrice - prevPrice) / prevPrice;
+      returns.push(dailyReturn);
+    }
+
+    // Calculate expected return (annualized)
+    const avgDailyReturn = returns.reduce((sum, r) => sum + r, 0) / returns.length;
+    const expectedReturn = avgDailyReturn * 252; // 252 trading days per year
+
+    // Calculate volatility (annualized standard deviation)
+    const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgDailyReturn, 2), 0) / returns.length;
+    const volatility = Math.sqrt(variance * 252); // Annualized
+
+    // Calculate Sharpe ratio (assuming 3% risk-free rate)
+    const riskFreeRate = 0.03;
+    const sharpeRatio = (expectedReturn - riskFreeRate) / volatility;
+
+    return {
+      expectedReturn: Math.max(expectedReturn, 0), // Ensure non-negative
+      volatility: Math.max(volatility, 0.01), // Minimum volatility
+      sharpeRatio: isFinite(sharpeRatio) ? sharpeRatio : 0,
+    };
+  } catch (error) {
+    console.warn(`Error calculating metrics for investment ${investmentId}:`, error);
+    // Return conservative defaults
+    return {
+      expectedReturn: 0.06, // 6% annual return
+      volatility: 0.20, // 20% volatility
+      sharpeRatio: 0.15,
+    };
+  }
+};
+
 export default {
   createInvestment,
   getInvestments,
@@ -398,4 +455,5 @@ export default {
   getInvestmentTransactions,
   updateInvestmentMetrics,
   updateInvestmentPrices,
+  calculateInvestmentMetrics,
 };
