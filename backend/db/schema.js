@@ -677,7 +677,7 @@ export const consolidatedAnalytics = pgTable('consolidated_analytics', {
 }));
 
 // ============================================================================
-// ADVANCED TRANSACTION CATEGORIZATION (#299)
+// ADVANCED TRANSACTION CATEGORIZATION (#296)
 // ============================================================================
 
 // Merchants - Recognized merchant entities
