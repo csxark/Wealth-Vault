@@ -373,6 +373,70 @@ export const forecasts = pgTable('forecasts', {
 });
 
 // ============================================================================
+// BLACK SWAN LIQUIDITY STRESS-TESTER (#272)
+// ============================================================================
+
+// Stress Test Scenarios - Simulates crisis events
+export const stressScenarios = pgTable('stress_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    scenarioType: text('scenario_type').notNull(), // job_loss, market_crash, medical_emergency, recession
+    severity: text('severity').default('moderate'), // mild, moderate, severe, catastrophic
+    parameters: jsonb('parameters').notNull(), // { incomeReduction: 100%, marketDrop: 40%, duration: 6 }
+    status: text('status').default('pending'), // pending, running, completed, failed
+    createdAt: timestamp('created_at').defaultNow(),
+    completedAt: timestamp('completed_at'),
+});
+
+// Runway Calculations - Cash flow runway projections
+export const runwayCalculations = pgTable('runway_calculations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    scenarioId: uuid('scenario_id').references(() => stressScenarios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    currentBalance: numeric('current_balance', { precision: 15, scale: 2 }).notNull(),
+    monthlyBurnRate: numeric('monthly_burn_rate', { precision: 12, scale: 2 }).notNull(),
+    runwayDays: integer('runway_days').notNull(), // Days until cash runs out
+    zeroBalanceDate: timestamp('zero_balance_date'), // Exact date of depletion
+    criticalThresholdDate: timestamp('critical_threshold_date'), // Date when balance hits 20%
+    dailyProjections: jsonb('daily_projections').notNull(), // [{ date, balance, income, expenses }]
+    recommendations: jsonb('recommendations').default([]), // AI-generated survival strategies
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Liquidity Rescues - Automated emergency transfers
+export const liquidityRescues = pgTable('liquidity_rescues', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scenarioId: uuid('scenario_id').references(() => stressScenarios.id, { onDelete: 'cascade' }),
+    triggerDate: timestamp('trigger_date').notNull(),
+    triggerReason: text('trigger_reason').notNull(), // balance_critical, runway_depleted, threshold_breach
+    sourceWalletId: uuid('source_wallet_id'), // Source for emergency funds
+    targetWalletId: uuid('target_wallet_id'), // Target wallet to rescue
+    transferAmount: numeric('transfer_amount', { precision: 12, scale: 2 }).notNull(),
+    status: text('status').default('pending'), // pending, executed, failed, cancelled
+    executedAt: timestamp('executed_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Cash Flow Projections - AI-driven income/expense forecasts
+export const cashFlowProjections = pgTable('cash_flow_projections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    projectionDate: timestamp('projection_date').notNull(),
+    projectedIncome: numeric('projected_income', { precision: 12, scale: 2 }).notNull(),
+    projectedExpenses: numeric('projected_expenses', { precision: 12, scale: 2 }).notNull(),
+    projectedBalance: numeric('projected_balance', { precision: 12, scale: 2 }).notNull(),
+    confidence: doublePrecision('confidence').default(0.85), // AI confidence score
+    modelType: text('model_type').default('arima'), // arima, lstm, prophet
+    seasonalFactors: jsonb('seasonal_factors').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userDateIdx: index('idx_cash_flow_user_date').on(table.userId, table.projectionDate),
+}));
+
+// ============================================================================
 // INVESTMENTS & DEBT
 // ============================================================================
 
