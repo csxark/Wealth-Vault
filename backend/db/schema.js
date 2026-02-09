@@ -149,7 +149,54 @@ export const portfolios = pgTable('portfolios', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-export const investments = pgTable('investments', {
+// Time-Machine: Replay Scenarios
+export const replayScenarios = pgTable('replay_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    startDate: timestamp('start_date').notNull(),
+    endDate: timestamp('end_date').notNull(),
+    baselineSnapshotId: uuid('baseline_snapshot_id').references(() => auditSnapshots.id),
+    whatIfChanges: jsonb('what_if_changes').notNull(), // { type: 'investment', asset: 'BTC', amount: 1000, date: '2024-01-01' }
+    status: text('status').default('pending'), // pending, running, completed, failed
+    createdAt: timestamp('created_at').defaultNow(),
+    completedAt: timestamp('completed_at'),
+});
+
+// Time-Machine: Backtest Results
+export const backtestResults = pgTable('backtest_results', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    scenarioId: uuid('scenario_id').references(() => replayScenarios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    actualNetWorth: numeric('actual_net_worth', { precision: 15, scale: 2 }).notNull(),
+    simulatedNetWorth: numeric('simulated_net_worth', { precision: 15, scale: 2 }).notNull(),
+    difference: numeric('difference', { precision: 15, scale: 2 }).notNull(),
+    differencePercent: doublePrecision('difference_percent').notNull(),
+    timelineData: jsonb('timeline_data').notNull(), // Daily snapshots: [{ date, actualValue, simulatedValue }]
+    performanceMetrics: jsonb('performance_metrics').default({}), // { sharpeRatio, maxDrawdown, volatility }
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Time-Machine: Historical Market Data Cache
+export const historicalMarketData = pgTable('historical_market_data', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    symbol: text('symbol').notNull(), // BTC, ETH, AAPL, etc.
+    assetType: text('asset_type').notNull(), // crypto, stock, commodity, fx
+    date: timestamp('date').notNull(),
+    open: numeric('open', { precision: 18, scale: 8 }),
+    high: numeric('high', { precision: 18, scale: 8 }),
+    low: numeric('low', { precision: 18, scale: 8 }),
+    close: numeric('close', { precision: 18, scale: 8 }).notNull(),
+    volume: numeric('volume', { precision: 20, scale: 2 }),
+    source: text('source').default('coingecko'), // coingecko, yahoo, alpha_vantage
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    symbolDateIdx: index('idx_historical_market_symbol_date').on(table.symbol, table.date),
+}));
+
+export const forecastSnapshots = pgTable('forecast_snapshots', {
     id: uuid('id').defaultRandom().primaryKey(),
     portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
