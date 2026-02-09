@@ -51,6 +51,8 @@ import simulationRoutes from "./routes/simulations.js";
 import businessRoutes from "./routes/business.js";
 import payrollRoutes from "./routes/payroll.js";
 import vaultConsolidationRoutes from "./routes/vault-consolidation.js";
+import recurringPaymentsRoutes from "./routes/recurring-payments.js";
+import categorizationRoutes from "./routes/categorization.js";
 import currencyPortfolioRoutes from "./routes/currency-portfolio.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
@@ -67,6 +69,8 @@ import debtRecalculator from "./jobs/debtRecalculator.js";
 import rateSyncer from "./jobs/rateSyncer.js";
 import forecastUpdater from "./jobs/forecastUpdater.js";
 import consolidationSync from "./jobs/consolidationSync.js";
+import recurringPaymentProcessor from "./jobs/recurringPaymentProcessor.js";
+import categorizationTrainer from "./jobs/categorizationTrainer.js";
 import fxRateUpdater from "./jobs/fxRateUpdater.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
@@ -246,7 +250,10 @@ app.use("/api/simulations", userLimiter, simulationRoutes);
 app.use("/api/business", userLimiter, businessRoutes);
 app.use("/api/payroll", userLimiter, payrollRoutes);
 app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
+app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
+app.use("/api/categorization", userLimiter, categorizationRoutes);
 app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
+
 
 
 
@@ -304,7 +311,10 @@ app.listen(PORT, () => {
   leaseMonitor.start();
   dividendProcessor.start();
   consolidationSync.start();
+  recurringPaymentProcessor.start();
+  categorizationTrainer.start();
   fxRateUpdater.start();
+
 
 
 

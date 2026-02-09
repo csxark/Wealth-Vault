@@ -675,3 +675,235 @@ export const consolidatedAnalytics = pgTable('consolidated_analytics', {
     typeIdx: index('idx_ca_type').on(table.analysisType),
     dateIdx: index('idx_ca_date').on(table.analysisDate),
 }));
+
+// ============================================================================
+// RECURRING PAYMENTS & BILL AUTOMATION (#298)
+// ============================================================================
+
+// Recurring Transactions - Detected recurring patterns
+export const recurringTransactions = pgTable('recurring_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    merchantName: text('merchant_name'),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    frequency: text('frequency').notNull(), // daily, weekly, biweekly, monthly, quarterly, yearly
+    nextDueDate: timestamp('next_due_date').notNull(),
+    lastProcessedDate: timestamp('last_processed_date'),
+    status: text('status').default('active'), // active, paused, cancelled, completed
+    isAutoPayEnabled: boolean('is_auto_pay_enabled').default(false),
+    confidence: doublePrecision('confidence').default(0.85), // Detection confidence
+    detectionMethod: text('detection_method').default('pattern'), // pattern, manual, imported
+    occurrenceCount: integer('occurrence_count').default(0),
+    totalPaid: numeric('total_paid', { precision: 12, scale: 2 }).default(0),
+    averageAmount: numeric('average_amount', { precision: 12, scale: 2 }),
+    varianceAmount: doublePrecision('variance_amount'),
+    paymentMethod: text('payment_method'), // credit_card, bank_account, cash, etc
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_recurring_user').on(table.userId),
+    statusIdx: index('idx_recurring_status').on(table.status),
+    dueDateIdx: index('idx_recurring_due_date').on(table.nextDueDate),
+}));
+
+// Scheduled Payments - Upcoming bill payments
+export const scheduledPayments = pgTable('scheduled_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }),
+    payeeName: text('payee_name').notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    scheduledDate: timestamp('scheduled_date').notNull(),
+    dueDate: timestamp('due_date'),
+    status: text('status').default('pending'), // pending, processing, completed, failed, cancelled
+    paymentMethod: text('payment_method'),
+    accountId: text('account_id'), // Reference to payment account
+    confirmationNumber: text('confirmation_number'),
+    failureReason: text('failure_reason'),
+    isAutoPay: boolean('is_auto_pay').default(false),
+    reminderSent: boolean('reminder_sent').default(false),
+    reminderSentAt: timestamp('reminder_sent_at'),
+    processedAt: timestamp('processed_at'),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_scheduled_user').on(table.userId),
+    statusIdx: index('idx_scheduled_status').on(table.status),
+    scheduledDateIdx: index('idx_scheduled_date').on(table.scheduledDate),
+    recurringIdx: index('idx_scheduled_recurring').on(table.recurringTransactionId),
+}));
+
+// Payment Reminders - Notification tracking
+export const paymentRemindersTracking = pgTable('payment_reminders_tracking', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scheduledPaymentId: uuid('scheduled_payment_id').references(() => scheduledPayments.id, { onDelete: 'cascade' }),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }),
+    reminderType: text('reminder_type').notNull(), // upcoming, due_today, overdue, confirmation
+    reminderDate: timestamp('reminder_date').notNull(),
+    sentAt: timestamp('sent_at'),
+    deliveryMethod: text('delivery_method').default('email'), // email, sms, push, in_app
+    status: text('status').default('pending'), // pending, sent, failed
+    message: text('message'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_reminder_user').on(table.userId),
+    statusIdx: index('idx_reminder_status').on(table.status),
+    dateIdx: index('idx_reminder_date').on(table.reminderDate),
+}));
+
+// Subscription Tracking - Manage subscriptions
+export const subscriptionTracking = pgTable('subscription_tracking', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'set null' }),
+    serviceName: text('service_name').notNull(),
+    category: text('category'), // streaming, software, utilities, etc
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    billingCycle: text('billing_cycle').notNull(), // monthly, yearly, etc
+    startDate: timestamp('start_date').notNull(),
+    renewalDate: timestamp('renewal_date').notNull(),
+    cancellationDate: timestamp('cancellation_date'),
+    status: text('status').default('active'), // active, cancelled, expired, trial
+    paymentMethod: text('payment_method'),
+    website: text('website'),
+    cancellationUrl: text('cancellation_url'),
+    customerSupportContact: text('customer_support_contact'),
+    trialEndDate: timestamp('trial_end_date'),
+    autoRenew: boolean('auto_renew').default(true),
+    totalSpent: numeric('total_spent', { precision: 12, scale: 2 }).default(0),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_subscription_user').on(table.userId),
+    statusIdx: index('idx_subscription_status').on(table.status),
+    renewalIdx: index('idx_subscription_renewal').on(table.renewalDate),
+}));
+
+// ============================================================================
+// ADVANCED TRANSACTION CATEGORIZATION (#296)
+// ============================================================================
+
+// Merchants - Recognized merchant entities
+export const merchants = pgTable('merchants', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    normalizedName: text('normalized_name').notNull(),
+    defaultCategoryId: uuid('default_category_id').references(() => categories.id, { onDelete: 'set null' }),
+    website: text('website'),
+    logoUrl: text('logo_url'),
+    industry: text('industry'),
+    isVerified: boolean('is_verified').default(false),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_merchants_user').on(table.userId),
+    nameIdx: index('idx_merchants_name').on(table.normalizedName),
+}));
+
+// Categorization Rules - User-defined or system rules
+export const categorizationRules = pgTable('categorization_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    priority: integer('priority').default(0),
+    conditionType: text('condition_type').notNull(), // text_match, amount_range, date_range, combined
+    conditionConfig: jsonb('condition_config').notNull(),
+    isActive: boolean('is_active').default(true),
+    matchCount: integer('match_count').default(0),
+    lastMatchAt: timestamp('last_match_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_cat_rules_user').on(table.userId),
+}));
+
+// Categorization Patterns - ML-derived or frequent patterns
+export const categorizationPatterns = pgTable('categorization_patterns', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    pattern: text('pattern').notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    confidence: doublePrecision('confidence').default(0.0),
+    occurrenceCount: integer('occurrence_count').default(1),
+    isSystemPattern: boolean('is_system_pattern').default(false),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_cat_patterns_user').on(table.userId),
+    patternIdx: index('idx_cat_patterns_text').on(table.pattern),
+}));
+
+// ============================================================================
+// MULTI-CURRENCY PORTFOLIO MANAGER (#297)
+// ============================================================================
+
+// User Currencies - Tracks which currencies a user uses and their preferences
+export const userCurrencies = pgTable('user_currencies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    currencyCode: text('currency_code').notNull(), // USD, EUR, INR, etc.
+    isBaseCurrency: boolean('is_base_currency').default(false),
+    exchangeRateSource: text('exchange_rate_source').default('market'), // market, manual
+    manualRate: numeric('manual_rate', { precision: 18, scale: 6 }),
+    autoRefresh: boolean('auto_refresh').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_user_curr_user').on(table.userId),
+    codeIdx: index('idx_user_curr_code').on(table.currencyCode),
+}));
+
+// Exchange Rate History - Historical FX rates
+export const exchangeRateHistory = pgTable('exchange_rate_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    fromCurrency: text('from_currency').notNull(),
+    toCurrency: text('to_currency').notNull(),
+    rate: numeric('rate', { precision: 18, scale: 6 }).notNull(),
+    source: text('source').default('open_exchange_rates'),
+    rateTimestamp: timestamp('rate_timestamp').notNull(),
+    metadata: jsonb('metadata').default({}),
+}, (table) => ({
+    fromIdx: index('idx_fx_from').on(table.fromCurrency),
+    toIdx: index('idx_fx_to').on(table.toCurrency),
+    dateIdx: index('idx_fx_date').on(table.rateTimestamp),
+}));
+
+// Currency Hedging Positions - Tracking hedges against FX volatility
+export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id'), // Optional link to specific portfolio
+    baseCurrency: text('base_currency').notNull(),
+    targetCurrency: text('target_currency').notNull(),
+    notionalAmount: numeric('notional_amount', { precision: 18, scale: 2 }).notNull(),
+    hedgeType: text('hedge_type').notNull(), // forward, option, swap
+    entryRate: numeric('entry_rate', { precision: 18, scale: 6 }).notNull(),
+    expiryDate: timestamp('expiry_date'),
+    status: text('status').default('active'), // active, closed, expired
+    gainLoss: numeric('gain_loss', { precision: 18, scale: 2 }),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_hedge_user').on(table.userId),
+    statusIdx: index('idx_hedge_status').on(table.status),
+}));
+
