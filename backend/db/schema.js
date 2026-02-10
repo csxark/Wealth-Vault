@@ -907,3 +907,60 @@ export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
     statusIdx: index('idx_hedge_status').on(table.status),
 }));
 
+// ============================================================================
+// FINANCIAL HEALTH AUDITOR & STRESS TESTER (#309)
+// ============================================================================
+
+// Audit Logs - Tracking system-wide forensic data
+export const auditLogs = pgTable('audit_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    actionType: text('action_type').notNull(), // anomaly_detected, stress_test_run, forensic_scan
+    severity: text('severity').default('info'), // info, warning, critical
+    details: jsonb('details').notNull(),
+    sourceIp: text('source_ip'),
+    isResolved: boolean('is_resolved').default(false),
+    resolvedAt: timestamp('resolved_at'),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_audit_logs_user').on(table.userId),
+    actionIdx: index('idx_audit_logs_action').on(table.actionType),
+}));
+
+// Stress Scenarios - Configurations for liquidity stress testing
+export const stressScenarios = pgTable('stress_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    scenarioType: text('scenario_type').notNull(), // market_crash, job_loss, medical_emergency, hyperinflation
+    parameters: jsonb('parameters').notNull(), // { incomeDrop: 0.5, expensesRise: 0.2, marketDrop: 0.4 }
+    survivalRunwayDays: integer('survival_runway_days'),
+    criticalFailurePoint: timestamp('critical_failure_point'),
+    recommendations: jsonb('recommendations').default([]),
+    status: text('status').default('active'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_stress_scenarios_user').on(table.userId),
+}));
+
+// Anomaly Patterns - Definitions for suspicious spending behavior
+export const anomalyPatterns = pgTable('anomaly_patterns', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    patternName: text('pattern_name').notNull(),
+    detectionLogic: text('detection_logic').notNull(), // outlier, velocity, location_jump, duplicate_payout
+    threshold: doublePrecision('threshold').default(2.5), // z-score or percentage
+    isActive: boolean('is_active').default(true),
+    lastDetectionAt: timestamp('last_detection_at'),
+    detectionCount: integer('detection_count').default(0),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_anomaly_patterns_user').on(table.userId),
+}));
