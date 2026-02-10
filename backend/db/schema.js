@@ -907,3 +907,64 @@ export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
     statusIdx: index('idx_hedge_status').on(table.status),
 }));
 
+// ============================================================================
+// INTER-VAULT SETTLEMENT & P2P LEDGER (#310)
+// ============================================================================
+
+// Internal Ledger - Double-entry accounting system
+export const internalLedger = pgTable('internal_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').notNull(),
+    transactionType: text('transaction_type').notNull(), // debit, credit
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    description: text('description').notNull(),
+    referenceType: text('reference_type'), // settlement, p2p, manual, expense
+    referenceId: uuid('reference_id'),
+    balanceAfter: numeric('balance_after', { precision: 18, scale: 2 }).notNull(),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_ledger_user').on(table.userId),
+    vaultIdx: index('idx_ledger_vault').on(table.vaultId),
+    refIdx: index('idx_ledger_ref').on(table.referenceId),
+}));
+
+// Settlements - Tracking transfers between internal vaults
+export const settlements = pgTable('settlements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceVaultId: uuid('source_vault_id').notNull(),
+    destinationVaultId: uuid('destination_vault_id').notNull(),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    status: text('status').default('pending'), // pending, completed, failed, reversed
+    executionDate: timestamp('execution_date'),
+    failureReason: text('failure_reason'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_settlements_user').on(table.userId),
+}));
+
+// P2P Requests - User-to-User fund requests and transfers
+export const p2pRequests = pgTable('p2p_requests', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    senderId: uuid('sender_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    receiverId: uuid('receiver_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    status: text('status').default('pending'), // pending, accepted, rejected, cancelled, settled
+    note: text('note'),
+    settlementId: uuid('settlement_id').references(() => settlements.id),
+    expiresAt: timestamp('expires_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    senderIdx: index('idx_p2p_sender').on(table.senderId),
+    receiverIdx: index('idx_p2p_receiver').on(table.receiverId),
+    statusIdx: index('idx_p2p_status').on(table.status),
+}));
