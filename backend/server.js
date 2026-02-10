@@ -39,6 +39,16 @@ import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
 import insightsRoutes from "./routes/insights.js";
+import budgetRoutes from "./routes/budgets.js";
+import expenseSharesRoutes from "./routes/expenseShares.js";
+import reimbursementsRoutes from "./routes/reimbursements.js";
+import subscriptionRoutes from "./routes/subscriptions.js";
+import investmentRoutes from "./routes/investments.js";
+import investmentAdvice from "./routes/investments.js";
+import budgetAlertsRoutes from "./routes/budgetAlerts.js";
+import bankSyncRoutes from "./routes/bankSync.js";
+import savingsRoutes from "./routes/savings.js";
+import educationRoutes from "./routes/education.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 
 // Load environment variables
