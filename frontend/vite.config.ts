@@ -28,7 +28,6 @@ export default defineConfig({
       },
     },
   },
-  define: {
-    "process.env.VITE_API_URL": JSON.stringify("http://localhost:5001/api"),
-  },
+  // Allow environment variables to define API URL
+  // Falls back to proxy if not set
 });

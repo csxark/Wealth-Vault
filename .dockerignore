@@ -1,12 +1,11 @@
+# Root .dockerignore
+# This applies when building from the root context
+
 # Dependencies
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Build output
-dist/
-build/
 
 # Environment variables
 .env
@@ -16,6 +15,8 @@ build/
 # Testing
 coverage/
 .nyc_output/
+e2e/
+playwright-report/
 
 # Editor directories and files
 .vscode/
@@ -31,28 +32,31 @@ Thumbs.db
 # Git
 .git/
 .gitignore
+.github/
 
 # Docker
 Dockerfile
 .dockerignore
 docker-compose*.yml
-nginx.conf
 
 # Documentation
 *.md
 README.md
 LICENSE
-SIMPLE-SETUP.md
-
-# Test files
-*.test.js
-*.test.ts
-*.test.jsx
-*.test.tsx
-*.spec.js
-*.spec.ts
-vitest.config.ts
+SETUP.md
+DOCKER_GUIDE.md
+TESTING*.md
+TODO.md
 
 # Logs
 logs/
 *.log
+
+# Scripts
+*.bat
+*.sh
+*.ps1
+setup-env.js
+sync-app.js
+manual_test.js
+test-api.js
