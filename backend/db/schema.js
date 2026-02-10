@@ -908,59 +908,63 @@ export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
 }));
 
 // ============================================================================
-// FINANCIAL HEALTH AUDITOR & STRESS TESTER (#309)
+// INTER-VAULT SETTLEMENT & P2P LEDGER (#310)
 // ============================================================================
 
-// Audit Logs - Tracking system-wide forensic data
-export const auditLogs = pgTable('audit_logs', {
+// Internal Ledger - Double-entry accounting system
+export const internalLedger = pgTable('internal_ledger', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    actionType: text('action_type').notNull(), // anomaly_detected, stress_test_run, forensic_scan
-    severity: text('severity').default('info'), // info, warning, critical
-    details: jsonb('details').notNull(),
-    sourceIp: text('source_ip'),
-    isResolved: boolean('is_resolved').default(false),
-    resolvedAt: timestamp('resolved_at'),
-    notes: text('notes'),
+    vaultId: uuid('vault_id').notNull(),
+    transactionType: text('transaction_type').notNull(), // debit, credit
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    description: text('description').notNull(),
+    referenceType: text('reference_type'), // settlement, p2p, manual, expense
+    referenceId: uuid('reference_id'),
+    balanceAfter: numeric('balance_after', { precision: 18, scale: 2 }).notNull(),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
 }, (table) => ({
-    userIdx: index('idx_audit_logs_user').on(table.userId),
-    actionIdx: index('idx_audit_logs_action').on(table.actionType),
+    userIdx: index('idx_ledger_user').on(table.userId),
+    vaultIdx: index('idx_ledger_vault').on(table.vaultId),
+    refIdx: index('idx_ledger_ref').on(table.referenceId),
 }));
 
-// Stress Scenarios - Configurations for liquidity stress testing
-export const stressScenarios = pgTable('stress_scenarios', {
+// Settlements - Tracking transfers between internal vaults
+export const settlements = pgTable('settlements', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    name: text('name').notNull(),
-    description: text('description'),
-    scenarioType: text('scenario_type').notNull(), // market_crash, job_loss, medical_emergency, hyperinflation
-    parameters: jsonb('parameters').notNull(), // { incomeDrop: 0.5, expensesRise: 0.2, marketDrop: 0.4 }
-    survivalRunwayDays: integer('survival_runway_days'),
-    criticalFailurePoint: timestamp('critical_failure_point'),
-    recommendations: jsonb('recommendations').default([]),
-    status: text('status').default('active'),
+    sourceVaultId: uuid('source_vault_id').notNull(),
+    destinationVaultId: uuid('destination_vault_id').notNull(),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    status: text('status').default('pending'), // pending, completed, failed, reversed
+    executionDate: timestamp('execution_date'),
+    failureReason: text('failure_reason'),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
-    userIdx: index('idx_stress_scenarios_user').on(table.userId),
+    userIdx: index('idx_settlements_user').on(table.userId),
 }));
 
-// Anomaly Patterns - Definitions for suspicious spending behavior
-export const anomalyPatterns = pgTable('anomaly_patterns', {
+// P2P Requests - User-to-User fund requests and transfers
+export const p2pRequests = pgTable('p2p_requests', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    patternName: text('pattern_name').notNull(),
-    detectionLogic: text('detection_logic').notNull(), // outlier, velocity, location_jump, duplicate_payout
-    threshold: doublePrecision('threshold').default(2.5), // z-score or percentage
-    isActive: boolean('is_active').default(true),
-    lastDetectionAt: timestamp('last_detection_at'),
-    detectionCount: integer('detection_count').default(0),
+    senderId: uuid('sender_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    receiverId: uuid('receiver_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    status: text('status').default('pending'), // pending, accepted, rejected, cancelled, settled
+    note: text('note'),
+    settlementId: uuid('settlement_id').references(() => settlements.id),
+    expiresAt: timestamp('expires_at'),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
-    userIdx: index('idx_anomaly_patterns_user').on(table.userId),
+    senderIdx: index('idx_p2p_sender').on(table.senderId),
+    receiverIdx: index('idx_p2p_receiver').on(table.receiverId),
+    statusIdx: index('idx_p2p_status').on(table.status),
 }));

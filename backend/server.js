@@ -54,7 +54,7 @@ import vaultConsolidationRoutes from "./routes/vault-consolidation.js";
 import recurringPaymentsRoutes from "./routes/recurring-payments.js";
 import categorizationRoutes from "./routes/categorization.js";
 import currencyPortfolioRoutes from "./routes/currency-portfolio.js";
-import forensicAuditRoutes from "./routes/forensic-audit.js";
+import vaultSettlementRoutes from "./routes/vault-settlements.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -73,7 +73,7 @@ import consolidationSync from "./jobs/consolidationSync.js";
 import recurringPaymentProcessor from "./jobs/recurringPaymentProcessor.js";
 import categorizationTrainer from "./jobs/categorizationTrainer.js";
 import fxRateUpdater from "./jobs/fxRateUpdater.js";
-import anomalyDetector from "./jobs/anomalyDetector.js";
+import ledgerReconciler from "./jobs/ledgerReconciler.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
@@ -255,7 +255,7 @@ app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
 app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
 app.use("/api/categorization", userLimiter, categorizationRoutes);
 app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
-app.use("/api/forensic-audit", userLimiter, forensicAuditRoutes);
+app.use("/api/vault-settlements", userLimiter, vaultSettlementRoutes);
 
 
 
@@ -318,7 +318,7 @@ app.listen(PORT, () => {
   recurringPaymentProcessor.start();
   categorizationTrainer.start();
   fxRateUpdater.start();
-  anomalyDetector.start();
+  ledgerReconciler.start();
 
 
 
