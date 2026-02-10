@@ -907,3 +907,55 @@ export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
     statusIdx: index('idx_hedge_status').on(table.status),
 }));
 
+// ============================================================================
+// PORTFOLIO REBALANCING & ASSET DRIFT MANAGER (#308)
+// ============================================================================
+
+// Target Allocations - Define desired % for each asset in a portfolio
+export const targetAllocations = pgTable('target_allocations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').notNull(), // Links to portfolios table
+    symbol: text('symbol').notNull(), // Asset symbol (BTC, AAPL, etc)
+    targetPercentage: numeric('target_percentage', { precision: 5, scale: 2 }).notNull(), // e.g. 20.00 for 20%
+    toleranceBand: numeric('tolerance_band', { precision: 5, scale: 2 }).default('5.00'), // e.g. 5% drift allowed
+    rebalanceFrequency: text('rebalance_frequency').default('monthly'), // monthly, quarterly, yearly
+    lastRebalancedAt: timestamp('last_rebalanced_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_target_allocations_user').on(table.userId),
+    portfolioIdx: index('idx_target_allocations_portfolio').on(table.portfolioId),
+}));
+
+// Rebalance History - Logs of performed rebalancing operations
+export const rebalanceHistory = pgTable('rebalance_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').notNull(),
+    status: text('status').default('proposed'), // proposed, executing, completed, failed
+    driftAtExecution: jsonb('drift_at_execution').notNull(), // Snapshot of drift before trades
+    tradesPerformed: jsonb('trades_performed').default([]), // List of buy/sell orders
+    totalTaxImpact: numeric('total_tax_impact', { precision: 12, scale: 2 }).default('0'),
+    feesPaid: numeric('fees_paid', { precision: 12, scale: 2 }).default('0'),
+    metadata: jsonb('metadata').default({}),
+    executedAt: timestamp('executed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_rebalance_history_user').on(table.userId),
+}));
+
+// Drift Logs - Hourly health checks for portfolios
+export const driftLogs = pgTable('drift_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').notNull(),
+    currentAllocations: jsonb('current_allocations').notNull(), // { 'BTC': 25%, 'ETH': 15% }
+    maxDriftDetected: numeric('max_drift_detected', { precision: 5, scale: 2 }).notNull(),
+    isBreachDetected: boolean('is_breach_detected').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_drift_logs_user').on(table.userId),
+    portfolioIdx: index('idx_drift_logs_portfolio').on(table.portfolioId),
+}));
