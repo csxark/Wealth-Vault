@@ -11,7 +11,9 @@ const getTable = (modelName) => {
     'User': schema.users,
     'Expense': schema.expenses,
     'Category': schema.categories,
-    'Goal': schema.goals
+    'Goal': schema.goals,
+    'Asset': schema.fixedAssets,
+    'Investment': schema.investments
   };
   return map[modelName];
 };

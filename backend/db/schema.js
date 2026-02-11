@@ -1013,3 +1013,58 @@ export const driftLogs = pgTable('drift_logs', {
     userIdx: index('idx_drift_logs_user').on(table.userId),
     portfolioIdx: index('idx_drift_logs_portfolio').on(table.portfolioId),
 }));
+
+// ============================================================================
+// AUDIT & LOGGING SYSTEM (#319)
+// ============================================================================
+
+export const auditLogs = pgTable('audit_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    resourceType: text('resource_type'),
+    resourceId: text('resource_id'),
+    originalState: jsonb('original_state'),
+    newState: jsonb('new_state'),
+    delta: jsonb('delta'),
+    deltaHash: text('delta_hash'),
+    metadata: jsonb('metadata').default({}),
+    status: text('status').default('success'),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    sessionId: text('session_id'),
+    requestId: text('request_id'),
+    performedAt: timestamp('performed_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_audit_user').on(table.userId),
+    actionIdx: index('idx_audit_action').on(table.action),
+    resourceIdx: index('idx_audit_resource').on(table.resourceType, table.resourceId),
+    dateIdx: index('idx_audit_date').on(table.performedAt),
+}));
+
+export const auditSnapshots = pgTable('audit_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    snapshotData: jsonb('snapshot_data').notNull(),
+    hash: text('hash').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const forensicQueries = pgTable('forensic_queries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    queryType: text('query_type').notNull(), // replay, trace, explain
+    targetDate: timestamp('target_date'),
+    targetResourceId: text('target_resource_id'),
+    queryParams: jsonb('query_params').default({}),
+    resultSummary: jsonb('result_summary').default({}),
+    aiExplanation: jsonb('ai_explanation'),
+    executionTime: integer('execution_time'), // ms
+    status: text('status').default('pending'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_forensic_user').on(table.userId),
+    typeIdx: index('idx_forensic_type').on(table.queryType),
+}));
