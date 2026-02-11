@@ -233,6 +233,7 @@ router.post(
   "/",
   protect,
   guardExpenseCreation(), // Security guard middleware
+  securityInterceptor(),
   [
     body("amount").isFloat({ min: 0.01 }),
     body("description").trim().isLength({ min: 1, max: 200 }),
@@ -464,32 +465,8 @@ router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), as
     // Proactively monitor budget thresholds
     await budgetEngine.monitorBudget(req.user.id, updateData.categoryId || oldExpense.categoryId);
 
-    // Log state delta for forensic tracking
-    await logStateDelta({
-      userId: req.user.id,
-      resourceType: 'expense',
-      resourceId: req.params.id,
-      operation: 'UPDATE',
-      beforeState: oldExpense,
-      afterState: updatedExpense,
-      triggeredBy: 'user',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-    });
+    // Audit logging handled by securityInterceptor middleware
 
-    // Log expense update
-    logAudit(req, {
-      userId: req.user.id,
-      action: AuditActions.EXPENSE_UPDATE,
-      resourceType: ResourceTypes.EXPENSE,
-      resourceId: req.params.id,
-      metadata: {
-        updatedFields: Object.keys(updateData),
-        oldAmount: oldExpense.amount,
-        newAmount: updateData.amount,
-      },
-      status: 'success',
-    });
 
     const result = await db.query.expenses.findFirst({
       where: eq(expenses.id, updatedExpense.id),
@@ -521,32 +498,8 @@ router.delete("/:id", protect, checkOwnership("Expense"), securityInterceptor(),
       await updateCategoryStats(expense.categoryId);
     }
 
-    // Log state delta for forensic tracking
-    await logStateDelta({
-      userId: req.user.id,
-      resourceType: 'expense',
-      resourceId: req.params.id,
-      operation: 'DELETE',
-      beforeState: expense,
-      afterState: null,
-      triggeredBy: 'user',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-    });
+    // Audit logging handled by securityInterceptor middleware
 
-    // Log expense deletion
-    logAudit(req, {
-      userId: req.user.id,
-      action: AuditActions.EXPENSE_DELETE,
-      resourceType: ResourceTypes.EXPENSE,
-      resourceId: req.params.id,
-      metadata: {
-        amount: expense.amount,
-        description: expense.description,
-        categoryId: expense.categoryId,
-      },
-      status: 'success',
-    });
 
     res.json({ success: true, message: "Expense deleted successfully" });
   } catch (error) {

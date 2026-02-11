@@ -4,8 +4,8 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import replayEngine from '../services/replayEngine.js';
 import forensicAI from '../services/forensicAI.js';
 import db from '../config/db.js';
-import { forensicQueries, auditSnapshots, stateDeltas } from '../db/schema.js';
-import { eq, desc, and } from 'drizzle-orm';
+import { forensicQueries, auditSnapshots, auditLogs } from '../db/schema.js';
+import { eq, desc, and, isNotNull } from 'drizzle-orm';
 
 const router = express.Router();
 
@@ -183,16 +183,20 @@ router.get('/queries', protect, asyncHandler(async (req, res) => {
 router.get('/deltas', protect, asyncHandler(async (req, res) => {
   const { limit = 50, resourceType } = req.query;
 
-  const conditions = [eq(stateDeltas.userId, req.user.id)];
+  const conditions = [
+    eq(auditLogs.userId, req.user.id),
+    isNotNull(auditLogs.delta) // Only return logs with deltas
+  ];
+
   if (resourceType) {
-    conditions.push(eq(stateDeltas.resourceType, resourceType));
+    conditions.push(eq(auditLogs.resourceType, resourceType));
   }
 
   const deltas = await db
     .select()
-    .from(stateDeltas)
+    .from(auditLogs)
     .where(and(...conditions))
-    .orderBy(desc(stateDeltas.createdAt))
+    .orderBy(desc(auditLogs.performedAt))
     .limit(parseInt(limit));
 
   res.success(deltas, 'State deltas retrieved successfully');
