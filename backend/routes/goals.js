@@ -447,6 +447,14 @@ router.post(
         message: "Contribution added successfully",
         data: { goal: result },
       });
+
+      // Recalculate financial health score after goal contribution
+      try {
+        await financialHealthService.recalculateAndSaveScore(req.user.id);
+      } catch (scoreError) {
+        console.error('Error recalculating financial health score after goal contribution:', scoreError);
+        // Don't fail the contribution if score calculation fails
+      }
     } catch (error) {
       console.error("Add contribution error:", error);
       res

@@ -4,6 +4,7 @@ import { expenses } from '../db/schema.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
 import savingsService from './savingsService.js';
 import categorizationService from './categorizationService.js';
+import financialHealthService from './financialHealthService.js';
 
 /**
  * Recurring Transaction Execution Service
