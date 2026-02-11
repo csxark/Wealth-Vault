@@ -57,7 +57,7 @@ try {
 
   console.log('\n🎉 Environment setup complete!');
   console.log('\n📋 Next steps:');
-  console.log('1. Start MongoDB (if not already running)');
+  console.log('1. Ensure PostgreSQL database is accessible (Supabase configured)');
   console.log('2. Run: cd backend && npm install && npm run dev');
   console.log('3. Run: cd frontend && npm install && npm run dev');
   console.log('4. Test API connection with: node test-api.js');

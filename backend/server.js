@@ -76,6 +76,7 @@ import consolidationSync from "./jobs/consolidationSync.js";
 import recurringPaymentProcessor from "./jobs/recurringPaymentProcessor.js";
 import categorizationTrainer from "./jobs/categorizationTrainer.js";
 import fxRateUpdater from "./jobs/fxRateUpdater.js";
+import driftMonitor from "./jobs/driftMonitor.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
@@ -257,6 +258,8 @@ app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
 app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
 app.use("/api/categorization", userLimiter, categorizationRoutes);
 app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
+app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
+
 
 
 
