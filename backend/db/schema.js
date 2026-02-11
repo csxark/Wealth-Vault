@@ -974,6 +974,77 @@ export const savingsRoundupsRelations = relations(savingsRoundups, ({ one }) => 
     }),
 }));
 
+// Savings Challenges Table
+export const savingsChallenges = pgTable('savings_challenges', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    title: text('title').notNull(),
+    description: text('description'),
+    type: text('type').notNull(), // 'personal', 'community'
+    targetAmount: numeric('target_amount', { precision: 12, scale: 2 }).notNull(),
+    duration: integer('duration').notNull(), // Duration in days
+    startDate: timestamp('start_date').notNull(),
+    endDate: timestamp('end_date').notNull(),
+    creatorId: uuid('creator_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    isActive: boolean('is_active').default(true),
+    rules: jsonb('rules').default({
+        minParticipants: 1,
+        maxParticipants: null,
+        allowLateJoin: false,
+        progressTracking: 'automatic' // 'automatic', 'manual'
+    }),
+    rewards: jsonb('rewards').default({
+        completionBadge: true,
+        leaderboardBonus: false,
+        customRewards: []
+    }),
+    metadata: jsonb('metadata').default({
+        participantCount: 0,
+        totalProgress: 0,
+        completionRate: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Challenge Participants Table
+export const challengeParticipants = pgTable('challenge_participants', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    challengeId: uuid('challenge_id').references(() => savingsChallenges.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    joinedAt: timestamp('joined_at').defaultNow(),
+    currentProgress: numeric('current_progress', { precision: 12, scale: 2 }).default('0'),
+    status: text('status').default('active'), // 'active', 'completed', 'withdrawn'
+    lastUpdated: timestamp('last_updated').defaultNow(),
+    metadata: jsonb('metadata').default({
+        contributions: [],
+        milestones: [],
+        streakDays: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Savings Challenges Relations
+export const savingsChallengesRelations = relations(savingsChallenges, ({ one, many }) => ({
+    creator: one(users, {
+        fields: [savingsChallenges.creatorId],
+        references: [users.id],
+    }),
+    participants: many(challengeParticipants),
+}));
+
+// Challenge Participants Relations
+export const challengeParticipantsRelations = relations(challengeParticipants, ({ one }) => ({
+    challenge: one(savingsChallenges, {
+        fields: [challengeParticipants.challengeId],
+        references: [savingsChallenges.id],
+    }),
+    user: one(users, {
+        fields: [challengeParticipants.userId],
+        references: [users.id],
+    }),
+}));
+
 // Education Content Table
 export const educationContent = pgTable('education_content', {
     id: uuid('id').defaultRandom().primaryKey(),
