@@ -149,6 +149,54 @@ export const portfolios = pgTable('portfolios', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+export const investments = pgTable('investments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    symbol: text('symbol').notNull(),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // stock, crypto, etf, mutual_fund
+    quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
+    averageCost: numeric('average_cost', { precision: 18, scale: 8 }).notNull(),
+    totalCost: numeric('total_cost', { precision: 18, scale: 2 }).notNull(),
+    currentPrice: numeric('current_price', { precision: 18, scale: 8 }),
+    marketValue: numeric('market_value', { precision: 18, scale: 2 }),
+    unrealizedGainLoss: numeric('unrealized_gain_loss', { precision: 18, scale: 2 }),
+    unrealizedGainLossPercent: numeric('unrealized_gain_loss_percent', { precision: 10, scale: 2 }),
+    baseCurrencyValue: numeric('base_currency_value', { precision: 18, scale: 2 }),
+    baseCurrencyCode: text('base_currency_code'),
+    valuationDate: timestamp('valuation_date'),
+    lastPriceUpdate: timestamp('last_price_update'),
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_investments_user').on(table.userId),
+    portfolioIdx: index('idx_investments_portfolio').on(table.portfolioId),
+    symbolIdx: index('idx_investments_symbol').on(table.symbol),
+}));
+
+export const investmentTransactions = pgTable('investment_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    type: text('type').notNull(), // buy, sell, dividend, interest
+    quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
+    price: numeric('price', { precision: 18, scale: 8 }).notNull(),
+    fees: numeric('fees', { precision: 12, scale: 2 }).default('0'),
+    totalAmount: numeric('total_amount', { precision: 18, scale: 2 }).notNull(),
+    date: timestamp('date').notNull(),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_inv_trans_user').on(table.userId),
+    investmentIdx: index('idx_inv_trans_investment').on(table.investmentId),
+    dateIdx: index('idx_inv_trans_date').on(table.date),
+}));
+
 // Time-Machine: Replay Scenarios
 export const replayScenarios = pgTable('replay_scenarios', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -215,6 +263,9 @@ export const fixedAssets = pgTable('fixed_assets', {
     category: text('category').notNull(),
     purchasePrice: numeric('purchase_price', { precision: 12, scale: 2 }).notNull(),
     currentValue: numeric('current_value', { precision: 12, scale: 2 }).notNull(),
+    baseCurrencyValue: numeric('base_currency_value', { precision: 12, scale: 2 }),
+    baseCurrencyCode: text('base_currency_code'),
+    valuationDate: timestamp('valuation_date'),
     appreciationRate: numeric('appreciation_rate', { precision: 5, scale: 2 }),
     createdAt: timestamp('created_at').defaultNow(),
 });
@@ -294,6 +345,9 @@ export const debts = pgTable('debts', {
     debtType: text('debt_type').notNull(),
     principalAmount: numeric('principal_amount', { precision: 12, scale: 2 }).notNull(),
     currentBalance: numeric('current_balance', { precision: 12, scale: 2 }).notNull(),
+    baseCurrencyValue: numeric('base_currency_value', { precision: 12, scale: 2 }),
+    baseCurrencyCode: text('base_currency_code'),
+    valuationDate: timestamp('valuation_date'),
     apr: numeric('apr', { precision: 5, scale: 3 }).notNull(),
     minimumPayment: numeric('minimum_payment', { precision: 12, scale: 2 }).notNull(),
     paymentDueDay: integer('payment_due_day'),
