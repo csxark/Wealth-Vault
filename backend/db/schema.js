@@ -908,63 +908,54 @@ export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
 }));
 
 // ============================================================================
-// INTER-VAULT SETTLEMENT & P2P LEDGER (#310)
+// PORTFOLIO REBALANCING & ASSET DRIFT MANAGER (#308)
 // ============================================================================
 
-// Internal Ledger - Double-entry accounting system
-export const internalLedger = pgTable('internal_ledger', {
+// Target Allocations - Define desired % for each asset in a portfolio
+export const targetAllocations = pgTable('target_allocations', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    vaultId: uuid('vault_id').notNull(),
-    transactionType: text('transaction_type').notNull(), // debit, credit
-    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
-    currency: text('currency').default('USD'),
-    description: text('description').notNull(),
-    referenceType: text('reference_type'), // settlement, p2p, manual, expense
-    referenceId: uuid('reference_id'),
-    balanceAfter: numeric('balance_after', { precision: 18, scale: 2 }).notNull(),
-    metadata: jsonb('metadata').default({}),
-    createdAt: timestamp('created_at').defaultNow(),
-}, (table) => ({
-    userIdx: index('idx_ledger_user').on(table.userId),
-    vaultIdx: index('idx_ledger_vault').on(table.vaultId),
-    refIdx: index('idx_ledger_ref').on(table.referenceId),
-}));
-
-// Settlements - Tracking transfers between internal vaults
-export const settlements = pgTable('settlements', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    sourceVaultId: uuid('source_vault_id').notNull(),
-    destinationVaultId: uuid('destination_vault_id').notNull(),
-    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
-    currency: text('currency').default('USD'),
-    status: text('status').default('pending'), // pending, completed, failed, reversed
-    executionDate: timestamp('execution_date'),
-    failureReason: text('failure_reason'),
+    portfolioId: uuid('portfolio_id').notNull(), // Links to portfolios table
+    symbol: text('symbol').notNull(), // Asset symbol (BTC, AAPL, etc)
+    targetPercentage: numeric('target_percentage', { precision: 5, scale: 2 }).notNull(), // e.g. 20.00 for 20%
+    toleranceBand: numeric('tolerance_band', { precision: 5, scale: 2 }).default('5.00'), // e.g. 5% drift allowed
+    rebalanceFrequency: text('rebalance_frequency').default('monthly'), // monthly, quarterly, yearly
+    lastRebalancedAt: timestamp('last_rebalanced_at'),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
-    userIdx: index('idx_settlements_user').on(table.userId),
+    userIdx: index('idx_target_allocations_user').on(table.userId),
+    portfolioIdx: index('idx_target_allocations_portfolio').on(table.portfolioId),
 }));
 
-// P2P Requests - User-to-User fund requests and transfers
-export const p2pRequests = pgTable('p2p_requests', {
+// Rebalance History - Logs of performed rebalancing operations
+export const rebalanceHistory = pgTable('rebalance_history', {
     id: uuid('id').defaultRandom().primaryKey(),
-    senderId: uuid('sender_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    receiverId: uuid('receiver_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
-    currency: text('currency').default('USD'),
-    status: text('status').default('pending'), // pending, accepted, rejected, cancelled, settled
-    note: text('note'),
-    settlementId: uuid('settlement_id').references(() => settlements.id),
-    expiresAt: timestamp('expires_at'),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').notNull(),
+    status: text('status').default('proposed'), // proposed, executing, completed, failed
+    driftAtExecution: jsonb('drift_at_execution').notNull(), // Snapshot of drift before trades
+    tradesPerformed: jsonb('trades_performed').default([]), // List of buy/sell orders
+    totalTaxImpact: numeric('total_tax_impact', { precision: 12, scale: 2 }).default('0'),
+    feesPaid: numeric('fees_paid', { precision: 12, scale: 2 }).default('0'),
     metadata: jsonb('metadata').default({}),
+    executedAt: timestamp('executed_at'),
     createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
-    senderIdx: index('idx_p2p_sender').on(table.senderId),
-    receiverIdx: index('idx_p2p_receiver').on(table.receiverId),
-    statusIdx: index('idx_p2p_status').on(table.status),
+    userIdx: index('idx_rebalance_history_user').on(table.userId),
+}));
+
+// Drift Logs - Hourly health checks for portfolios
+export const driftLogs = pgTable('drift_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').notNull(),
+    currentAllocations: jsonb('current_allocations').notNull(), // { 'BTC': 25%, 'ETH': 15% }
+    maxDriftDetected: numeric('max_drift_detected', { precision: 5, scale: 2 }).notNull(),
+    isBreachDetected: boolean('is_breach_detected').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_drift_logs_user').on(table.userId),
+    portfolioIdx: index('idx_drift_logs_portfolio').on(table.portfolioId),
 }));
