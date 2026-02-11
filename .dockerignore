@@ -1,0 +1,62 @@
+# Root .dockerignore
+# This applies when building from the root context
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage/
+.nyc_output/
+e2e/
+playwright-report/
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Documentation
+*.md
+README.md
+LICENSE
+SETUP.md
+DOCKER_GUIDE.md
+TESTING*.md
+TODO.md
+
+# Logs
+logs/
+*.log
+
+# Scripts
+*.bat
+*.sh
+*.ps1
+setup-env.js
+sync-app.js
+manual_test.js
+test-api.js
