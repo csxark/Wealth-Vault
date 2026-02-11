@@ -49,6 +49,7 @@ import budgetAlertsRoutes from "./routes/budgetAlerts.js";
 import bankSyncRoutes from "./routes/bankSync.js";
 import savingsRoutes from "./routes/savings.js";
 import educationRoutes from "./routes/education.js";
+import financialHealthRoutes from "./routes/financialHealth.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 
 // Load environment variables
@@ -210,6 +211,7 @@ app.use("/api/budget-alerts", userLimiter, budgetAlertsRoutes);
 app.use("/api/bank-sync", userLimiter, bankSyncRoutes);
 app.use("/api/savings", userLimiter, savingsRoutes);
 app.use("/api/education", userLimiter, educationRoutes);
+app.use("/api/financial-health", userLimiter, financialHealthRoutes);
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());

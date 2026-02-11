@@ -8,6 +8,7 @@ import budgetEngine from '../services/budgetEngine.js';
 import { initializeRecurringExpense, disableRecurring, processRoundUpAfterExpenseCreation } from '../services/expenseService.js';
 import { getJobStatus, runManualExecution } from '../jobs/recurringExecution.js';
 import savingsService from '../services/savingsService.js';
+import financialHealthService from '../services/financialHealthService.js';
 
 const router = express.Router();
 
@@ -177,6 +178,14 @@ router.post('/', async (req, res) => {
 
     // Update budget if applicable
     await budgetEngine.processExpense(newExpense);
+
+    // Recalculate financial health score
+    try {
+      await financialHealthService.recalculateAndSaveScore(userId);
+    } catch (scoreError) {
+      console.error('Error recalculating financial health score after expense creation:', scoreError);
+      // Don't fail the expense creation if score calculation fails
+    }
 
     // Log audit event
     await logAuditEventAsync({
