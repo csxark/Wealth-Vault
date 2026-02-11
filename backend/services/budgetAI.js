@@ -2,10 +2,11 @@ import db from '../config/db.js';
 import { budgetPredictions, spendingPatterns, budgetAdjustments, categoryInsights, expenses, categories, budgets } from '../db/schema.js';
 import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
 import spendingPredictor from './spendingPredictor.js';
+import { getAIProvider } from './aiProvider.js';
 
 /**
  * Budget AI - ML-powered budget management and predictions
- * Automatically adjusts budgets based on spending patterns
+ * Automatically adjusts budgets based on spending patterns and provides AI insights
  */
 class BudgetAI {
     constructor() {
@@ -515,6 +516,76 @@ class BudgetAI {
         } catch (error) {
             console.error('Failed to generate insights:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Generate strategic budget advice using AI
+     * @param {string} userId - User ID
+     * @returns {Promise<Object>} AI-generated strategy
+     */
+    async generateStrategicBudgetAdvice(userId) {
+        try {
+            // Gather context
+            const anomalies = await this.detectAnomalies(userId);
+            const recommendations = await this.generateBudgetRecommendations(userId);
+
+            const context = {
+                anomaliesCount: anomalies.length,
+                highSeverityAnomalies: anomalies.filter(a => a.severity === 'high').map(a => ({
+                    amount: a.amount,
+                    deviation: a.deviation
+                })),
+                recommendationsCount: recommendations.length,
+                suggestedChanges: recommendations.map(r => ({
+                    category: r.categoryName,
+                    change: r.type,
+                    amount: r.change
+                }))
+            };
+
+            const prompt = `
+As a financial strategist, provide a high-level budget strategy based on the extensive analysis below.
+
+Analysis Summary:
+- ${context.anomaliesCount} spending anomalies detected (${context.highSeverityAnomalies.length} high severity).
+- ${context.recommendationsCount} budget adjustments recommended.
+
+Key Adjustments Proposed:
+${JSON.stringify(context.suggestedChanges, null, 2)}
+
+Provide a JSON strategy document:
+{
+    "executiveSummary": "2 sentence overview of financial stance (e.g. 'Aggressive cost cutting needed', 'Stable with minor tweaks')",
+    "primaryFocus": "The one thing they must focus on this month",
+    "riskLevel": "low|medium|high",
+    "actionPlan": ["Step 1", "Step 2", "Step 3"],
+    "longTermOutlook": "Projection if they follow this plan"
+}
+`;
+
+            const provider = getAIProvider();
+            const strategy = await provider.generateJSON(prompt, { model: 'pro' });
+
+            return {
+                strategy,
+                generatedAt: new Date(),
+                source: 'ai-provider'
+            };
+
+        } catch (error) {
+            console.error('Failed to generate strategic budget advice:', error);
+            // Return safe fallback
+            return {
+                strategy: {
+                    executiveSummary: "AI strategy unavailable. Please review budget recommendations manually.",
+                    primaryFocus: "Review anomalies",
+                    riskLevel: "unknown",
+                    actionPlan: ["Check recent high transactions", "Review budget limits"],
+                    longTermOutlook: "Unknown"
+                },
+                source: 'fallback'
+            };
         }
     }
 }

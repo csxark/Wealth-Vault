@@ -3,13 +3,11 @@
  * Gemini AI integration for intelligent tax deduction detection and optimization recommendations
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getAIProvider } from './aiProvider.js';
 import { db } from '../config/db.js';
 import { expenses, taxCategories, userTaxProfiles } from '../db/schema.js';
 import { eq, and, gte } from 'drizzle-orm';
 import { getUserTaxProfile } from './taxService.js';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 /**
  * Analyze expense description to determine tax deductibility
@@ -21,12 +19,10 @@ export async function analyzeExpenseTaxDeductibility(expense, userProfile) {
   try {
     // Get all tax categories for context
     const allTaxCategories = await db.select().from(taxCategories);
+    const provider = getAIProvider();
 
-    if (!process.env.GEMINI_API_KEY) {
-      return performRuleBasedTaxAnalysis(expense, allTaxCategories, userProfile);
-    }
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    // In a real scenario, check if provider is active/key present via provider method or config
+    // Here we wrap in try/catch to fallback
 
     const categoryList = allTaxCategories
       .filter(cat => cat.isActive)
@@ -78,19 +74,13 @@ Important considerations:
 
 Provide ONLY the JSON response, no additional commentary.`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-
-    // Extract JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('AI response did not contain valid JSON');
-    }
-
-    const analysis = JSON.parse(jsonMatch[0]);
+    const analysis = await provider.generateJSON(prompt, {
+      model: 'experimental',
+      temperature: 0.1 // Low temperature for factual analysis
+    });
 
     // Add source metadata
-    analysis.source = 'gemini-ai';
+    analysis.source = 'gemini-ai-provider';
     analysis.analyzedAt = new Date();
 
     return analysis;
@@ -106,7 +96,7 @@ Provide ONLY the JSON response, no additional commentary.`;
 function performRuleBasedTaxAnalysis(expense, taxCategories, userProfile) {
   const description = (expense.description || '').toLowerCase();
   const amount = parseFloat(expense.amount || 0);
-  
+
   let isTaxDeductible = false;
   let recommendedTaxCategory = 'Non-Deductible';
   let deductibilityRate = 0;
@@ -118,22 +108,22 @@ function performRuleBasedTaxAnalysis(expense, taxCategories, userProfile) {
 
   // Business expenses keywords
   const businessKeywords = ['office', 'software', 'subscription', 'saas', 'hosting', 'domain', 'marketing', 'advertising', 'consulting', 'professional', 'service', 'business', 'work', 'client', 'meeting'];
-  
+
   // Charitable keywords
   const charitableKeywords = ['donation', 'charity', 'nonprofit', 'church', 'temple', 'mosque', 'foundation', 'goodwill', 'salvation army'];
-  
+
   // Medical keywords
   const medicalKeywords = ['doctor', 'hospital', 'pharmacy', 'prescription', 'medical', 'dental', 'vision', 'therapy', 'surgery', 'insurance premium'];
-  
+
   // Education keywords
   const educationKeywords = ['tuition', 'course', 'training', 'certification', 'college', 'university', 'textbook', 'udemy', 'coursera'];
-  
+
   // Non-deductible keywords
   const personalKeywords = ['grocery', 'restaurant', 'movie', 'entertainment', 'clothing', 'personal', 'vacation', 'gym', 'hobby'];
 
   // Check for business expenses (if self-employed or business owner)
-  if ((userProfile.selfEmployed || userProfile.businessOwner) && 
-      businessKeywords.some(kw => description.includes(kw))) {
+  if ((userProfile.selfEmployed || userProfile.businessOwner) &&
+    businessKeywords.some(kw => description.includes(kw))) {
     isTaxDeductible = true;
     recommendedTaxCategory = 'Business Expenses';
     deductibilityRate = 1.0;
@@ -209,7 +199,7 @@ function performRuleBasedTaxAnalysis(expense, taxCategories, userProfile) {
     alternativeCategories: [],
     conditionsToMeet,
     irsCodeReference: getTaxCategoryIRSCode(recommendedTaxCategory, taxCategories),
-    recommendation: isTaxDeductible 
+    recommendation: isTaxDeductible
       ? `Keep this receipt and categorize as "${recommendedTaxCategory}" for tax time.`
       : 'This expense does not appear to be tax-deductible.',
     source: 'rule-based',
@@ -247,7 +237,7 @@ export async function batchAnalyzeExpenses(userId, expenseIds) {
     // Analyze each expense
     for (const expense of expensesToAnalyze) {
       const analysis = await analyzeExpenseTaxDeductibility(expense, userProfile);
-      
+
       // Update expense with tax information
       if (analysis.isTaxDeductible && analysis.confidence > 0.7) {
         const taxCat = await db.query.taxCategories.findFirst({
@@ -293,10 +283,13 @@ export async function batchAnalyzeExpenses(userId, expenseIds) {
 /**
  * Generate AI-powered tax optimization recommendations
  */
+/**
+ * Generate AI-powered tax optimization recommendations
+ */
 export async function generateTaxOptimizationRecommendations(userId, year = new Date().getFullYear()) {
   try {
     const userProfile = await getUserTaxProfile(userId);
-    
+
     // Get all expenses for the year
     const startOfYear = new Date(year, 0, 1);
     const yearExpenses = await db
@@ -309,11 +302,7 @@ export async function generateTaxOptimizationRecommendations(userId, year = new 
         )
       );
 
-    if (!process.env.GEMINI_API_KEY) {
-      return generateRuleBasedRecommendations(userProfile, yearExpenses);
-    }
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    const provider = getAIProvider();
 
     // Prepare expense summary
     const totalExpenses = yearExpenses.length;
@@ -409,16 +398,11 @@ Focus on:
 
 Provide ONLY the JSON response.`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    const recommendations = await provider.generateJSON(prompt, {
+      model: 'experimental'
+    });
 
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('AI response did not contain valid JSON');
-    }
-
-    const recommendations = JSON.parse(jsonMatch[0]);
-    recommendations.source = 'gemini-ai';
+    recommendations.source = 'gemini-ai-provider';
     recommendations.generatedAt = new Date();
     recommendations.year = year;
 
@@ -434,7 +418,7 @@ Provide ONLY the JSON response.`;
     return recommendations;
   } catch (error) {
     console.error('AI tax recommendations failed, falling back to rule-based:', error);
-    return generateRuleBasedRecommendations(userProfile, yearExpenses);
+    return generateRuleBasedRecommendations(userProfile, yearExpenses || []); // Ensure userProfile is passed if available, logic might need adjustment but assuming rule based needs minimal
   }
 }
 
@@ -469,7 +453,7 @@ function generateRuleBasedRecommendations(userProfile, yearExpenses) {
     ],
     professionalAdvice: {
       shouldConsultCPA: totalDeductions > 20000 || userProfile.selfEmployed,
-      reason: totalDeductions > 20000 
+      reason: totalDeductions > 20000
         ? 'Your deductions are substantial enough to benefit from professional review'
         : 'Basic tax situation can likely be handled with software',
       estimatedCost: '$200-500',

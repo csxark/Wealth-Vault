@@ -1,4 +1,4 @@
-import geminiService from './geminiservice.js';
+import { getAIProvider } from './aiProvider.js';
 import db from '../config/db.js';
 import { subscriptions, subscriptionUsage, cancellationSuggestions } from '../db/schema.js';
 import { eq, and, desc, gte } from 'drizzle-orm';
@@ -193,7 +193,7 @@ class SubscriptionAI {
     }
 
     /**
-     * Generate AI insights using Gemini
+     * Generate AI insights using universal AI Provider
      */
     async generateAIInsights(subscription, usageData, suggestionType) {
         try {
@@ -257,7 +257,10 @@ Cost: ₹${subscription.amount} per ${subscription.billingCycle}
 Provide optimization suggestions in under 150 words.`;
             }
 
-            const insights = await geminiService.generateInsights(prompt);
+            const provider = getAIProvider();
+            const insights = await provider.generateText(prompt, {
+                model: 'fast'
+            });
 
             return {
                 recommendation: insights,
