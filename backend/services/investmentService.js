@@ -445,6 +445,68 @@ export const calculateInvestmentMetrics = async (investmentId, userId) => {
   }
 };
 
+import notificationService from './notificationService.js';
+
+/**
+ * Batch update investment valuations based on FX rates
+ * @param {string} userId - User ID
+ * @param {Function} getConversionRate - Function(currency) => rate
+ * @param {string} baseCurrencyCode - User's base currency code
+ */
+export const batchUpdateValuations = async (userId, getConversionRate, baseCurrencyCode) => {
+  try {
+    const userInvestments = await db
+      .select()
+      .from(investments)
+      .where(
+        and(
+          eq(investments.userId, userId),
+          eq(investments.isActive, true)
+        )
+      );
+
+    const updates = userInvestments.map(async (inv) => {
+      const currency = inv.currency || 'USD';
+      const rate = getConversionRate(currency);
+
+      if (rate !== null) {
+        const marketValue = parseFloat(inv.marketValue || '0');
+        const baseValue = marketValue * rate;
+        const oldBaseValue = parseFloat(inv.baseCurrencyValue || '0');
+
+        // Check for significant value swing (> 5%) and notify user
+        if (oldBaseValue > 0) {
+          const change = Math.abs((baseValue - oldBaseValue) / oldBaseValue);
+          if (change > 0.05) {
+            const direction = baseValue > oldBaseValue ? 'increased' : 'decreased';
+            // Non-blocking notification
+            notificationService.sendNotification(userId, {
+              title: `Significant Value Change: ${inv.symbol}`,
+              message: `Your investment ${inv.name} has ${direction} by ${(change * 100).toFixed(1)}% due to FX rate updates.`,
+              type: 'alert',
+              data: { investmentId: inv.id, oldVal: oldBaseValue, newVal: baseValue }
+            }).catch(e => console.error('Failed to send swing notification:', e));
+          }
+        }
+
+        await db
+          .update(investments)
+          .set({
+            baseCurrencyValue: baseValue.toFixed(2),
+            baseCurrencyCode: baseCurrencyCode,
+            valuationDate: new Date(),
+          })
+          .where(eq(investments.id, inv.id));
+      }
+    });
+
+    await Promise.all(updates);
+  } catch (error) {
+    console.error('Error batch updating investment valuations:', error);
+    throw error;
+  }
+};
+
 export default {
   createInvestment,
   getInvestments,
@@ -456,4 +518,5 @@ export default {
   updateInvestmentMetrics,
   updateInvestmentPrices,
   calculateInvestmentMetrics,
+  batchUpdateValuations,
 };
