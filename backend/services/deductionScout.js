@@ -1,6 +1,6 @@
 import db from '../config/db.js';
 import { taxDeductions, expenses } from '../db/schema.js';
-import geminiService from './geminiservice.js';
+import { getAIProvider } from './aiProvider.js';
 import { eq, and, isNull } from 'drizzle-orm';
 
 class DeductionScout {
@@ -105,6 +105,9 @@ class DeductionScout {
     /**
      * Use Gemini AI to analyze expense
      */
+    /**
+     * Use AI Provider to analyze expense
+     */
     async getGeminiAnalysis(expense) {
         try {
             const prompt = `
@@ -137,25 +140,20 @@ Tax deduction categories:
 Be conservative. Only flag as deductible if there's strong evidence.
 `;
 
-            const analysis = await geminiService.generateText(prompt);
+            const provider = getAIProvider();
+            const result = await provider.generateJSON(prompt, {
+                model: 'experimental',
+                temperature: 0.2
+            });
 
-            // Parse JSON response
-            const jsonMatch = analysis.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                console.warn('[Deduction Scout] No JSON in Gemini response');
-                return null;
-            }
-
-            const result = JSON.parse(jsonMatch[0]);
-
-            if (!result.isDeductible) {
+            if (!result || !result.isDeductible) {
                 return null;
             }
 
             return result;
 
         } catch (error) {
-            console.error('[Deduction Scout] Gemini analysis failed:', error.message);
+            console.error('[Deduction Scout] AI analysis failed:', error.message);
             return null;
         }
     }
@@ -234,12 +232,13 @@ Return a JSON array of deductible line items:
 `;
 
         try {
-            const response = await geminiService.generateText(prompt);
-            const jsonMatch = response.match(/\[[\s\S]*\]/);
+            const provider = getAIProvider();
+            const items = await provider.generateJSON(prompt, {
+                model: 'experimental'
+            });
 
-            if (!jsonMatch) return [];
+            if (!Array.isArray(items)) return [];
 
-            const items = JSON.parse(jsonMatch[0]);
             const deductions = [];
 
             for (const item of items) {
