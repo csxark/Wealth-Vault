@@ -1,4 +1,4 @@
-import { db } from '../config/db.js';
+import db from '../config/db.js';
 import { exchangeRates } from '../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import axios from 'axios';
@@ -14,7 +14,7 @@ const CACHE_DURATION = 3600000; // 1 hour in milliseconds
 export async function fetchExchangeRates(baseCurrency = 'USD') {
     const cacheKey = `rates_${baseCurrency}`;
     const cached = ratesCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         console.log(`Using cached rates for ${baseCurrency}`);
         return cached.data;
@@ -22,16 +22,16 @@ export async function fetchExchangeRates(baseCurrency = 'USD') {
 
     try {
         const apiKey = process.env.EXCHANGE_RATE_API_KEY || 'free';
-        const url = apiKey === 'free' 
+        const url = apiKey === 'free'
             ? `https://open.er-api.com/v6/latest/${baseCurrency}`
             : `https://v6.exchangerate-api.com/v6/${apiKey}/latest/${baseCurrency}`;
 
         const response = await axios.get(url, { timeout: 10000 });
-        
+
         if (response.data.result === 'success' || response.data.rates) {
             const rates = response.data.rates;
             const validUntil = new Date(response.data.time_next_update_unix * 1000);
-            
+
             // Save rates to database
             const savedRates = [];
             for (const [targetCurrency, rate] of Object.entries(rates)) {
@@ -58,7 +58,7 @@ export async function fetchExchangeRates(baseCurrency = 'USD') {
                         apiResponse: response.data.result
                     }
                 }).returning();
-                
+
                 savedRates.push(newRate);
             }
 
@@ -75,7 +75,7 @@ export async function fetchExchangeRates(baseCurrency = 'USD') {
         }
     } catch (error) {
         console.error('Error fetching exchange rates:', error.message);
-        
+
         // Fallback to database if API fails
         const dbRates = await db.select()
             .from(exchangeRates)
@@ -108,7 +108,7 @@ export async function convertAmount(amount, fromCurrency, toCurrency) {
     // Check cache first
     const cacheKey = `rate_${fromCurrency}_${toCurrency}`;
     const cached = ratesCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         return amount * cached.rate;
     }

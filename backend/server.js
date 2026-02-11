@@ -38,18 +38,52 @@ import analyticsRoutes from "./routes/analytics.js";
 import vaultRoutes from "./routes/vaults.js";
 import reportRoutes from "./routes/reports.js";
 import currenciesRoutes from "./routes/currencies.js";
-import insightsRoutes from "./routes/insights.js";
+import auditRoutes from "./routes/audit.js";
+import securityRoutes from "./routes/security.js";
+import subscriptionRoutes from "./routes/subscriptions.js";
+import assetRoutes from "./routes/assets.js";
+import governanceRoutes from "./routes/governance.js";
+import taxRoutes from "./routes/tax.js";
+import debtRoutes from "./routes/debts.js";
+import walletRoutes from "./routes/wallets.js";
+import fxRoutes from "./routes/fx_ledger.js";
+import simulationRoutes from "./routes/simulations.js";
+import businessRoutes from "./routes/business.js";
+import payrollRoutes from "./routes/payroll.js";
+import vaultConsolidationRoutes from "./routes/vault-consolidation.js";
+import recurringPaymentsRoutes from "./routes/recurring-payments.js";
+import categorizationRoutes from "./routes/categorization.js";
+import currencyPortfolioRoutes from "./routes/currency-portfolio.js";
 import budgetRoutes from "./routes/budgets.js";
 import expenseSharesRoutes from "./routes/expenseShares.js";
 import reimbursementsRoutes from "./routes/reimbursements.js";
-import subscriptionRoutes from "./routes/subscriptions.js";
-import investmentRoutes from "./routes/investments.js";
-import investmentAdvice from "./routes/investments.js";
-import budgetAlertsRoutes from "./routes/budgetAlerts.js";
-import bankSyncRoutes from "./routes/bankSync.js";
-import savingsRoutes from "./routes/savings.js";
-import educationRoutes from "./routes/education.js";
+import forecastRoutes from "./routes/forecasts.js";
+import debtEngine from "./services/debtEngine.js";
+import payoffOptimizer from "./services/payoffOptimizer.js";
+import refinanceScout from "./services/refinanceScout.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
+import subscriptionMonitor from "./jobs/subscriptionMonitor.js";
+import fxRateSync from "./jobs/fxRateSync.js";
+import valuationUpdater from "./jobs/valuationUpdater.js";
+import inactivityMonitor from "./jobs/inactivityMonitor.js";
+import snapshotGenerator from "./jobs/snapshotGenerator.js";
+import riskAuditor from "./jobs/riskAuditor.js";
+import taxEstimator from "./jobs/taxEstimator.js";
+import debtRecalculator from "./jobs/debtRecalculator.js";
+import rateSyncer from "./jobs/rateSyncer.js";
+import forecastUpdater from "./jobs/forecastUpdater.js";
+import consolidationSync from "./jobs/consolidationSync.js";
+import recurringPaymentProcessor from "./jobs/recurringPaymentProcessor.js";
+import categorizationTrainer from "./jobs/categorizationTrainer.js";
+import fxRateUpdater from "./jobs/fxRateUpdater.js";
+import driftMonitor from "./jobs/driftMonitor.js";
+import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
+import { scheduleTaxReminders } from "./jobs/taxReminders.js";
+import leaseMonitor from "./jobs/leaseMonitor.js";
+import dividendProcessor from "./jobs/dividendProcessor.js";
+import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
+import { initializeDefaultTaxCategories } from "./services/taxService.js";
+import marketData from "./services/marketData.js";
 
 // Load environment variables
 dotenv.config();
@@ -71,6 +105,9 @@ runImmediateSync().then(() => {
 }).catch(err => {
   console.warn('⚠️ Initial exchange rates sync failed:', err.message);
 });
+
+// Schedule weekly habit digest job
+scheduleWeeklyHabitDigest();
 
 // Initiliz uplod directorys
 initializeUploads().catch((err) => {
@@ -146,6 +183,7 @@ app.use(paginationMiddleware());
 
 // Logng and monitrng midlware
 app.use(requestIdMiddleware);
+app.use(auditRequestIdMiddleware); // Add audit request correlation
 app.use(requestLogger);
 app.use(performanceMiddleware);
 app.use(analyticsMiddleware);
@@ -201,15 +239,30 @@ app.use("/api/budgets", userLimiter, budgetRoutes);
 app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
 app.use("/api/reimbursements", userLimiter, reimbursementsRoutes);
 app.use("/api/reports", userLimiter, reportRoutes);
+app.use("/api/debts", userLimiter, debtRoutes);
+app.use("/api/wallets", userLimiter, walletRoutes);
+app.use("/api/fx", userLimiter, fxRoutes);
+app.use("/api/forecasts", userLimiter, forecastRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
+app.use("/api/audit", userLimiter, auditRoutes);
+app.use("/api/security", userLimiter, securityRoutes);
 app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
-app.use("/api/investments", userLimiter, investmentRoutes);
-app.use("/api/investment-advice", userLimiter, investmentAdvice);
-app.use("/api/budget-alerts", userLimiter, budgetAlertsRoutes);
-app.use("/api/bank-sync", userLimiter, bankSyncRoutes);
-app.use("/api/savings", userLimiter, savingsRoutes);
-app.use("/api/education", userLimiter, educationRoutes);
+app.use("/api/assets", userLimiter, assetRoutes);
+app.use("/api/governance", userLimiter, governanceRoutes);
+app.use("/api/tax", userLimiter, taxRoutes);
+app.use("/api/simulations", userLimiter, simulationRoutes);
+app.use("/api/business", userLimiter, businessRoutes);
+app.use("/api/payroll", userLimiter, payrollRoutes);
+app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
+app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
+app.use("/api/categorization", userLimiter, categorizationRoutes);
+app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
+app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
+
+
+
+
 
 // Secur fil servr for uploddd fils
 app.use("/uploads", createFileServerRoute());
@@ -234,21 +287,56 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  logInfo('Server started successfully', {
-    port: PORT,
-    environment: process.env.NODE_ENV || 'development',
-    frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    logInfo('Server started successfully', {
+      port: PORT,
+      environment: process.env.NODE_ENV || 'development',
+      frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
+    });
+
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(
+      `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`,
+    );
+    console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+    console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
+    console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
+
+    // Start background jobs
+    scheduleMonthlyReports();
+    scheduleWeeklyHabitDigest();
+    scheduleTaxReminders();
+    subscriptionMonitor.initialize();
+    fxRateSync.start();
+    valuationUpdater.start();
+    inactivityMonitor.start();
+    taxEstimator.start();
+    debtRecalculator.startScheduledJob();
+    rateSyncer.start();
+    forecastUpdater.start();
+    riskAuditor.start();
+    leaseMonitor.start();
+    dividendProcessor.start();
+    consolidationSync.start();
+    recurringPaymentProcessor.start();
+    categorizationTrainer.start();
+    fxRateUpdater.start();
+
+    // Add debt services to app.locals for middleware/route access
+    app.locals.debtEngine = debtEngine;
+    app.locals.payoffOptimizer = payoffOptimizer;
+    app.locals.refinanceScout = refinanceScout;
+
+    // Initialize default tax categories and market indices
+    initializeDefaultTaxCategories().catch(err => {
+      console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
+    });
+
+    marketData.initializeDefaults().catch(err => {
+      console.warn('⚠️ Market indices initialization skipped:', err.message);
+    });
   });
+}
 
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(
-    `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`,
-  );
-  console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
-  console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
-  console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
-
-  // Start background jobs
-  scheduleMonthlyReports();
-});
+export default app;
