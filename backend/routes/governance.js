@@ -1,9 +1,14 @@
 import express from 'express';
-import { body, validationResult } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import { protect } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import governanceService from '../services/governanceService.js';
 import deadMansSwitch from '../services/deadMansSwitch.js';
+import ApiResponse from '../utils/ApiResponse.js';
+import AppError from '../utils/AppError.js';
+import db from '../config/db.js';
+import { assetStepUpLogs } from '../db/schema.js';
+import { eq } from 'drizzle-orm';
 
 const router = express.Router();
 
@@ -17,13 +22,9 @@ router.post('/roles', protect, [
     body('role').isIn(['owner', 'parent', 'child', 'trustee', 'beneficiary']),
     body('permissions').isObject(),
 ], asyncHandler(async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-
     const { vaultId, userId, role, permissions } = req.body;
-
     const newRole = await governanceService.assignRole(vaultId, userId, role, permissions, req.user.id);
-    res.success(newRole, 'Role assigned successfully');
+    new ApiResponse(201, newRole, 'Role assigned successfully').send(res);
 }));
 
 /**
@@ -32,7 +33,7 @@ router.post('/roles', protect, [
  */
 router.get('/roles/:vaultId', protect, asyncHandler(async (req, res) => {
     const roles = await governanceService.getVaultRoles(req.params.vaultId);
-    res.success(roles);
+    new ApiResponse(200, roles).send(res);
 }));
 
 /**
@@ -41,7 +42,7 @@ router.get('/roles/:vaultId', protect, asyncHandler(async (req, res) => {
  */
 router.delete('/roles/:roleId', protect, asyncHandler(async (req, res) => {
     await governanceService.revokeRole(req.params.roleId, req.user.id);
-    res.success(null, 'Role revoked successfully');
+    new ApiResponse(200, null, 'Role revoked successfully').send(res);
 }));
 
 /**
@@ -55,7 +56,6 @@ router.post('/approvals/request', protect, [
     body('requestData').isObject(),
 ], asyncHandler(async (req, res) => {
     const { vaultId, resourceType, action, requestData, amount } = req.body;
-
     const request = await governanceService.createApprovalRequest(
         vaultId,
         req.user.id,
@@ -64,17 +64,16 @@ router.post('/approvals/request', protect, [
         requestData,
         amount
     );
-
-    res.success(request, 'Approval request created');
+    new ApiResponse(201, request, 'Approval request created').send(res);
 }));
 
 /**
- * @route   GET /api/governance/approvals/:vaultId
+ * @route   GET /api/governance/approvals/pending/:vaultId
  * @desc    Get pending approvals for a vault
  */
-router.get('/approvals/:vaultId', protect, asyncHandler(async (req, res) => {
+router.get('/approvals/pending/:vaultId', protect, asyncHandler(async (req, res) => {
     const requests = await governanceService.getPendingApprovals(req.params.vaultId, req.user.id);
-    res.success(requests);
+    new ApiResponse(200, requests).send(res);
 }));
 
 /**
@@ -86,7 +85,7 @@ router.post('/approvals/:requestId/approve', protect, [
 ], asyncHandler(async (req, res) => {
     const { reason } = req.body;
     const approved = await governanceService.approveRequest(req.params.requestId, req.user.id, reason);
-    res.success(approved, 'Request approved');
+    new ApiResponse(200, approved, 'Request approved').send(res);
 }));
 
 /**
@@ -98,29 +97,49 @@ router.post('/approvals/:requestId/reject', protect, [
 ], asyncHandler(async (req, res) => {
     const { reason } = req.body;
     const rejected = await governanceService.rejectRequest(req.params.requestId, req.user.id, reason);
-    res.success(rejected, 'Request rejected');
+    new ApiResponse(200, rejected, 'Request rejected').send(res);
 }));
 
 /**
  * @route   POST /api/governance/inheritance/rules
- * @desc    Create inheritance rule
+ * @desc    Create inheritance rule with advanced conditions
  */
 router.post('/inheritance/rules', protect, [
     body('beneficiaryId').isUUID(),
-    body('assetType').isIn(['vault', 'fixed_asset', 'all']),
-    body('distributionPercentage').optional().isFloat({ min: 0, max: 100 }),
+    body('assetType').isIn(['vault', 'fixed_asset', 'portfolio', 'all']),
+    body('distributionPercentage').optional().isNumeric(),
+    body('conditions').optional().isObject(),
+    body('executors').optional().isArray(),
 ], asyncHandler(async (req, res) => {
     const rule = await deadMansSwitch.addInheritanceRule(req.user.id, req.body);
-    res.success(rule, 'Inheritance rule created');
+    new ApiResponse(201, rule, 'Advanced inheritance rule created').send(res);
 }));
 
 /**
  * @route   GET /api/governance/inheritance/rules
- * @desc    Get user's inheritance rules
+ * @desc    Get user's inheritance rules with executor details
  */
 router.get('/inheritance/rules', protect, asyncHandler(async (req, res) => {
     const rules = await deadMansSwitch.getUserInheritanceRules(req.user.id);
-    res.success(rules);
+    new ApiResponse(200, rules).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/inheritance/:ruleId/approve
+ * @desc    Executor approval for inheritance trigger (Multi-Sig)
+ */
+router.post('/inheritance/:ruleId/approve', protect, asyncHandler(async (req, res) => {
+    const result = await deadMansSwitch.approveInheritance(req.params.ruleId, req.user.id);
+    new ApiResponse(200, result, 'Inheritance approval recorded').send(res);
+}));
+
+/**
+ * @route   GET /api/governance/inheritance/step-up-logs
+ * @desc    Get tax step-up basis history
+ */
+router.get('/inheritance/step-up-logs', protect, asyncHandler(async (req, res) => {
+    const logs = await db.select().from(assetStepUpLogs).where(eq(assetStepUpLogs.inheritedBy, req.user.id));
+    new ApiResponse(200, logs).send(res);
 }));
 
 /**
@@ -129,7 +148,7 @@ router.get('/inheritance/rules', protect, asyncHandler(async (req, res) => {
  */
 router.delete('/inheritance/rules/:ruleId', protect, asyncHandler(async (req, res) => {
     await deadMansSwitch.revokeRule(req.params.ruleId, req.user.id);
-    res.success(null, 'Inheritance rule revoked');
+    new ApiResponse(200, null, 'Inheritance rule revoked').send(res);
 }));
 
 /**
@@ -138,7 +157,7 @@ router.delete('/inheritance/rules/:ruleId', protect, asyncHandler(async (req, re
  */
 router.get('/inactivity/status', protect, asyncHandler(async (req, res) => {
     const status = await deadMansSwitch.getInactivityStatus(req.user.id);
-    res.success(status);
+    new ApiResponse(200, status).send(res);
 }));
 
 /**
@@ -147,7 +166,7 @@ router.get('/inactivity/status', protect, asyncHandler(async (req, res) => {
  */
 router.post('/inactivity/ping', protect, asyncHandler(async (req, res) => {
     await deadMansSwitch.updateActivity(req.user.id, 'manual_ping');
-    res.success(null, 'Activity recorded');
+    new ApiResponse(200, null, 'Activity recorded').send(res);
 }));
 
 /**
@@ -158,7 +177,8 @@ router.post('/inactivity/verify', protect, [
     body('token').isString(),
 ], asyncHandler(async (req, res) => {
     await deadMansSwitch.verifyChallenge(req.user.id, req.body.token);
-    res.success(null, 'Challenge verified - you are alive!');
+    new ApiResponse(200, null, 'Challenge verified - you are alive!').send(res);
 }));
 
 export default router;
+

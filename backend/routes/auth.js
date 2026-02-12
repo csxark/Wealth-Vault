@@ -13,10 +13,11 @@ import { authLimiter } from "../middleware/rateLimiter.js";
 import { validatePasswordStrength, isCommonPassword } from "../utils/passwordValidator.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { ValidationError, ConflictError, UnauthorizedError, NotFoundError } from "../utils/errors.js";
-import { 
-  createDeviceSession, 
-  refreshAccessToken, 
-  revokeDeviceSession, 
+import deadMansSwitch from "../services/deadMansSwitch.js";
+import {
+  createDeviceSession,
+  refreshAccessToken,
+  revokeDeviceSession,
   revokeAllUserSessions,
   getUserSessions,
   blacklistToken
@@ -40,10 +41,10 @@ const router = express.Router();
 const getDeviceInfo = (req) => {
   const userAgent = req.get('User-Agent') || '';
   const deviceId = req.get('X-Device-ID') || req.get('Device-ID');
-  
+
   let deviceType = 'web';
   let deviceName = 'Unknown Device';
-  
+
   if (userAgent.includes('Mobile')) {
     deviceType = 'mobile';
     deviceName = 'Mobile Device';
@@ -57,7 +58,7 @@ const getDeviceInfo = (req) => {
   } else if (userAgent.includes('Safari')) {
     deviceName = 'Safari Browser';
   }
-  
+
   return {
     deviceId,
     deviceName,
@@ -242,9 +243,9 @@ router.post(
 
     // Check for required fields
     if (!email || !password || !firstName || !lastName) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required fields: email, password, firstName, and lastName are required.' 
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: email, password, firstName, and lastName are required.'
       });
     }
 
@@ -305,6 +306,9 @@ router.post(
     const deviceInfo = getDeviceInfo(req);
     const ipAddress = req.ip || req.connection.remoteAddress;
     const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
+
+    // Update activity for Dead Man's Switch
+    await deadMansSwitch.updateActivity(newUser.id, 'register');
 
     // Log successful registration
     logAudit(req, {
@@ -392,179 +396,182 @@ router.post(
       throw new ValidationError("Missing required fields: email and password are required.");
     }
 
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email));
-      if (!user) {
-        // Log failed login attempt
-        const ipAddress = req.ip || req.connection.remoteAddress;
-        const location = await securityService.getIPLocation(ipAddress);
-        await securityService.logSecurityEvent({
-          userId: user?.id,
-          eventType: 'login_failed',
-          ipAddress,
-          userAgent: req.get('User-Agent'),
-          location,
-          deviceInfo: getDeviceInfo(req),
-          status: 'warning',
-          details: { reason: 'invalid_credentials' },
-        });
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+    if (!user) {
+      // Log failed login attempt
+      const ipAddress = req.ip || req.connection.remoteAddress;
+      const location = await securityService.getIPLocation(ipAddress);
+      await securityService.logSecurityEvent({
+        userId: user?.id,
+        eventType: 'login_failed',
+        ipAddress,
+        userAgent: req.get('User-Agent'),
+        location,
+        deviceInfo: getDeviceInfo(req),
+        status: 'warning',
+        details: { reason: 'invalid_credentials' },
+      });
 
-        return res.status(401).json({
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "Account is deactivated. Please contact support.",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      // Log failed login attempt
+      const ipAddress = req.ip || req.connection.remoteAddress;
+      const location = await securityService.getIPLocation(ipAddress);
+      await securityService.logSecurityEvent({
+        userId: user.id,
+        eventType: 'login_failed',
+        ipAddress,
+        userAgent: req.get('User-Agent'),
+        location,
+        deviceInfo: getDeviceInfo(req),
+        status: 'warning',
+        details: { reason: 'invalid_password' },
+      });
+
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    // Check if MFA is enabled
+    if (user.mfaEnabled) {
+      if (!mfaToken) {
+        // MFA required but no token provided
+        return res.status(403).json({
           success: false,
-          message: "Invalid credentials",
+          message: "MFA token required",
+          mfaRequired: true,
         });
       }
 
-      if (!user.isActive) {
-        return res.status(401).json({
-          success: false,
-          message: "Account is deactivated. Please contact support.",
-        });
-      }
+      // Verify MFA token
+      const isValidToken = verifyTOTP(user.mfaSecret, mfaToken);
 
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        // Log failed login attempt
-        const ipAddress = req.ip || req.connection.remoteAddress;
-        const location = await securityService.getIPLocation(ipAddress);
-        await securityService.logSecurityEvent({
-          userId: user.id,
-          eventType: 'login_failed',
-          ipAddress,
-          userAgent: req.get('User-Agent'),
-          location,
-          deviceInfo: getDeviceInfo(req),
-          status: 'warning',
-          details: { reason: 'invalid_password' },
-        });
+      if (!isValidToken) {
+        // Try recovery code
+        const recoveryCodeIndex = verifyRecoveryCode(
+          mfaToken,
+          user.mfaRecoveryCodes || []
+        );
 
-        return res.status(401).json({
-          success: false,
-          message: "Invalid credentials",
-        });
-      }
+        if (recoveryCodeIndex === -1) {
+          // Log failed MFA attempt
+          const ipAddress = req.ip || req.connection.remoteAddress;
+          const location = await securityService.getIPLocation(ipAddress);
+          await securityService.logSecurityEvent({
+            userId: user.id,
+            eventType: 'login_failed',
+            ipAddress,
+            userAgent: req.get('User-Agent'),
+            location,
+            deviceInfo: getDeviceInfo(req),
+            status: 'warning',
+            details: { reason: 'invalid_mfa_token' },
+          });
 
-      // Check if MFA is enabled
-      if (user.mfaEnabled) {
-        if (!mfaToken) {
-          // MFA required but no token provided
-          return res.status(403).json({
+          return res.status(401).json({
             success: false,
-            message: "MFA token required",
-            mfaRequired: true,
+            message: "Invalid MFA token or recovery code",
           });
         }
 
-        // Verify MFA token
-        const isValidToken = verifyTOTP(user.mfaSecret, mfaToken);
-        
-        if (!isValidToken) {
-          // Try recovery code
-          const recoveryCodeIndex = verifyRecoveryCode(
-            mfaToken,
-            user.mfaRecoveryCodes || []
-          );
-
-          if (recoveryCodeIndex === -1) {
-            // Log failed MFA attempt
-            const ipAddress = req.ip || req.connection.remoteAddress;
-            const location = await securityService.getIPLocation(ipAddress);
-            await securityService.logSecurityEvent({
-              userId: user.id,
-              eventType: 'login_failed',
-              ipAddress,
-              userAgent: req.get('User-Agent'),
-              location,
-              deviceInfo: getDeviceInfo(req),
-              status: 'warning',
-              details: { reason: 'invalid_mfa_token' },
-            });
-
-            return res.status(401).json({
-              success: false,
-              message: "Invalid MFA token or recovery code",
-            });
-          }
-
-          // Mark recovery code as used
-          const updatedCodes = markRecoveryCodeAsUsed(user.mfaRecoveryCodes, recoveryCodeIndex);
-          await db
-            .update(users)
-            .set({ mfaRecoveryCodes: updatedCodes })
-            .where(eq(users.id, user.id));
-        }
+        // Mark recovery code as used
+        const updatedCodes = markRecoveryCodeAsUsed(user.mfaRecoveryCodes, recoveryCodeIndex);
+        await db
+          .update(users)
+          .set({ mfaRecoveryCodes: updatedCodes })
+          .where(eq(users.id, user.id));
       }
+    }
 
-      // Update last login
-      await db
-        .update(users)
-        .set({ lastLogin: new Date() })
-        .where(eq(users.id, user.id));
+    // Update last login
+    await db
+      .update(users)
+      .set({ lastLogin: new Date() })
+      .where(eq(users.id, user.id));
 
-      // Get IP and location
-      const ipAddress = req.ip || req.connection.remoteAddress;
-      const location = await securityService.getIPLocation(ipAddress);
-      const deviceInfo = getDeviceInfo(req);
+    // Update activity for Dead Man's Switch
+    await deadMansSwitch.updateActivity(user.id, 'login');
 
-      // Check if this is a new/suspicious login
-      const isNewLogin = await securityService.isNewOrSuspiciousLogin(user.id, ipAddress);
-      
-      // Log successful login
-      const securityEvent = await securityService.logSecurityEvent({
+    // Get IP and location
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const location = await securityService.getIPLocation(ipAddress);
+    const deviceInfo = getDeviceInfo(req);
+
+    // Check if this is a new/suspicious login
+    const isNewLogin = await securityService.isNewOrSuspiciousLogin(user.id, ipAddress);
+
+    // Log successful login
+    const securityEvent = await securityService.logSecurityEvent({
+      userId: user.id,
+      eventType: 'login_success',
+      ipAddress,
+      userAgent: req.get('User-Agent'),
+      location,
+      deviceInfo,
+      status: isNewLogin ? 'warning' : 'info',
+      details: { mfaUsed: user.mfaEnabled },
+    });
+
+    // Send notification for new/suspicious logins
+    if (isNewLogin) {
+      await securityService.sendSecurityNotification(user, securityEvent);
+    }
+
+    // Detect suspicious activity
+    const suspicion = await securityService.detectSuspiciousActivity(user.id, ipAddress, location);
+    if (suspicion.isSuspicious) {
+      const suspiciousEvent = await securityService.logSecurityEvent({
         userId: user.id,
-        eventType: 'login_success',
+        eventType: 'suspicious_activity',
         ipAddress,
         userAgent: req.get('User-Agent'),
         location,
         deviceInfo,
-        status: isNewLogin ? 'warning' : 'info',
-        details: { mfaUsed: user.mfaEnabled },
+        status: 'critical',
+        details: { reasons: suspicion.reasons, riskLevel: suspicion.riskLevel },
       });
+      await securityService.sendSecurityNotification(user, suspiciousEvent);
+    }
 
-      // Send notification for new/suspicious logins
-      if (isNewLogin) {
-        await securityService.sendSecurityNotification(user, securityEvent);
-      }
+    // Create device session with enhanced tokens
+    const tokens = await createDeviceSession(user.id, deviceInfo, ipAddress);
 
-      // Detect suspicious activity
-      const suspicion = await securityService.detectSuspiciousActivity(user.id, ipAddress, location);
-      if (suspicion.isSuspicious) {
-        const suspiciousEvent = await securityService.logSecurityEvent({
-          userId: user.id,
-          eventType: 'suspicious_activity',
-          ipAddress,
-          userAgent: req.get('User-Agent'),
-          location,
-          deviceInfo,
-          status: 'critical',
-          details: { reasons: suspicion.reasons, riskLevel: suspicion.riskLevel },
-        });
-        await securityService.sendSecurityNotification(user, suspiciousEvent);
-      }
+    // Log successful login
+    logAudit(req, {
+      userId: user.id,
+      action: AuditActions.AUTH_LOGIN,
+      resourceType: ResourceTypes.USER,
+      resourceId: user.id,
+      metadata: { email: user.email },
+      status: 'success',
+    });
 
-      // Create device session with enhanced tokens
-      const tokens = await createDeviceSession(user.id, deviceInfo, ipAddress);
-
-      // Log successful login
-      logAudit(req, {
-        userId: user.id,
-        action: AuditActions.AUTH_LOGIN,
-        resourceType: ResourceTypes.USER,
-        resourceId: user.id,
-        metadata: { email: user.email },
-        status: 'success',
-      });
-
-      res.json({
-        success: true,
-        message: "Login successful",
-        data: {
-          user: getPublicProfile(user),
-          ...tokens,
-        },
-      });
+    res.json({
+      success: true,
+      message: "Login successful",
+      data: {
+        user: getPublicProfile(user),
+        ...tokens,
+      },
+    });
   })
 );
 
@@ -754,7 +761,7 @@ router.put(
       // Revoke all other sessions for security
       const currentSessionId = req.sessionId;
       const allSessions = await getUserSessions(user.id);
-      
+
       for (const session of allSessions) {
         if (session.id !== currentSessionId) {
           await revokeDeviceSession(session.id, user.id, 'password_change');
@@ -790,7 +797,7 @@ router.put(
 // @route   POST /api/auth/refresh
 // @desc    Refresh access token using refresh token
 // @access  Public
-router.post("/refresh", 
+router.post("/refresh",
   [
     body("refreshToken").notEmpty().withMessage("Refresh token is required"),
   ],
@@ -802,9 +809,9 @@ router.post("/refresh",
 
     const { refreshToken } = req.body;
     const ipAddress = req.ip || req.connection.remoteAddress;
-    
+
     const tokens = await refreshAccessToken(refreshToken, ipAddress);
-    
+
     res.json({
       success: true,
       message: "Token refreshed successfully",
@@ -819,11 +826,11 @@ router.post("/refresh",
 router.post("/logout", protect, asyncHandler(async (req, res) => {
   const sessionId = req.sessionId;
   const userId = req.user.id;
-  
+
   if (sessionId) {
     await revokeDeviceSession(sessionId, userId, 'logout');
   }
-  
+
   // Log logout
   logAudit(req, {
     userId,
@@ -832,10 +839,10 @@ router.post("/logout", protect, asyncHandler(async (req, res) => {
     resourceId: sessionId,
     status: 'success',
   });
-  
-  res.json({ 
-    success: true, 
-    message: "Logged out successfully" 
+
+  res.json({
+    success: true,
+    message: "Logged out successfully"
   });
 }));
 
@@ -845,7 +852,7 @@ router.post("/logout", protect, asyncHandler(async (req, res) => {
 router.post("/logout-all", protect, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const revokedCount = await revokeAllUserSessions(userId, 'logout_all');
-  
+
   // Log logout from all devices
   logAudit(req, {
     userId,
@@ -854,10 +861,10 @@ router.post("/logout-all", protect, asyncHandler(async (req, res) => {
     metadata: { devicesLoggedOut: revokedCount },
     status: 'success',
   });
-  
-  res.json({ 
-    success: true, 
-    message: `Logged out from ${revokedCount} devices successfully` 
+
+  res.json({
+    success: true,
+    message: `Logged out from ${revokedCount} devices successfully`
   });
 }));
 
@@ -867,7 +874,7 @@ router.post("/logout-all", protect, asyncHandler(async (req, res) => {
 router.get("/sessions", protect, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const sessions = await getUserSessions(userId);
-  
+
   res.json({
     success: true,
     data: { sessions },
@@ -880,9 +887,9 @@ router.get("/sessions", protect, asyncHandler(async (req, res) => {
 router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => {
   const { sessionId } = req.params;
   const userId = req.user.id;
-  
+
   await revokeDeviceSession(sessionId, userId, 'manual_revoke');
-  
+
   // Log session revocation
   logAudit(req, {
     userId,
@@ -891,7 +898,7 @@ router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => 
     resourceId: sessionId,
     status: 'success',
   });
-  
+
   res.json({
     success: true,
     message: "Session revoked successfully",
@@ -911,7 +918,7 @@ router.post(
     }
 
     const userId = req.user.id;
-    
+
     // Sav fil using secur storag servic
     const savedFile = await fileStorageService.saveFile(
       req.file.buffer,
@@ -919,17 +926,17 @@ router.post(
       userId,
       'profile'
     );
-    
+
     // Updat usr profil with new pictur URL
     const [updatedUser] = await db
       .update(users)
-      .set({ 
+      .set({
         profilePicture: savedFile.url,
-        updatedAt: new Date() 
+        updatedAt: new Date()
       })
       .where(eq(users.id, userId))
       .returning();
-    
+
     // Log profile picture upload
     logAudit(req, {
       userId,
@@ -939,7 +946,7 @@ router.post(
       metadata: { filename: savedFile.filename, size: savedFile.size },
       status: 'success',
     });
-    
+
     return res.success({
       profilePicture: savedFile.url,
       fileInfo: {
@@ -959,25 +966,25 @@ router.delete(
   asyncHandler(async (req, res) => {
     const userId = req.user.id;
     const [user] = await db.select().from(users).where(eq(users.id, userId));
-    
+
     if (user.profilePicture) {
       // Extrac fil path from URL
       const fileName = user.profilePicture.split('/').pop();
       const filePath = path.join('uploads', 'profiles', fileName);
-      
+
       // Delet fil from storag
       await fileStorageService.deleteFile(filePath, userId);
     }
-    
+
     // Updat usr profil to remov pictur URL
     await db
       .update(users)
-      .set({ 
+      .set({
         profilePicture: '',
-        updatedAt: new Date() 
+        updatedAt: new Date()
       })
       .where(eq(users.id, userId));
-    
+
     // Log profile picture deletion
     logAudit(req, {
       userId,
@@ -986,7 +993,7 @@ router.delete(
       resourceId: userId,
       status: 'success',
     });
-    
+
     return res.success(null, 'Profile picture deleted successfully');
   })
 );
@@ -1000,7 +1007,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const userId = req.user.id;
     const usage = await fileStorageService.getUserStorageUsage(userId);
-    
+
     return res.success({
       usage: {
         totalSize: usage.totalSize,
@@ -1407,8 +1414,8 @@ router.get("/mfa/status", protect, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
-  const recoveryCodeStatus = user.mfaEnabled ? 
-    getRecoveryCodeStatus(user.mfaRecoveryCodes || []) : 
+  const recoveryCodeStatus = user.mfaEnabled ?
+    getRecoveryCodeStatus(user.mfaRecoveryCodes || []) :
     null;
 
   res.json({
