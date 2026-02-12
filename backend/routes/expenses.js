@@ -1,7 +1,5 @@
-import budgetEngine from "../services/budgetEngine.js";
 import { initializeRecurringExpense, disableRecurring } from "../services/expenseService.js";
 import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
-import savingsService from "../services/savingsService.js";
 import express from "express";
 import { body, validationResult } from "express-validator";
 import { eq, and, gte, lte, asc, desc, sql, like } from "drizzle-orm";
@@ -13,43 +11,15 @@ import { asyncHandler, ValidationError, NotFoundError, ForbiddenError } from "..
 import { parseListQuery } from "../utils/pagination.js";
 import { securityInterceptor, auditBulkOperation } from "../middleware/auditMiddleware.js";
 import { logAudit, AuditActions, ResourceTypes } from "../services/auditService.js";
-import fxEngine from "../services/fxEngine.js";
-import subscriptionDetector from "../services/subscriptionDetector.js";
 import { guardExpenseCreation } from "../middleware/securityGuard.js";
+import eventBus from "../events/eventBus.js";
+
+// Side-effects like updateCategoryStats, monitorBudget, matchSubscription 
+// are now handled by event listeners in ../listeners/
 
 const router = express.Router();
 
-// Helper to update category stats
-const updateCategoryStats = async (categoryId) => {
-  try {
-    const result = await db
-      .select({
-        count: sql`count(*)`,
-        total: sql`sum(${expenses.amount})`,
-      })
-      .from(expenses)
-      .where(eq(expenses.categoryId, categoryId));
-
-    const count = Number(result[0].count);
-    const total = Number(result[0].total) || 0;
-    const average = count > 0 ? total / count : 0;
-
-    // Use sql to update jsonb field properly if possible, or simple replace
-    // For simplicity, we replace the metadata object, as we know its structure
-    await db
-      .update(categories)
-      .set({
-        metadata: {
-          usageCount: count,
-          averageAmount: average,
-          lastUsed: new Date().toISOString(),
-        },
-      })
-      .where(eq(categories.id, categoryId));
-  } catch (err) {
-    console.error("Failed to update category stats:", err);
-  }
-};
+// Helper to update category stats removed - now handled by categoryListener via 'EXPENSE_CREATED' event
 
 /**
  * @swagger
@@ -308,68 +278,12 @@ router.post(
         })
         .returning();
 
-      // Update category stats (async, don't block response necessarily, but good to wait)
-      await updateCategoryStats(category);
-
-      // Initialize recurring expense if applicable
-      if (isRecurring && recurringPattern) {
-        await initializeRecurringExpense(
-          newExpense.id,
-          recurringPattern,
-          date ? new Date(date) : new Date()
-        );
-      }
-
-      // Create debt transactions if expense belongs to a vault
-      if (vaultId) {
-        const splitDetails = req.body.splitDetails || null; // Array of {userId, splitType, splitValue}
-        const paidById = req.body.paidById || req.user.id; // Who paid for the expense
-
-        try {
-          await createDebtTransactions(newExpense, paidById, splitDetails);
-        } catch (error) {
-          console.error('Error creating debt transactions:', error);
-          // Don't block expense creation if debt tracking fails
-        }
-      }
-
-      // Proactively monitor budget thresholds
-      let budgetAmount = parseFloat(amount);
-      if (currency !== (req.user.currency || 'USD')) {
-        try {
-          budgetAmount = await fxEngine.convertAmount(parseFloat(amount), currency, req.user.currency || 'USD');
-        } catch (e) {
-          console.warn('FX conversion failed for budget check', e);
-        }
-      }
-      await budgetEngine.monitorBudget(req.user.id, category, budgetAmount);
-
-      // Match expense to subscription if possible
-      try {
-        const matchedSub = await subscriptionDetector.matchExpenseToSubscription(newExpense, req.user.id);
-        if (matchedSub) {
-          // Update subscription with last renewal and next renewal estimate
-          const lastRenewalDate = new Date(newExpense.date || new Date());
-          const nextRenewalDate = new Date(lastRenewalDate);
-
-          if (matchedSub.billingCycle === 'yearly') nextRenewalDate.setFullYear(nextRenewalDate.getFullYear() + 1);
-          else if (matchedSub.billingCycle === 'quarterly') nextRenewalDate.setMonth(nextRenewalDate.getMonth() + 3);
-          else if (matchedSub.billingCycle === 'biweekly') nextRenewalDate.setDate(nextRenewalDate.getDate() + 14);
-          else if (matchedSub.billingCycle === 'weekly') nextRenewalDate.setDate(nextRenewalDate.getDate() + 7);
-          else nextRenewalDate.setMonth(nextRenewalDate.getMonth() + 1); // Default monthly
-
-          await db.update(subscriptions)
-            .set({
-              lastRenewalDate,
-              nextRenewalDate,
-              linkedExpenseIds: [...(matchedSub.linkedExpenseIds || []), newExpense.id],
-              updatedAt: new Date()
-            })
-            .where(eq(subscriptions.id, matchedSub.id));
-        }
-      } catch (subError) {
-        console.error('Subscription matching failed:', subError);
-      }
+      // Side effects are now handled asynchronously via the Event Bus
+      eventBus.emit('EXPENSE_CREATED', {
+        ...newExpense,
+        splitDetails: req.body.splitDetails,
+        paidById: req.body.paidById || req.user.id
+      });
 
       const expenseWithCategory = await db.query.expenses.findFirst({
         where: eq(expenses.id, newExpense.id),
@@ -450,20 +364,11 @@ router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), as
       .where(eq(expenses.id, req.params.id))
       .returning();
 
-    // Update stats if amount or category changed
-    if (updateData.amount || updateData.categoryId) {
-      if (oldExpense.categoryId)
-        await updateCategoryStats(oldExpense.categoryId);
-      if (
-        updateData.categoryId &&
-        updateData.categoryId !== oldExpense.categoryId
-      ) {
-        await updateCategoryStats(updateData.categoryId);
-      }
-    }
-
-    // Proactively monitor budget thresholds
-    await budgetEngine.monitorBudget(req.user.id, updateData.categoryId || oldExpense.categoryId);
+    // Emit update event
+    eventBus.emit('EXPENSE_UPDATED', {
+      ...updatedExpense,
+      oldCategoryId: oldExpense.categoryId
+    });
 
     // Audit logging handled by securityInterceptor middleware
 
@@ -494,9 +399,8 @@ router.delete("/:id", protect, checkOwnership("Expense"), securityInterceptor(),
     const expense = req.resource;
     await db.delete(expenses).where(eq(expenses.id, req.params.id));
 
-    if (expense.categoryId) {
-      await updateCategoryStats(expense.categoryId);
-    }
+    // Emit deletion event
+    eventBus.emit('EXPENSE_DELETED', expense);
 
     // Audit logging handled by securityInterceptor middleware
 
