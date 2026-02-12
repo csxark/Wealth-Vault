@@ -24,6 +24,8 @@ class AssetService {
         // Create initial valuation entry
         await this.addValuation(asset.id, currentValue || purchasePrice, 'manual');
 
+        eventBus.emit('ASSET_CREATED', asset);
+
         return asset;
     }
 
