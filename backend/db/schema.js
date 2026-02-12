@@ -1204,6 +1204,57 @@ export const assetStepUpLogs = pgTable('asset_step_up_logs', {
 });
 
 // ============================================================================
+// LIQUIDITY OPTIMIZER L3 (#343)
+// ============================================================================
+
+export const creditLines = pgTable('credit_lines', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    provider: text('provider').notNull(), // 'Bank X', 'Credit Card Y'
+    type: text('type').notNull(), // 'heloc', 'personal_line', 'credit_card', 'margin'
+    creditLimit: numeric('credit_limit', { precision: 12, scale: 2 }).notNull(),
+    currentBalance: numeric('current_balance', { precision: 12, scale: 2 }).default('0'),
+    interestRate: numeric('interest_rate', { precision: 5, scale: 2 }).notNull(), // Annual interest rate
+    billingCycleDay: integer('billing_cycle_day').default(1),
+    isTaxDeductible: boolean('is_tax_deductible').default(false),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const liquidityProjections = pgTable('liquidity_projections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    projectionDate: timestamp('projection_date').notNull(),
+    baseBalance: numeric('base_balance', { precision: 12, scale: 2 }).notNull(),
+    p10Balance: numeric('p10_balance', { precision: 12, scale: 2 }), // 10th percentile (Worst Case)
+    p50Balance: numeric('p50_balance', { precision: 12, scale: 2 }), // 50th percentile (Median)
+    p90Balance: numeric('p90_balance', { precision: 12, scale: 2 }), // 90th percentile (Best Case)
+    liquidityCrunchProbability: doublePrecision('liquidity_crunch_probability').default(0),
+    crunchDetectedAt: timestamp('crunch_detected_at'),
+    simulationMetadata: jsonb('simulation_metadata').default({ iterations: 1000 }),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const liquidityOptimizerActions = pgTable('liquidity_optimizer_actions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    projectionId: uuid('projection_id').references(() => liquidityProjections.id, { onDelete: 'cascade' }),
+    actionType: text('action_type').notNull(), // 'asset_sale', 'credit_draw', 'transfer', 'rebalance'
+    resourceType: text('resource_type').notNull(), // 'investment', 'credit_line', 'vault'
+    resourceId: uuid('resource_id').notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    reason: text('reason'),
+    impactScore: integer('impact_score'), // 1-100 score of how much this helps
+    taxImpact: numeric('tax_impact', { precision: 12, scale: 2 }).default('0'),
+    costOfCapital: numeric('cost_of_capital', { precision: 5, scale: 2 }), // Interest rate or loss of gains
+    status: text('status').default('proposed'), // 'proposed', 'executed', 'ignored', 'failed'
+    executedAt: timestamp('executed_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================================================
 // GOVERNANCE RELATIONS
 // ============================================================================
 
@@ -1235,6 +1286,20 @@ export const inactivityTriggersRelations = relations(inactivityTriggers, ({ one 
 export const assetStepUpLogsRelations = relations(assetStepUpLogs, ({ one }) => ({
     heir: one(users, { fields: [assetStepUpLogs.inheritedBy], references: [users.id] }),
     donor: one(users, { fields: [assetStepUpLogs.inheritedFrom], references: [users.id] }),
+}));
+
+export const creditLinesRelations = relations(creditLines, ({ one }) => ({
+    user: one(users, { fields: [creditLines.userId], references: [users.id] }),
+}));
+
+export const liquidityProjectionsRelations = relations(liquidityProjections, ({ one, many }) => ({
+    user: one(users, { fields: [liquidityProjections.userId], references: [users.id] }),
+    actions: many(liquidityOptimizerActions),
+}));
+
+export const liquidityOptimizerActionsRelations = relations(liquidityOptimizerActions, ({ one }) => ({
+    user: one(users, { fields: [liquidityOptimizerActions.userId], references: [users.id] }),
+    projection: one(liquidityProjections, { fields: [liquidityOptimizerActions.projectionId], references: [liquidityProjections.id] }),
 }));
 
 // Challenge Participants Table
