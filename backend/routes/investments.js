@@ -1,6 +1,7 @@
 import express from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { authenticateToken } from '../middleware/auth.js';
+import { protect, checkOwnership } from '../middleware/auth.js';
+import { securityInterceptor } from '../middleware/auditMiddleware.js';
 import investmentService from '../services/investmentService.js';
 import portfolioService from '../services/portfolioService.js';
 import priceService from '../services/priceService.js';
@@ -9,7 +10,7 @@ import investmentAnalyticsService from '../services/investmentAnalyticsService.j
 const router = express.Router();
 
 // Apply authentication to all routes
-router.use(authenticateToken);
+router.use(protect);
 
 // Validation middleware
 const handleValidationErrors = (req, res, next) => {
@@ -106,6 +107,7 @@ router.post('/', [
   body('averageCost').isFloat({ min: 0 }),
   body('currency').optional().isLength({ min: 3, max: 3 }),
   handleValidationErrors,
+  securityInterceptor(),
 ], async (req, res) => {
   try {
     const investmentData = {
@@ -152,6 +154,8 @@ router.put('/:id', [
   body('tags').optional().isArray(),
   body('notes').optional().isLength({ max: 500 }),
   handleValidationErrors,
+  checkOwnership('Investment'),
+  securityInterceptor(),
 ], async (req, res) => {
   try {
     const updateData = {};
@@ -195,6 +199,8 @@ router.put('/:id', [
 router.delete('/:id', [
   param('id').isUUID(),
   handleValidationErrors,
+  checkOwnership('Investment'),
+  securityInterceptor(),
 ], async (req, res) => {
   try {
     await investmentService.deleteInvestment(req.params.id, req.user.id);

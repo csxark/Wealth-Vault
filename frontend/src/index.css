@@ -5,6 +5,39 @@
 /* Modern 2025-26 Design System Enhancements */
 
 @layer base {
+  :root {
+    /* Light Mode Variables */
+    --bg-primary: #F3F4F6;   /* neutral-50 */
+    --bg-secondary: #FFFFFF; /* white */
+    --bg-tertiary: #F9FAFB;  /* gray-50 */
+
+    --text-primary: #111827;   /* gray-900 */
+    --text-secondary: #4B5563; /* gray-600 */
+    --text-muted: #9CA3AF;     /* gray-400 */
+    --text-inverted: #FFFFFF;  /* white */
+
+    --border-primary: #E5E7EB;   /* gray-200 */
+    --border-secondary: #F3F4F6; /* gray-100 */
+  }
+
+  .dark {
+    /* Dark Mode Variables */
+    --bg-primary: #0F172A;   /* slate-900 */
+    --bg-secondary: #1E293B; /* slate-800 */
+    --bg-tertiary: #334155;  /* slate-700 */
+
+    --text-primary: #F9FAFB;   /* gray-50 */
+    --text-secondary: #D1D5DB; /* gray-300 */
+    --text-muted: #6B7280;     /* gray-500 */
+    --text-inverted: #000000;  /* black */
+
+    --border-primary: #374151;   /* gray-700 */
+    --border-secondary: #1F2937; /* gray-800 */
+  }
+}
+
+
+@layer base {
   /* Improved font rendering and consistency */
   * {
     -webkit-font-smoothing: antialiased;
