@@ -1,6 +1,7 @@
 import db from '../config/db.js';
 import { fixedAssets, assetValuations, marketIndices } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
+import eventBus from '../events/eventBus.js';
 
 class AssetService {
     /**
@@ -25,6 +26,8 @@ class AssetService {
 
         // Create initial valuation entry
         await this.addValuation(asset.id, currentValue || purchasePrice, 'manual');
+
+        eventBus.emit('ASSET_CREATED', asset);
 
         return asset;
     }
@@ -148,6 +151,9 @@ class AssetService {
         if (!asset) throw new Error('Asset not found or unauthorized');
 
         await db.delete(fixedAssets).where(eq(fixedAssets.id, assetId));
+
+        eventBus.emit('ASSET_DELETED', { id: assetId, userId });
+
         return asset;
     }
 
@@ -187,6 +193,8 @@ class AssetService {
             })
             .where(eq(fixedAssets.id, assetId))
             .returning();
+
+        eventBus.emit('ASSET_UPDATED', updated);
 
         return updated;
     }
