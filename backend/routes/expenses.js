@@ -7,12 +7,14 @@ import db from "../config/db.js";
 import { expenses, categories, users, vaultMembers, subscriptions } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
 import { checkVaultAccess } from "../middleware/vaultAuth.js";
-import { asyncHandler, ValidationError, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
+import { asyncHandler } from "../middleware/errorHandler.js";
 import { parseListQuery } from "../utils/pagination.js";
 import { securityInterceptor, auditBulkOperation } from "../middleware/auditMiddleware.js";
 import { logAudit, AuditActions, ResourceTypes } from "../services/auditService.js";
 import { guardExpenseCreation } from "../middleware/securityGuard.js";
 import eventBus from "../events/eventBus.js";
+import { AppError } from "../utils/AppError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 
 // Side-effects like updateCategoryStats, monitorBudget, matchSubscription 
 // are now handled by event listeners in ../listeners/
@@ -121,7 +123,7 @@ router.get("/", protect, asyncHandler(async (req, res) => {
       .where(and(eq(vaultMembers.vaultId, req.query.vaultId), eq(vaultMembers.userId, req.user.id)));
 
     if (!membership) {
-      throw new ForbiddenError('You do not have access to this vault');
+      return next(new AppError(403, 'You do not have access to this vault'));
     }
     conditions.push(eq(expenses.vaultId, req.query.vaultId));
   } else {
@@ -173,7 +175,7 @@ router.get("/", protect, asyncHandler(async (req, res) => {
   const total = Number(countResult[0]?.count || 0);
   const paginatedData = req.buildPaginatedResponse(expensesList, total);
 
-  return res.paginated(paginatedData.items, paginatedData.pagination, 'Expenses retrieved successfully');
+  return new ApiResponse(200, paginatedData, 'Expenses retrieved successfully').send(res);
 }));
 
 // @route   GET /api/expenses/:id
@@ -190,10 +192,10 @@ router.get("/:id", protect, checkOwnership("Expense"), asyncHandler(async (req, 
   });
 
   if (!expense) {
-    throw new NotFoundError('Expense not found');
+    return next(new AppError(404, 'Expense not found'));
   }
 
-  return res.success(expense, 'Expense retrieved successfully');
+  return new ApiResponse(200, expense, 'Expense retrieved successfully').send(res);
 }));
 
 // @route   POST /api/expenses
@@ -210,113 +212,17 @@ router.post(
     body("category").notEmpty(), // Assuming validation checks ID format if strictly needed
     body("date").optional().isISO8601(),
   ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty())
-        return res.status(400).json({ success: false, errors: errors.array() });
-
-      const {
-        amount,
-        description,
-        category,
-        vaultId,
-        date,
-        paymentMethod,
-        location,
-        tags,
-        isRecurring,
-        recurringPattern,
-        notes,
-        subcategory,
-        currency = 'USD',
-      } = req.body;
-
-      // Verify category (If personal, must be owned by user. If vault, should we allow shared categories? For now, user's categories are personal)
-      const [categoryDoc] = await db
-        .select()
-        .from(categories)
-        .where(
-          and(eq(categories.id, category), eq(categories.userId, req.user.id))
-        );
-
-      if (!categoryDoc) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid category" });
-      }
-
-      // Verify vault access if provided
-      if (vaultId) {
-        const [membership] = await db
-          .select()
-          .from(vaultMembers)
-          .where(and(eq(vaultMembers.vaultId, vaultId), eq(vaultMembers.userId, req.user.id)));
-
-        if (!membership) {
-          return res.status(403).json({ success: false, message: "Access denied to the specified vault" });
-        }
-      }
-
-      const [newExpense] = await db
-        .insert(expenses)
-        .values({
-          userId: req.user.id,
-          amount: amount.toString(),
-          description,
-          categoryId: category,
-          vaultId: vaultId || null,
-          date: date ? new Date(date) : new Date(),
-          paymentMethod: paymentMethod || "other",
-          location,
-          tags: tags || [],
-          isRecurring: isRecurring || false,
-          recurringPattern,
-          notes,
-          subcategory,
-          currency,
-        })
-        .returning();
-
-      // Side effects are now handled asynchronously via the Event Bus
-      eventBus.emit('EXPENSE_CREATED', {
-        ...newExpense,
-        splitDetails: req.body.splitDetails,
-        paidById: req.body.paidById || req.user.id
-      });
-
-      const expenseWithCategory = await db.query.expenses.findFirst({
-        where: eq(expenses.id, newExpense.id),
-        with: {
-          category: { columns: { name: true, color: true, icon: true } },
-        },
-      });
-
-      res.status(201).json({
-        success: true,
-        message: "Expense created successfully",
-        data: { expense: expenseWithCategory },
-      });
-    } catch (error) {
-      console.error("Create expense error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Server error while creating expense",
-      });
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
-  }
-);
 
-// @route   PUT /api/expenses/:id
-// @desc    Update expense
-// @access  Private
-router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), async (req, res) => {
-  try {
-    const oldExpense = req.resource;
     const {
       amount,
       description,
       category,
+      vaultId,
       date,
       paymentMethod,
       location,
@@ -325,589 +231,511 @@ router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), as
       recurringPattern,
       notes,
       subcategory,
-      status,
+      currency = 'USD',
     } = req.body;
 
-    const updateData = {};
-    if (amount !== undefined) updateData.amount = amount.toString();
-    if (description !== undefined) updateData.description = description;
-    if (category !== undefined) {
-      // Verify new category
-      const [cat] = await db
-        .select()
-        .from(categories)
-        .where(
-          and(eq(categories.id, category), eq(categories.userId, req.user.id))
-        );
-      if (!cat)
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid category" });
-      updateData.categoryId = category;
+    // Verify category (If personal, must be owned by user. If vault, should we allow shared categories? For now, user's categories are personal)
+    const [categoryDoc] = await db
+      .select()
+      .from(categories)
+      .where(
+        and(eq(categories.id, category), eq(categories.userId, req.user.id))
+      );
+
+    if (!categoryDoc) {
+      return next(new AppError(400, "Invalid category"));
     }
-    if (date !== undefined) updateData.date = new Date(date);
-    // ... map other fields
-    if (paymentMethod) updateData.paymentMethod = paymentMethod;
-    if (location) updateData.location = location;
-    if (tags) updateData.tags = tags;
-    if (isRecurring !== undefined) updateData.isRecurring = isRecurring;
-    if (recurringPattern) updateData.recurringPattern = recurringPattern;
-    if (notes) updateData.notes = notes;
-    if (subcategory) updateData.subcategory = subcategory;
-    if (status) updateData.status = status;
 
-    updateData.updatedAt = new Date();
+    // Verify vault access if provided
+    if (vaultId) {
+      const [membership] = await db
+        .select()
+        .from(vaultMembers)
+        .where(and(eq(vaultMembers.vaultId, vaultId), eq(vaultMembers.userId, req.user.id)));
 
-    const [updatedExpense] = await db
-      .update(expenses)
-      .set(updateData)
-      .where(eq(expenses.id, req.params.id))
+      if (!membership) {
+        return next(new AppError(403, "Access denied to the specified vault"));
+      }
+    }
+
+    const [newExpense] = await db
+      .insert(expenses)
+      .values({
+        userId: req.user.id,
+        amount: amount.toString(),
+        description,
+        categoryId: category,
+        vaultId: vaultId || null,
+        date: date ? new Date(date) : new Date(),
+        paymentMethod: paymentMethod || "other",
+        location,
+        tags: tags || [],
+        isRecurring: isRecurring || false,
+        recurringPattern,
+        notes,
+        subcategory,
+        currency,
+      })
       .returning();
 
-    // Emit update event
-    eventBus.emit('EXPENSE_UPDATED', {
-      ...updatedExpense,
-      oldCategoryId: oldExpense.categoryId
+    // Side effects are now handled asynchronously via the Event Bus
+    eventBus.emit('EXPENSE_CREATED', {
+      ...newExpense,
+      splitDetails: req.body.splitDetails,
+      paidById: req.body.paidById || req.user.id
     });
 
-    // Audit logging handled by securityInterceptor middleware
-
-
-    const result = await db.query.expenses.findFirst({
-      where: eq(expenses.id, updatedExpense.id),
-      with: { category: { columns: { name: true, color: true, icon: true } } },
+    const expenseWithCategory = await db.query.expenses.findFirst({
+      where: eq(expenses.id, newExpense.id),
+      with: {
+        category: { columns: { name: true, color: true, icon: true } },
+      },
     });
 
-    res.json({
-      success: true,
-      message: "Expense updated successfully",
-      data: { expense: result },
-    });
-  } catch (error) {
-    console.error("Update expense error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server error while updating expense" });
+    return new ApiResponse(201, expenseWithCategory, "Expense created successfully").send(res);
+  }));
+
+
+// @route   PUT /api/expenses/:id
+// @desc    Update expense
+// @access  Private
+router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), asyncHandler(async (req, res, next) => {
+  const oldExpense = req.resource;
+  const {
+    amount,
+    description,
+    category,
+    date,
+    paymentMethod,
+    location,
+    tags,
+    isRecurring,
+    recurringPattern,
+    notes,
+    subcategory,
+    status,
+  } = req.body;
+
+  const updateData = {};
+  if (amount !== undefined) updateData.amount = amount.toString();
+  if (description !== undefined) updateData.description = description;
+  if (category !== undefined) {
+    // Verify new category
+    const [cat] = await db
+      .select()
+      .from(categories)
+      .where(
+        and(eq(categories.id, category), eq(categories.userId, req.user.id))
+      );
+    if (!cat) {
+      return next(new AppError(400, "Invalid category"));
+    }
+    updateData.categoryId = category;
   }
-});
+  if (date !== undefined) updateData.date = new Date(date);
+  if (paymentMethod) updateData.paymentMethod = paymentMethod;
+  if (location) updateData.location = location;
+  if (tags) updateData.tags = tags;
+  if (isRecurring !== undefined) updateData.isRecurring = isRecurring;
+  if (recurringPattern) updateData.recurringPattern = recurringPattern;
+  if (notes) updateData.notes = notes;
+  if (subcategory) updateData.subcategory = subcategory;
+  if (status) updateData.status = status;
+
+  updateData.updatedAt = new Date();
+
+  const [updatedExpense] = await db
+    .update(expenses)
+    .set(updateData)
+    .where(eq(expenses.id, req.params.id))
+    .returning();
+
+  // Emit update event
+  eventBus.emit('EXPENSE_UPDATED', {
+    ...updatedExpense,
+    oldCategoryId: oldExpense.categoryId
+  });
+
+  const result = await db.query.expenses.findFirst({
+    where: eq(expenses.id, updatedExpense.id),
+    with: { category: { columns: { name: true, color: true, icon: true } } },
+  });
+
+  return new ApiResponse(200, result, "Expense updated successfully").send(res);
+}));
 
 // @route   DELETE /api/expenses/:id
 // @desc    Delete expense
 // @access  Private
-router.delete("/:id", protect, checkOwnership("Expense"), securityInterceptor(), async (req, res) => {
-  try {
-    const expense = req.resource;
-    await db.delete(expenses).where(eq(expenses.id, req.params.id));
+router.delete("/:id", protect, checkOwnership("Expense"), securityInterceptor(), asyncHandler(async (req, res, next) => {
+  const expense = req.resource;
+  await db.delete(expenses).where(eq(expenses.id, req.params.id));
 
-    // Emit deletion event
-    eventBus.emit('EXPENSE_DELETED', expense);
+  // Emit deletion event
+  eventBus.emit('EXPENSE_DELETED', expense);
 
-    // Audit logging handled by securityInterceptor middleware
-
-
-    res.json({ success: true, message: "Expense deleted successfully" });
-  } catch (error) {
-    console.error("Delete expense error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server error while deleting expense" });
-  }
-});
+  return new ApiResponse(200, null, "Expense deleted successfully").send(res);
+}));
 
 // @route   POST /api/expenses/import
 // @desc    Import expenses from CSV data
 // @access  Private
-router.post("/import", protect, auditBulkOperation('EXPENSE_IMPORT', 'expense'), async (req, res) => {
-  try {
-    const { expenses: expensesData } = req.body;
+router.post("/import", protect, auditBulkOperation('EXPENSE_IMPORT', 'expense'), asyncHandler(async (req, res, next) => {
+  const { expenses: expensesData } = req.body;
 
-    if (!expensesData || !Array.isArray(expensesData)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid request: expenses array is required",
-      });
+  if (!expensesData || !Array.isArray(expensesData)) {
+    return next(new AppError(400, "Invalid request: expenses array is required"));
+  }
+
+  const errors = [];
+  const validExpenses = [];
+
+  // Validate and prepare expenses
+  for (let i = 0; i < expensesData.length; i++) {
+    const expense = expensesData[i];
+    const rowNumber = i + 1;
+
+    // Using a nested try-catch here is acceptable for row-level validation if we want to continue, 
+    // but we'll adapt it to avoid manual res.status calls.
+    if (!expense.amount || isNaN(parseFloat(expense.amount))) {
+      errors.push(`Row ${rowNumber}: Invalid or missing amount`);
+      continue;
     }
 
-    const errors = [];
-    const validExpenses = [];
+    if (!expense.description || typeof expense.description !== 'string' || expense.description.trim().length === 0) {
+      errors.push(`Row ${rowNumber}: Invalid or missing description`);
+      continue;
+    }
 
-    // Validate and prepare expenses
-    for (let i = 0; i < expensesData.length; i++) {
-      const expense = expensesData[i];
-      const rowNumber = i + 1;
+    if (!expense.category || typeof expense.category !== 'string') {
+      errors.push(`Row ${rowNumber}: Invalid or missing category`);
+      continue;
+    }
 
-      try {
-        // Validate required fields
-        if (!expense.amount || isNaN(parseFloat(expense.amount))) {
-          errors.push(`Row ${rowNumber}: Invalid or missing amount`);
-          continue;
-        }
+    // Validate category exists and belongs to user
+    const [categoryDoc] = await db
+      .select()
+      .from(categories)
+      .where(
+        and(eq(categories.id, expense.category), eq(categories.userId, req.user.id))
+      );
 
-        if (!expense.description || typeof expense.description !== 'string' || expense.description.trim().length === 0) {
-          errors.push(`Row ${rowNumber}: Invalid or missing description`);
-          continue;
-        }
+    if (!categoryDoc) {
+      errors.push(`Row ${rowNumber}: Invalid category "${expense.category}"`);
+      continue;
+    }
 
-        if (!expense.category || typeof expense.category !== 'string') {
-          errors.push(`Row ${rowNumber}: Invalid or missing category`);
-          continue;
-        }
-
-        // Validate category exists and belongs to user
-        const [categoryDoc] = await db
-          .select()
-          .from(categories)
-          .where(
-            and(eq(categories.id, expense.category), eq(categories.userId, req.user.id))
-          );
-
-        if (!categoryDoc) {
-          errors.push(`Row ${rowNumber}: Invalid category "${expense.category}"`);
-          continue;
-        }
-
-        // Validate date
-        let expenseDate;
-        if (expense.date) {
-          expenseDate = new Date(expense.date);
-          if (isNaN(expenseDate.getTime())) {
-            errors.push(`Row ${rowNumber}: Invalid date format`);
-            continue;
-          }
-        } else {
-          expenseDate = new Date();
-        }
-
-        validExpenses.push({
-          userId: req.user.id,
-          amount: parseFloat(expense.amount).toString(),
-          description: expense.description.trim(),
-          categoryId: expense.category,
-          date: expenseDate,
-          paymentMethod: expense.paymentMethod || "other",
-          location: expense.location || null,
-          tags: expense.tags || [],
-          isRecurring: expense.isRecurring || false,
-          recurringPattern: expense.recurringPattern || null,
-          notes: expense.notes || null,
-          subcategory: expense.subcategory || null,
-        });
-      } catch (error) {
-        errors.push(`Row ${rowNumber}: ${error.message}`);
+    // Validate date
+    let expenseDate;
+    if (expense.date) {
+      expenseDate = new Date(expense.date);
+      if (isNaN(expenseDate.getTime())) {
+        errors.push(`Row ${rowNumber}: Invalid date format`);
+        continue;
       }
+    } else {
+      expenseDate = new Date();
     }
 
-    if (validExpenses.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No valid expenses to import",
-        errors,
-      });
-    }
-
-    // Bulk insert valid expenses
-    const insertedExpenses = await db
-      .insert(expenses)
-      .values(validExpenses)
-      .returning();
-
-    // Log expense import
-    logAudit(req, {
+    validExpenses.push({
       userId: req.user.id,
-      action: AuditActions.EXPENSE_IMPORT,
-      resourceType: ResourceTypes.EXPENSE,
-      metadata: {
-        importedCount: insertedExpenses.length,
-        errorCount: errors.length,
-      },
-      status: 'success',
-    });
-
-    // Update category stats for all affected categories
-    const affectedCategoryIds = [...new Set(validExpenses.map(exp => exp.categoryId))];
-    for (const categoryId of affectedCategoryIds) {
-      await updateCategoryStats(categoryId);
-    }
-
-    res.status(201).json({
-      success: true,
-      message: `Successfully imported ${insertedExpenses.length} expenses`,
-      data: {
-        imported: insertedExpenses.length,
-        errors: errors.length,
-        errorDetails: errors.slice(0, 10), // Limit error details to first 10
-      },
-    });
-  } catch (error) {
-    console.error("Import expenses error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while importing expenses",
+      amount: parseFloat(expense.amount).toString(),
+      description: expense.description.trim(),
+      categoryId: expense.category,
+      date: expenseDate,
+      paymentMethod: expense.paymentMethod || "other",
+      location: expense.location || null,
+      tags: expense.tags || [],
+      isRecurring: expense.isRecurring || false,
+      recurringPattern: expense.recurringPattern || null,
+      notes: expense.notes || null,
+      subcategory: expense.subcategory || null,
     });
   }
-});
+
+  if (validExpenses.length === 0) {
+    return next(new AppError(400, "No valid expenses to import", errors));
+  }
+
+  // Bulk insert valid expenses
+  const insertedExpenses = await db
+    .insert(expenses)
+    .values(validExpenses)
+    .returning();
+
+  // Log expense import
+  logAudit(req, {
+    userId: req.user.id,
+    action: AuditActions.EXPENSE_IMPORT,
+    resourceType: ResourceTypes.EXPENSE,
+    metadata: {
+      importedCount: insertedExpenses.length,
+      errorCount: errors.length,
+    },
+    status: 'success',
+  });
+
+  // Update category stats handled via events/listeners now
+
+  return new ApiResponse(201, {
+    imported: insertedExpenses.length,
+    errors: errors.length,
+    errorDetails: errors.slice(0, 10),
+  }, `Successfully imported ${insertedExpenses.length} expenses`).send(res);
+}));
 
 // @route   GET /api/expenses/stats/summary
 // @desc    Get expense summary statistics
 // @access  Private
-router.get("/stats/summary", protect, async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
+router.get("/stats/summary", protect, asyncHandler(async (req, res, next) => {
+  const { startDate, endDate } = req.query;
 
-    // Default dates if not provided
-    const start = startDate
-      ? new Date(startDate)
-      : new Date(new Date().getFullYear(), 0, 1);
-    const end = endDate ? new Date(endDate) : new Date();
+  // Default dates if not provided
+  const start = startDate
+    ? new Date(startDate)
+    : new Date(new Date().getFullYear(), 0, 1);
+  const end = endDate ? new Date(endDate) : new Date();
 
-    const conditions = [
-      eq(expenses.userId, req.user.id),
-      eq(expenses.status, "completed"),
-      gte(expenses.date, start),
-      lte(expenses.date, end),
-    ];
+  const conditions = [
+    eq(expenses.userId, req.user.id),
+    eq(expenses.status, "completed"),
+    gte(expenses.date, start),
+    lte(expenses.date, end),
+  ];
 
-    // Total expenses
-    const [totalResult] = await db
-      .select({
-        total: sql`sum(${expenses.amount})`,
-        count: sql`count(*)`,
-      })
-      .from(expenses)
-      .where(and(...conditions));
+  // Total expenses
+  const [totalResult] = await db
+    .select({
+      total: sql`sum(${expenses.amount})`,
+      count: sql`count(*)`,
+    })
+    .from(expenses)
+    .where(and(...conditions));
 
-    // By Category
-    const byCategory = await db
-      .select({
-        categoryId: expenses.categoryId,
-        categoryName: categories.name,
-        categoryColor: categories.color,
-        total: sql`sum(${expenses.amount})`,
-        count: sql`count(*)`,
-      })
-      .from(expenses)
-      .leftJoin(categories, eq(expenses.categoryId, categories.id))
-      .where(and(...conditions))
-      .groupBy(expenses.categoryId, categories.name, categories.color) // Ensure grouping correctness
-      .orderBy(desc(sql`sum(${expenses.amount})`)); // Sort by total amount
+  // By Category
+  const byCategory = await db
+    .select({
+      categoryId: expenses.categoryId,
+      categoryName: categories.name,
+      categoryColor: categories.color,
+      total: sql`sum(${expenses.amount})`,
+      count: sql`count(*)`,
+    })
+    .from(expenses)
+    .leftJoin(categories, eq(expenses.categoryId, categories.id))
+    .where(and(...conditions))
+    .groupBy(expenses.categoryId, categories.name, categories.color) // Ensure grouping correctness
+    .orderBy(desc(sql`sum(${expenses.amount})`)); // Sort by total amount
 
-    res.json({
-      success: true,
-      data: {
-        summary: {
-          total: Number(totalResult?.total || 0),
-          count: Number(totalResult?.count || 0),
-        },
-        byCategory: byCategory.map((item) => ({
-          categoryName: item.categoryName,
-          categoryColor: item.categoryColor,
-          total: Number(item.total),
-          count: Number(item.count),
-        })),
-      },
-    });
-  } catch (error) {
-    console.error("Get expense stats error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching expense statistics",
-    });
-  }
-});
+  const data = {
+    summary: {
+      total: Number(totalResult?.total || 0),
+      count: Number(totalResult?.count || 0),
+    },
+    byCategory: byCategory.map((item) => ({
+      categoryName: item.categoryName,
+      categoryColor: item.categoryColor,
+      total: Number(item.total),
+      count: Number(item.count),
+    })),
+  };
+
+  return new ApiResponse(200, data, "Expense statistics retrieved successfully").send(res);
+}));
 
 // @route   GET /api/expenses/recurring/status
 // @desc    Get recurring expense job status
 // @access  Private
-router.get("/recurring/status", protect, async (req, res) => {
-  try {
-    const status = getJobStatus();
-    res.json({
-      success: true,
-      data: { status },
-    });
-  } catch (error) {
-    console.error("Get recurring status error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching recurring job status",
-    });
-  }
-});
+router.get("/recurring/status", protect, asyncHandler(async (req, res, next) => {
+  const status = getJobStatus();
+  return new ApiResponse(200, { status }, "Recurring expense job status retrieved successfully").send(res);
+}));
 
 // @route   POST /api/expenses/recurring/execute
 // @desc    Manually trigger recurring expense execution
 // @access  Private (admin only in production)
-router.post("/recurring/execute", protect, async (req, res) => {
-  try {
-    console.log(`Manual recurring execution triggered by user: ${req.user.id}`);
-    const results = await runManualExecution();
+router.post("/recurring/execute", protect, asyncHandler(async (req, res, next) => {
+  console.log(`Manual recurring execution triggered by user: ${req.user.id}`);
+  const results = await runManualExecution();
 
-    // Log the manual execution
-    logAudit(req, {
-      userId: req.user.id,
-      action: 'RECURRING_MANUAL_EXECUTE',
-      resourceType: ResourceTypes.EXPENSE,
-      metadata: {
-        processed: results?.processed || 0,
-        created: results?.created || 0,
-        failed: results?.failed || 0,
-      },
-      status: results ? 'success' : 'failure',
-    });
+  // Log the manual execution
+  logAudit(req, {
+    userId: req.user.id,
+    action: 'RECURRING_MANUAL_EXECUTE',
+    resourceType: ResourceTypes.EXPENSE,
+    metadata: {
+      processed: results?.processed || 0,
+      created: results?.created || 0,
+      failed: results?.failed || 0,
+    },
+    status: results ? 'success' : 'failure',
+  });
 
-    res.json({
-      success: true,
-      message: "Recurring expense execution completed",
-      data: { results },
-    });
-  } catch (error) {
-    console.error("Manual recurring execution error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error during recurring expense execution",
-    });
-  }
-});
+  return new ApiResponse(200, results, "Recurring expense execution completed").send(res);
+}));
 
 // @route   PUT /api/expenses/:id/recurring
 // @desc    Update recurring settings for an expense
 // @access  Private
-router.put("/:id/recurring", protect, checkOwnership("Expense"), async (req, res) => {
-  try {
-    const { isRecurring, recurringPattern } = req.body;
-    const expenseId = req.params.id;
+router.put("/:id/recurring", protect, checkOwnership("Expense"), asyncHandler(async (req, res, next) => {
+  const { isRecurring, recurringPattern } = req.body;
+  const expenseId = req.params.id;
 
-    if (isRecurring && recurringPattern) {
-      // Enable/update recurring
-      await db
-        .update(expenses)
-        .set({
-          isRecurring: true,
-          recurringPattern,
-          updatedAt: new Date(),
-        })
-        .where(eq(expenses.id, expenseId));
+  if (isRecurring && recurringPattern) {
+    // Enable/update recurring
+    await db
+      .update(expenses)
+      .set({
+        isRecurring: true,
+        recurringPattern,
+        updatedAt: new Date(),
+      })
+      .where(eq(expenses.id, expenseId));
 
-      // Initialize the next execution date
-      const nextDate = await initializeRecurringExpense(expenseId, recurringPattern);
+    // Initialize the next execution date
+    const nextDate = await initializeRecurringExpense(expenseId, recurringPattern);
 
-      res.json({
-        success: true,
-        message: "Recurring settings updated",
-        data: { nextExecutionDate: nextDate },
-      });
-    } else {
-      // Disable recurring
-      await disableRecurring(expenseId);
+    return new ApiResponse(200, { nextExecutionDate: nextDate }, "Recurring settings updated").send(res);
+  } else {
+    // Disable recurring
+    await disableRecurring(expenseId);
 
-      res.json({
-        success: true,
-        message: "Recurring disabled for this expense",
-      });
-    }
-  } catch (error) {
-    console.error("Update recurring error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while updating recurring settings",
-    });
+    return new ApiResponse(200, null, "Recurring disabled for this expense").send(res);
   }
-});
+}));
 
 // @route   GET /api/expenses/recurring/list
 // @desc    Get all recurring expenses for the user
 // @access  Private
-router.get("/recurring/list", protect, async (req, res) => {
-  try {
-    const recurringExpenses = await db.query.expenses.findMany({
-      where: and(
-        eq(expenses.userId, req.user.id),
-        eq(expenses.isRecurring, true)
-      ),
-      orderBy: [asc(expenses.nextExecutionDate)],
-      with: {
-        category: {
-          columns: { name: true, color: true, icon: true },
-        },
+router.get("/recurring/list", protect, asyncHandler(async (req, res, next) => {
+  const recurringExpenses = await db.query.expenses.findMany({
+    where: and(
+      eq(expenses.userId, req.user.id),
+      eq(expenses.isRecurring, true)
+    ),
+    orderBy: [asc(expenses.nextExecutionDate)],
+    with: {
+      category: {
+        columns: { name: true, color: true, icon: true },
       },
-    });
+    },
+  });
 
-    res.json({
-      success: true,
-      data: { expenses: recurringExpenses },
-    });
-  } catch (error) {
-    console.error("Get recurring expenses error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching recurring expenses",
-    });
-  }
-});
+  return new ApiResponse(200, recurringExpenses, "Recurring expenses retrieved successfully").send(res);
+}));
 
 /**
  * POST /api/expenses/categorize
  * Bulk categorize expenses using ML
  */
-router.post('/categorize', async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { expenseIds, autoApply = true } = req.body;
+router.post('/categorize', protect, asyncHandler(async (req, res, next) => {
+  const userId = req.user.id;
+  const { expenseIds, autoApply = true } = req.body;
 
-    if (!expenseIds || !Array.isArray(expenseIds) || expenseIds.length === 0) {
-      return res.status(400).json({
-        error: 'expenseIds array is required and must not be empty'
-      });
+  if (!expenseIds || !Array.isArray(expenseIds) || expenseIds.length === 0) {
+    return next(new AppError(400, "expenseIds array is required and must not be empty"));
+  }
+
+  if (expenseIds.length > 100) {
+    return next(new AppError(400, "Cannot categorize more than 100 expenses at once"));
+  }
+
+  const results = await bulkCategorizeExpenses(userId, expenseIds);
+
+  // Log audit event
+  await logAuditEventAsync({
+    userId,
+    action: AuditActions.EXPENSE_UPDATE,
+    resourceType: ResourceTypes.EXPENSE,
+    resourceId: null, // Bulk operation
+    metadata: {
+      bulkCategorization: true,
+      expenseCount: expenseIds.length,
+      appliedCount: results.filter(r => r.applied).length,
+      autoApply
+    },
+    status: 'success',
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent')
+  });
+
+  return new ApiResponse(200, {
+    results,
+    summary: {
+      total: results.length,
+      applied: results.filter(r => r.applied).length,
+      skipped: results.filter(r => !r.applied).length
     }
+  }, "Bulk categorization completed").send(res);
+}));
 
-    // Limit bulk categorization to prevent abuse
-    if (expenseIds.length > 100) {
-      return res.status(400).json({
-        error: 'Cannot categorize more than 100 expenses at once'
-      });
-    }
+/**
+ * POST /api/expenses/train-model
+ * Train the categorization model for the user
+ */
+router.post('/train-model', protect, asyncHandler(async (req, res, next) => {
+  const userId = req.user.id;
 
-    const results = await bulkCategorizeExpenses(userId, expenseIds);
+  const result = await trainCategorizationModel(userId);
 
+  if (result.success) {
     // Log audit event
     await logAuditEventAsync({
       userId,
-      action: AuditActions.EXPENSE_UPDATE,
-      resourceType: ResourceTypes.EXPENSE,
-      resourceId: null, // Bulk operation
+      action: 'MODEL_TRAIN',
+      resourceType: 'AI_MODEL',
+      resourceId: null,
       metadata: {
-        bulkCategorization: true,
-        expenseCount: expenseIds.length,
-        appliedCount: results.filter(r => r.applied).length,
-        autoApply
+        modelType: 'expense_categorization',
+        trainingDataSize: result.status.trainingDataSize,
+        categoriesCount: result.status.categoriesCount
       },
       status: 'success',
       ipAddress: req.ip,
       userAgent: req.get('User-Agent')
     });
 
-    res.json({
-      data: {
-        results,
-        summary: {
-          total: results.length,
-          applied: results.filter(r => r.applied).length,
-          skipped: results.filter(r => !r.applied).length
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error in bulk categorization:', error);
-
-    // Log failed audit event
-    await logAuditEventAsync({
-      userId: req.user.id,
-      action: AuditActions.EXPENSE_UPDATE,
-      resourceType: ResourceTypes.EXPENSE,
-      metadata: {
-        bulkCategorization: true,
-        error: error.message
-      },
-      status: 'failure',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-
-    res.status(500).json({ error: 'Failed to categorize expenses' });
+    return new ApiResponse(200, result.status, 'Model trained successfully').send(res);
+  } else {
+    return next(new AppError(400, result.error || 'Failed to train model'));
   }
-});
-
-/**
- * POST /api/expenses/train-model
- * Train the categorization model for the user
- */
-router.post('/train-model', async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    const result = await trainCategorizationModel(userId);
-
-    if (result.success) {
-      // Log audit event
-      await logAuditEventAsync({
-        userId,
-        action: 'MODEL_TRAIN',
-        resourceType: 'AI_MODEL',
-        resourceId: null,
-        metadata: {
-          modelType: 'expense_categorization',
-          trainingDataSize: result.status.trainingDataSize,
-          categoriesCount: result.status.categoriesCount
-        },
-        status: 'success',
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
-      });
-
-      res.json({
-        data: result.status,
-        message: 'Model trained successfully'
-      });
-    } else {
-      res.status(400).json({
-        error: result.error,
-        message: 'Failed to train model'
-      });
-    }
-  } catch (error) {
-    console.error('Error training model:', error);
-    res.status(500).json({ error: 'Failed to train categorization model' });
-  }
-});
+}));
 
 /**
  * POST /api/expenses/retrain-model
  * Retrain the model with user corrections
  */
-router.post('/retrain-model', async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { corrections } = req.body;
+router.post('/retrain-model', protect, asyncHandler(async (req, res, next) => {
+  const userId = req.user.id;
+  const { corrections } = req.body;
 
-    if (!corrections || !Array.isArray(corrections)) {
-      return res.status(400).json({
-        error: 'corrections array is required'
-      });
-    }
-
-    const result = await retrainWithCorrections(userId, corrections);
-
-    if (result.success) {
-      // Log audit event
-      await logAuditEventAsync({
-        userId,
-        action: 'MODEL_RETRAIN',
-        resourceType: 'AI_MODEL',
-        resourceId: null,
-        metadata: {
-          modelType: 'expense_categorization',
-          correctionsCount: corrections.length,
-          trainingDataSize: result.status.trainingDataSize
-        },
-        status: 'success',
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
-      });
-
-      res.json({
-        data: result.status,
-        message: 'Model retrained successfully with corrections'
-      });
-    } else {
-      res.status(400).json({
-        error: result.error,
-        message: 'Failed to retrain model'
-      });
-    }
-  } catch (error) {
-    console.error('Error retraining model:', error);
-    res.status(500).json({ error: 'Failed to retrain categorization model' });
+  if (!corrections || !Array.isArray(corrections)) {
+    return next(new AppError(400, "corrections array is required"));
   }
-});
+
+  const result = await retrainWithCorrections(userId, corrections);
+
+  if (result.success) {
+    // Log audit event
+    await logAuditEventAsync({
+      userId,
+      action: 'MODEL_RETRAIN',
+      resourceType: 'AI_MODEL',
+      resourceId: null,
+      metadata: {
+        modelType: 'expense_categorization',
+        correctionsCount: corrections.length,
+        trainingDataSize: result.status.trainingDataSize
+      },
+      status: 'success',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    return new ApiResponse(200, result.status, 'Model retrained successfully with corrections').send(res);
+  } else {
+    return next(new AppError(400, result.error || 'Failed to retrain model'));
+  }
+}));
 
 export default router;

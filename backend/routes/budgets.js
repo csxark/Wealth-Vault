@@ -6,7 +6,9 @@ import { vaults, vaultMembers, expenses, categories, familySettings, forecasts }
 import { protect } from "../middleware/auth.js";
 import { securityInterceptor } from "../middleware/auditMiddleware.js";
 import { checkVaultAccess, isVaultOwner } from "../middleware/vaultAuth.js";
-import { asyncHandler, ValidationError, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
+import { asyncHandler } from "../middleware/errorHandler.js";
+import { AppError } from "../utils/AppError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 import forecastingService from "../services/forecastingService.js";
 
 const router = express.Router();
@@ -18,7 +20,7 @@ const router = express.Router();
  *     summary: Get vault budget
  *     tags: [Budgets]
  */
-router.get("/vault/:vaultId", protect, checkVaultAccess(), asyncHandler(async (req, res) => {
+router.get("/vault/:vaultId", protect, checkVaultAccess(), asyncHandler(async (req, res, next) => {
   const { vaultId } = req.params;
   const { period = 'monthly' } = req.query;
 
@@ -29,7 +31,7 @@ router.get("/vault/:vaultId", protect, checkVaultAccess(), asyncHandler(async (r
     .where(eq(familySettings.vaultId, vaultId));
 
   if (!vaultSettings) {
-    throw new NotFoundError('Vault settings not found');
+    return next(new AppError(404, 'Vault settings not found'));
   }
 
   // Calculate date range based on period
@@ -76,7 +78,7 @@ router.get("/vault/:vaultId", protect, checkVaultAccess(), asyncHandler(async (r
 
   const memberCount = Number(membersCount[0]?.count || 1);
 
-  res.success({
+  return new ApiResponse(200, {
     vaultId,
     period,
     totalBudget: Number(vaultSettings.monthlyBudget || 0),
@@ -90,7 +92,7 @@ router.get("/vault/:vaultId", protect, checkVaultAccess(), asyncHandler(async (r
       amount: Number(exp.amount),
       count: Number(exp.count),
     })),
-  }, 'Vault budget retrieved successfully');
+  }, 'Vault budget retrieved successfully').send(res);
 }));
 
 /**
@@ -115,10 +117,10 @@ router.put("/vault/:vaultId", protect, isVaultOwner,
     body("monthlyBudget").optional().isFloat({ min: 0 }),
     body("defaultSplitMethod").optional().isIn(['equal', 'percentage', 'custom']),
     body("enableReimbursements").optional().isBoolean(),
-  ], asyncHandler(async (req, res) => {
+  ], asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Validation failed", errors.array());
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
 
     const { vaultId } = req.params;
@@ -138,10 +140,10 @@ router.put("/vault/:vaultId", protect, isVaultOwner,
       .returning();
 
     if (!updatedSettings) {
-      throw new NotFoundError('Vault settings not found');
+      return next(new AppError(404, 'Vault settings not found'));
     }
 
-    res.success(updatedSettings, 'Vault budget updated successfully');
+    return new ApiResponse(200, updatedSettings, 'Vault budget updated successfully').send(res);
   }));
 
 /**
@@ -151,7 +153,7 @@ router.put("/vault/:vaultId", protect, isVaultOwner,
  *     summary: Get vault budget alerts
  *     tags: [Budgets]
  */
-router.get("/vault/:vaultId/alerts", protect, checkVaultAccess(), asyncHandler(async (req, res) => {
+router.get("/vault/:vaultId/alerts", protect, checkVaultAccess(), asyncHandler(async (req, res, next) => {
   const { vaultId } = req.params;
 
   // Get vault settings and current spending
@@ -161,7 +163,7 @@ router.get("/vault/:vaultId/alerts", protect, checkVaultAccess(), asyncHandler(a
     .where(eq(familySettings.vaultId, vaultId));
 
   if (!vaultSettings || !vaultSettings.monthlyBudget) {
-    return res.success([], 'No budget alerts');
+    return new ApiResponse(200, [], 'No budget alerts').send(res);
   }
 
   const now = new Date();
@@ -201,7 +203,7 @@ router.get("/vault/:vaultId/alerts", protect, checkVaultAccess(), asyncHandler(a
     });
   }
 
-  res.success(alerts, 'Vault budget alerts retrieved successfully');
+  return new ApiResponse(200, alerts, 'Vault budget alerts retrieved successfully').send(res);
 }));
 
 /**
@@ -218,10 +220,10 @@ router.post("/forecast", protect, [
   body("scenario").optional().isIn(['baseline', 'optimistic', 'pessimistic']),
   body("seasonalAdjustment").optional().isBoolean(),
   body("externalFactors").optional().isArray(),
-], securityInterceptor(), asyncHandler(async (req, res) => {
+], securityInterceptor(), asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
+    return next(new AppError(400, "Validation failed", errors.array()));
   }
 
   const {
@@ -245,7 +247,7 @@ router.post("/forecast", protect, [
     }
   );
 
-  res.success(forecast, 'Expense forecast generated successfully');
+  return new ApiResponse(200, forecast, 'Expense forecast generated successfully').send(res);
 }));
 
 /**
@@ -260,10 +262,10 @@ router.post("/forecast/simulation", protect, [
   body("simulationInputs.incomeChange").optional().isFloat(),
   body("simulationInputs.expenseAdjustments").optional().isArray(),
   body("simulationInputs.oneTimeExpenses").optional().isArray(),
-], securityInterceptor(), asyncHandler(async (req, res) => {
+], securityInterceptor(), asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
+    return next(new AppError(400, "Validation failed", errors.array()));
   }
 
   const { simulationInputs } = req.body;
@@ -273,7 +275,7 @@ router.post("/forecast/simulation", protect, [
     simulationInputs
   );
 
-  res.success(simulation, 'Simulation forecast generated successfully');
+  return new ApiResponse(200, simulation, 'Simulation forecast generated successfully').send(res);
 }));
 
 /**
@@ -283,7 +285,7 @@ router.post("/forecast/simulation", protect, [
  *     summary: Get user forecasts
  *     tags: [Budgets]
  */
-router.get("/forecast", protect, asyncHandler(async (req, res) => {
+router.get("/forecast", protect, asyncHandler(async (req, res, next) => {
   const { type, limit = 10 } = req.query;
 
   const forecasts = await forecastingService.getUserForecasts(
@@ -292,7 +294,7 @@ router.get("/forecast", protect, asyncHandler(async (req, res) => {
     parseInt(limit)
   );
 
-  res.success(forecasts, 'User forecasts retrieved successfully');
+  return new ApiResponse(200, forecasts, 'User forecasts retrieved successfully').send(res);
 }));
 
 /**
@@ -302,16 +304,16 @@ router.get("/forecast", protect, asyncHandler(async (req, res) => {
  *     summary: Get forecast by ID
  *     tags: [Budgets]
  */
-router.get("/forecast/:forecastId", protect, asyncHandler(async (req, res) => {
+router.get("/forecast/:forecastId", protect, asyncHandler(async (req, res, next) => {
   const { forecastId } = req.params;
 
   const forecast = await forecastingService.getForecastById(forecastId, req.user.id);
 
   if (!forecast) {
-    throw new NotFoundError('Forecast not found');
+    return next(new AppError(404, 'Forecast not found'));
   }
 
-  res.success(forecast, 'Forecast retrieved successfully');
+  return new ApiResponse(200, forecast, 'Forecast retrieved successfully').send(res);
 }));
 
 /**
@@ -332,12 +334,12 @@ router.delete("/forecast/:forecastId", protect,
     }
   },
   securityInterceptor(),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const { forecastId } = req.params;
 
     await forecastingService.deleteForecast(forecastId, req.user.id);
 
-    res.success(null, 'Forecast deleted successfully');
+    return new ApiResponse(200, null, 'Forecast deleted successfully').send(res);
   }));
 
 export default router;

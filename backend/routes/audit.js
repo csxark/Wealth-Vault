@@ -3,6 +3,8 @@ import { protect } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import replayEngine from '../services/replayEngine.js';
 import forensicAI from '../services/forensicAI.js';
+import { AppError } from '../utils/AppError.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
 import db from '../config/db.js';
 import { forensicQueries, auditSnapshots, auditLogs } from '../db/schema.js';
 import { eq, desc, and, isNotNull } from 'drizzle-orm';
@@ -14,7 +16,7 @@ const router = express.Router();
  * @desc    Get user's audit snapshots
  * @access  Private
  */
-router.get('/snapshots', protect, asyncHandler(async (req, res) => {
+router.get('/snapshots', protect, asyncHandler(async (req, res, next) => {
   const { limit = 10 } = req.query;
 
   const snapshots = await db
@@ -31,7 +33,7 @@ router.get('/snapshots', protect, asyncHandler(async (req, res) => {
     .orderBy(desc(auditSnapshots.snapshotDate))
     .limit(parseInt(limit));
 
-  res.success(snapshots, 'Snapshots retrieved successfully');
+  return new ApiResponse(200, snapshots, 'Snapshots retrieved successfully').send(res);
 }));
 
 /**
@@ -39,16 +41,16 @@ router.get('/snapshots', protect, asyncHandler(async (req, res) => {
  * @desc    Replay financial state at a specific date (Time Machine)
  * @access  Private
  */
-router.post('/replay', protect, asyncHandler(async (req, res) => {
+router.post('/replay', protect, asyncHandler(async (req, res, next) => {
   const { targetDate } = req.body;
 
   if (!targetDate) {
-    return res.status(400).json({ success: false, message: 'targetDate is required' });
+    return next(new AppError(400, 'targetDate is required'));
   }
 
   const date = new Date(targetDate);
   if (isNaN(date.getTime())) {
-    return res.status(400).json({ success: false, message: 'Invalid date format' });
+    return next(new AppError(400, 'Invalid date format'));
   }
 
   const result = await replayEngine.replayToDate(req.user.id, date);
@@ -69,7 +71,7 @@ router.post('/replay', protect, asyncHandler(async (req, res) => {
     completedAt: new Date(),
   });
 
-  res.success(result, 'State replayed successfully');
+  return new ApiResponse(200, result, 'State replayed successfully').send(res);
 }));
 
 /**
@@ -77,12 +79,12 @@ router.post('/replay', protect, asyncHandler(async (req, res) => {
  * @desc    Trace a specific transaction's history
  * @access  Private
  */
-router.post('/trace/:resourceId', protect, asyncHandler(async (req, res) => {
+router.post('/trace/:resourceId', protect, asyncHandler(async (req, res, next) => {
   const { resourceId } = req.params;
 
   const trace = await replayEngine.traceTransaction(req.user.id, resourceId);
 
-  res.success(trace, 'Transaction traced successfully');
+  return new ApiResponse(200, trace, 'Transaction traced successfully').send(res);
 }));
 
 /**
@@ -90,7 +92,7 @@ router.post('/trace/:resourceId', protect, asyncHandler(async (req, res) => {
  * @desc    Get AI explanation of a transaction chain
  * @access  Private
  */
-router.post('/explain/:resourceId', protect, asyncHandler(async (req, res) => {
+router.post('/explain/:resourceId', protect, asyncHandler(async (req, res, next) => {
   const { resourceId } = req.params;
 
   const explanation = await forensicAI.explainTransactionChain(req.user.id, resourceId);
@@ -106,7 +108,7 @@ router.post('/explain/:resourceId', protect, asyncHandler(async (req, res) => {
     completedAt: new Date(),
   });
 
-  res.success({ explanation }, 'Explanation generated successfully');
+  return new ApiResponse(200, { explanation }, 'Explanation generated successfully').send(res);
 }));
 
 /**
@@ -114,23 +116,23 @@ router.post('/explain/:resourceId', protect, asyncHandler(async (req, res) => {
  * @desc    Generate comprehensive forensic report for a period
  * @access  Private
  */
-router.post('/forensic-report', protect, asyncHandler(async (req, res) => {
+router.post('/forensic-report', protect, asyncHandler(async (req, res, next) => {
   const { startDate, endDate } = req.body;
 
   if (!startDate || !endDate) {
-    return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    return next(new AppError(400, 'startDate and endDate are required'));
   }
 
   const start = new Date(startDate);
   const end = new Date(endDate);
 
   if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    return res.status(400).json({ success: false, message: 'Invalid date format' });
+    return next(new AppError(400, 'Invalid date format'));
   }
 
   const report = await forensicAI.generateForensicReport(req.user.id, start, end);
 
-  res.success(report, 'Forensic report generated successfully');
+  return new ApiResponse(200, report, 'Forensic report generated successfully').send(res);
 }));
 
 /**
@@ -138,23 +140,23 @@ router.post('/forensic-report', protect, asyncHandler(async (req, res) => {
  * @desc    Analyze balance discrepancy between two dates
  * @access  Private
  */
-router.post('/analyze-discrepancy', protect, asyncHandler(async (req, res) => {
+router.post('/analyze-discrepancy', protect, asyncHandler(async (req, res, next) => {
   const { date1, date2 } = req.body;
 
   if (!date1 || !date2) {
-    return res.status(400).json({ success: false, message: 'date1 and date2 are required' });
+    return next(new AppError(400, 'date1 and date2 are required'));
   }
 
   const d1 = new Date(date1);
   const d2 = new Date(date2);
 
   if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
-    return res.status(400).json({ success: false, message: 'Invalid date format' });
+    return next(new AppError(400, 'Invalid date format'));
   }
 
   const analysis = await forensicAI.analyzeBalanceDiscrepancy(req.user.id, d1, d2);
 
-  res.success(analysis, 'Discrepancy analysis completed');
+  return new ApiResponse(200, analysis, 'Discrepancy analysis completed successfully').send(res);
 }));
 
 /**
@@ -162,7 +164,7 @@ router.post('/analyze-discrepancy', protect, asyncHandler(async (req, res) => {
  * @desc    Get user's forensic query history
  * @access  Private
  */
-router.get('/queries', protect, asyncHandler(async (req, res) => {
+router.get('/queries', protect, asyncHandler(async (req, res, next) => {
   const { limit = 20 } = req.query;
 
   const queries = await db
@@ -172,7 +174,7 @@ router.get('/queries', protect, asyncHandler(async (req, res) => {
     .orderBy(desc(forensicQueries.createdAt))
     .limit(parseInt(limit));
 
-  res.success(queries, 'Forensic queries retrieved successfully');
+  return new ApiResponse(200, queries, 'Forensic queries retrieved successfully').send(res);
 }));
 
 /**
@@ -180,7 +182,7 @@ router.get('/queries', protect, asyncHandler(async (req, res) => {
  * @desc    Get recent state deltas for the user
  * @access  Private
  */
-router.get('/deltas', protect, asyncHandler(async (req, res) => {
+router.get('/deltas', protect, asyncHandler(async (req, res, next) => {
   const { limit = 50, resourceType } = req.query;
 
   const conditions = [
@@ -199,7 +201,7 @@ router.get('/deltas', protect, asyncHandler(async (req, res) => {
     .orderBy(desc(auditLogs.performedAt))
     .limit(parseInt(limit));
 
-  res.success(deltas, 'State deltas retrieved successfully');
+  return new ApiResponse(200, deltas, 'State deltas retrieved successfully').send(res);
 }));
 
 /**
@@ -207,11 +209,11 @@ router.get('/deltas', protect, asyncHandler(async (req, res) => {
  * @desc    Get balance at specific points in time
  * @access  Private
  */
-router.get('/balance-history', protect, asyncHandler(async (req, res) => {
+router.get('/balance-history', protect, asyncHandler(async (req, res, next) => {
   const { dates } = req.query; // Comma-separated dates
 
   if (!dates) {
-    return res.status(400).json({ success: false, message: 'dates parameter is required' });
+    return next(new AppError(400, 'dates parameter is required'));
   }
 
   const dateArray = dates.split(',').map(d => new Date(d.trim()));
@@ -224,7 +226,7 @@ router.get('/balance-history', protect, asyncHandler(async (req, res) => {
     }
   }
 
-  res.success(balances, 'Balance history retrieved successfully');
+  return new ApiResponse(200, balances, 'Balance history retrieved successfully').send(res);
 }));
 
 export default router;

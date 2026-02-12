@@ -4,6 +4,8 @@ import { protect } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import recurringDetector from '../services/recurringDetector.js';
 import billPaymentEngine from '../services/billPaymentEngine.js';
+import { AppError } from '../utils/AppError.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
 import db from '../config/db.js';
 import { recurringTransactions, scheduledPayments, subscriptionTracking } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
@@ -22,14 +24,10 @@ const router = express.Router();
 router.post(
     '/detect',
     protect,
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const result = await recurringDetector.detectRecurringTransactions(req.user.id);
 
-        res.json({
-            success: true,
-            data: result,
-            message: `Detected ${result.detected} recurring patterns`
-        });
+        return new ApiResponse(200, result, `Detected ${result.detected} recurring patterns`).send(res);
     })
 );
 
@@ -42,7 +40,7 @@ router.get(
     '/recurring',
     protect,
     [query('status').optional().isIn(['active', 'paused', 'cancelled', 'completed'])],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const { status = 'active' } = req.query;
 
         const recurring = await recurringDetector.getUserRecurringTransactions(
@@ -50,11 +48,7 @@ router.get(
             status
         );
 
-        res.json({
-            success: true,
-            data: recurring,
-            count: recurring.length
-        });
+        return new ApiResponse(200, recurring, "Recurring transactions retrieved successfully").send(res);
     })
 );
 
@@ -72,10 +66,10 @@ router.post(
         body('frequency').isIn(['weekly', 'biweekly', 'monthly', 'quarterly', 'yearly']),
         body('nextDueDate').isISO8601().withMessage('Valid due date required')
     ],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, errors: errors.array() });
+            return next(new AppError(400, 'Validation failed', errors.array()));
         }
 
         const {
@@ -107,11 +101,7 @@ router.post(
             })
             .returning();
 
-        res.status(201).json({
-            success: true,
-            data: recurring,
-            message: 'Recurring transaction created'
-        });
+        return new ApiResponse(201, recurring, 'Recurring transaction created successfully').send(res);
     })
 );
 
@@ -124,10 +114,10 @@ router.put(
     '/recurring/:id',
     protect,
     [param('id').isUUID()],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, errors: errors.array() });
+            return next(new AppError(400, 'Validation failed', errors.array()));
         }
 
         const updated = await recurringDetector.updateRecurringTransaction(
@@ -135,11 +125,11 @@ router.put(
             req.body
         );
 
-        res.json({
-            success: true,
-            data: updated,
-            message: 'Recurring transaction updated'
-        });
+        if (!updated) {
+            return next(new AppError(404, 'Recurring transaction not found'));
+        }
+
+        return new ApiResponse(200, updated, 'Recurring transaction updated successfully').send(res);
     })
 );
 
@@ -152,7 +142,7 @@ router.delete(
     '/recurring/:id',
     protect,
     [param('id').isUUID()],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const [cancelled] = await db.update(recurringTransactions)
             .set({
                 status: 'cancelled',
@@ -166,11 +156,11 @@ router.delete(
             )
             .returning();
 
-        res.json({
-            success: true,
-            data: cancelled,
-            message: 'Recurring transaction cancelled'
-        });
+        if (!cancelled) {
+            return next(new AppError(404, 'Recurring transaction not found'));
+        }
+
+        return new ApiResponse(200, cancelled, 'Recurring transaction cancelled successfully').send(res);
     })
 );
 
@@ -191,19 +181,15 @@ router.post(
         body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be positive'),
         body('scheduledDate').isISO8601().withMessage('Valid scheduled date required')
     ],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, errors: errors.array() });
+            return next(new AppError(400, 'Validation failed', errors.array()));
         }
 
         const payment = await billPaymentEngine.schedulePayment(req.user.id, req.body);
 
-        res.status(201).json({
-            success: true,
-            data: payment,
-            message: 'Payment scheduled successfully'
-        });
+        return new ApiResponse(201, payment, 'Payment scheduled successfully').send(res);
     })
 );
 
@@ -216,7 +202,7 @@ router.get(
     '/upcoming',
     protect,
     [query('days').optional().isInt({ min: 1, max: 365 })],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const { days = 30 } = req.query;
 
         const payments = await billPaymentEngine.getUpcomingPayments(
@@ -224,11 +210,7 @@ router.get(
             parseInt(days)
         );
 
-        res.json({
-            success: true,
-            data: payments,
-            count: payments.length
-        });
+        return new ApiResponse(200, payments, "Upcoming payments retrieved successfully").send(res);
     })
 );
 
@@ -241,7 +223,7 @@ router.get(
     '/history',
     protect,
     [query('limit').optional().isInt({ min: 1, max: 500 })],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const { limit = 50 } = req.query;
 
         const payments = await billPaymentEngine.getPaymentHistory(
@@ -249,11 +231,7 @@ router.get(
             parseInt(limit)
         );
 
-        res.json({
-            success: true,
-            data: payments,
-            count: payments.length
-        });
+        return new ApiResponse(200, payments, "Payment history retrieved successfully").send(res);
     })
 );
 
@@ -266,14 +244,14 @@ router.post(
     '/pay/:id',
     protect,
     [param('id').isUUID()],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const result = await billPaymentEngine.processAutoPay(req.params.id);
 
-        res.json({
-            success: result.success,
-            data: result.payment,
-            message: result.success ? 'Payment processed successfully' : 'Payment failed'
-        });
+        if (!result.success) {
+            return next(new AppError(400, result.message || 'Payment failed'));
+        }
+
+        return new ApiResponse(200, result.payment, 'Payment processed successfully').send(res);
     })
 );
 
@@ -286,14 +264,14 @@ router.post(
     '/retry/:id',
     protect,
     [param('id').isUUID()],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const result = await billPaymentEngine.retryPayment(req.params.id);
 
-        res.json({
-            success: result.success,
-            data: result.payment,
-            message: result.success ? 'Payment retry successful' : 'Payment retry failed'
-        });
+        if (!result.success) {
+            return next(new AppError(400, result.message || 'Payment retry failed'));
+        }
+
+        return new ApiResponse(200, result.payment, 'Payment retry successful').send(res);
     })
 );
 
@@ -325,13 +303,10 @@ router.delete(
 router.get(
     '/analytics',
     protect,
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const analytics = await billPaymentEngine.getPaymentAnalytics(req.user.id);
 
-        res.json({
-            success: true,
-            data: analytics
-        });
+        return new ApiResponse(200, analytics, "Payment analytics retrieved successfully").send(res);
     })
 );
 
@@ -354,10 +329,10 @@ router.post(
         body('startDate').isISO8601(),
         body('renewalDate').isISO8601()
     ],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, errors: errors.array() });
+            return next(new AppError(400, 'Validation failed', errors.array()));
         }
 
         const {
@@ -387,11 +362,7 @@ router.post(
             })
             .returning();
 
-        res.status(201).json({
-            success: true,
-            data: subscription,
-            message: 'Subscription added'
-        });
+        return new ApiResponse(201, subscription, 'Subscription added successfully').send(res);
     })
 );
 
@@ -404,7 +375,7 @@ router.get(
     '/subscriptions',
     protect,
     [query('status').optional().isIn(['active', 'cancelled', 'expired', 'trial'])],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const { status = 'active' } = req.query;
 
         const subscriptions = await db.select()
@@ -425,16 +396,14 @@ router.get(
             .filter(s => s.billingCycle === 'yearly')
             .reduce((sum, s) => sum + parseFloat(s.amount), 0);
 
-        res.json({
-            success: true,
-            data: subscriptions,
-            count: subscriptions.length,
+        return new ApiResponse(200, {
+            subscriptions,
             summary: {
                 totalMonthly: Math.round(totalMonthly * 100) / 100,
                 totalYearly: Math.round(totalYearly * 100) / 100,
                 totalAnnualized: Math.round((totalMonthly * 12 + totalYearly) * 100) / 100
             }
-        });
+        }, "Subscriptions retrieved successfully").send(res);
     })
 );
 
@@ -447,7 +416,7 @@ router.put(
     '/subscriptions/:id',
     protect,
     [param('id').isUUID()],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const [updated] = await db.update(subscriptionTracking)
             .set({
                 ...req.body,
@@ -461,11 +430,11 @@ router.put(
             )
             .returning();
 
-        res.json({
-            success: true,
-            data: updated,
-            message: 'Subscription updated'
-        });
+        if (!updated) {
+            return next(new AppError(404, 'Subscription not found'));
+        }
+
+        return new ApiResponse(200, updated, 'Subscription updated successfully').send(res);
     })
 );
 
@@ -478,7 +447,7 @@ router.delete(
     '/subscriptions/:id',
     protect,
     [param('id').isUUID()],
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req, res, next) => {
         const [cancelled] = await db.update(subscriptionTracking)
             .set({
                 status: 'cancelled',
@@ -493,11 +462,11 @@ router.delete(
             )
             .returning();
 
-        res.json({
-            success: true,
-            data: cancelled,
-            message: 'Subscription cancelled'
-        });
+        if (!cancelled) {
+            return next(new AppError(404, 'Subscription not found'));
+        }
+
+        return new ApiResponse(200, cancelled, 'Subscription cancelled successfully').send(res);
     })
 );
 
