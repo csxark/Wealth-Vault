@@ -1136,3 +1136,72 @@ export const forecastsRelations = relations(forecasts, ({ one }) => ({
         references: [categories.id],
     }),
 }));
+
+// Challenges Table (Social Financial Challenges)
+export const challenges = pgTable('challenges', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    creatorId: uuid('creator_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    targetType: text('target_type').notNull(), // 'save_amount', 'reduce_expense', 'increase_income'
+    targetAmount: numeric('target_amount', { precision: 12, scale: 2 }).notNull(),
+    targetCategoryId: uuid('target_category_id').references(() => categories.id, { onDelete: 'set null' }), // For reduce_expense challenges
+    currency: text('currency').default('USD'),
+    startDate: timestamp('start_date').defaultNow().notNull(),
+    endDate: timestamp('end_date').notNull(),
+    isPublic: boolean('is_public').default(true),
+    maxParticipants: integer('max_participants'), // Optional limit
+    status: text('status').default('active'), // 'active', 'completed', 'cancelled'
+    rules: jsonb('rules').default({}), // Additional rules like frequency, milestones
+    metadata: jsonb('metadata').default({
+        tags: [],
+        difficulty: 'medium',
+        category: 'savings'
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Challenge Participants Table
+export const challengeParticipants = pgTable('challenge_participants', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    challengeId: uuid('challenge_id').references(() => challenges.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    joinedAt: timestamp('joined_at').defaultNow(),
+    currentProgress: numeric('current_progress', { precision: 12, scale: 2 }).default('0'),
+    targetProgress: numeric('target_progress', { precision: 12, scale: 2 }).notNull(),
+    status: text('status').default('active'), // 'active', 'completed', 'withdrawn'
+    lastUpdated: timestamp('last_updated').defaultNow(),
+    metadata: jsonb('metadata').default({
+        milestones: [],
+        streak: 0,
+        bestStreak: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Challenges Relations
+export const challengesRelations = relations(challenges, ({ one, many }) => ({
+    creator: one(users, {
+        fields: [challenges.creatorId],
+        references: [users.id],
+    }),
+    targetCategory: one(categories, {
+        fields: [challenges.targetCategoryId],
+        references: [categories.id],
+    }),
+    participants: many(challengeParticipants),
+}));
+
+// Challenge Participants Relations
+export const challengeParticipantsRelations = relations(challengeParticipants, ({ one }) => ({
+    challenge: one(challenges, {
+        fields: [challengeParticipants.challengeId],
+        references: [challenges.id],
+    }),
+    user: one(users, {
+        fields: [challengeParticipants.userId],
+        references: [users.id],
+    }),
+}));
