@@ -3,12 +3,10 @@
  * Uses Gemini AI to analyze spending psychology and generate behavioral insights
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getAIProvider } from './aiProvider.js';
 import { db } from '../config/db.js';
 import { habitLogs, expenses, categories, users, userScores } from '../db/schema.js';
 import { eq, and, gte, desc } from 'drizzle-orm';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 /**
  * Analyze spending psychology using AI
@@ -24,7 +22,7 @@ export async function analyzeSpendingPsychology(userId, startDate = null) {
 
     // Fetch user data
     const [user] = await db.select().from(users).where(eq(users.id, userId));
-    
+
     // Fetch expenses with categories
     const userExpenses = await db
       .select({
@@ -61,14 +59,12 @@ export async function analyzeSpendingPsychology(userId, startDate = null) {
     // Prepare data for AI
     const expenseData = prepareExpenseDataForAI(userExpenses, user);
 
-    // Use AI if available
-    if (process.env.GEMINI_API_KEY) {
-      return await performAIAnalysis(userId, expenseData, existingHabits);
-    } else {
-      return performRuleBasedAnalysis(userId, expenseData);
-    }
+    // Use AI Provider
+    return await performAIAnalysis(userId, expenseData, existingHabits);
   } catch (error) {
     console.error('Error analyzing spending psychology:', error);
+    // Fallback?
+    // In complex rewrites, sometimes we return limited data on error
     throw error;
   }
 }
@@ -78,8 +74,6 @@ export async function analyzeSpendingPsychology(userId, startDate = null) {
  */
 async function performAIAnalysis(userId, expenseData, existingHabits) {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-
     const prompt = `You are a behavioral finance expert analyzing spending patterns. Review the following expense data and provide psychological insights.
 
 **User Profile:**
@@ -121,7 +115,7 @@ Provide a JSON response with the following structure:
       "affectedCategories": ["category names"]
     }
   ],
-  "cognitiveB biases": [
+  "cognitiveBiases": [
     {
       "biasType": "present_bias|anchoring|mental_accounting|loss_aversion|sunk_cost_fallacy",
       "manifestation": "How this bias appears in spending"
@@ -139,19 +133,19 @@ Provide a JSON response with the following structure:
   "coachingTip": "One specific, encouraging tip for this week"
 }`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    
-    // Extract JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('AI response did not contain valid JSON');
+    const provider = getAIProvider();
+    const analysis = await provider.generateJSON(prompt, {
+      model: 'experimental',
+      temperature: 0.4
+    });
+
+    // Validation (simplified)
+    if (!analysis.psychologicalAnalysis) {
+      throw new Error("AI response missing required fields");
     }
 
-    const analysis = JSON.parse(jsonMatch[0]);
-
     // Log detected habits
-    await logDetectedHabits(userId, analysis.detectedPatterns, 'ai');
+    await logDetectedHabits(userId, analysis.detectedPatterns || [], 'ai');
 
     return {
       psychologicalAnalysis: analysis.psychologicalAnalysis,
@@ -163,7 +157,7 @@ Provide a JSON response with the following structure:
       concerningBehaviors: analysis.concerningBehaviors || [],
       coachingTip: analysis.coachingTip,
       generatedAt: new Date(),
-      source: 'gemini-ai'
+      source: `gemini-ai-provider`
     };
   } catch (error) {
     console.error('AI analysis failed, falling back to rule-based:', error);
@@ -298,9 +292,9 @@ export async function detectSpendingHabits(userId, expenses) {
     const firstWeekSpending = Object.keys(expensesByDate)
       .filter(d => d <= 7)
       .reduce((sum, d) => sum + expensesByDate[d], 0);
-    
+
     const totalSpending = Object.values(expensesByDate).reduce((a, b) => a + b, 0);
-    
+
     if (firstWeekSpending > totalSpending * 0.5) {
       detectedHabits.push({
         habitType: 'payday_splurge',
@@ -331,7 +325,7 @@ export async function detectSpendingHabits(userId, expenses) {
     }
 
     // Detect subscription management (positive)
-    const recurringExpenses = expenses.filter(exp => 
+    const recurringExpenses = expenses.filter(exp =>
       /subscription|monthly|netflix|spotify|gym/i.test(exp.expense.description || '')
     );
     if (recurringExpenses.length > 0 && recurringExpenses.length < 8) {
@@ -359,11 +353,12 @@ export async function detectSpendingHabits(userId, expenses) {
  */
 export async function generateWeeklyCoachingTips(userId, scores) {
   try {
-    if (!process.env.GEMINI_API_KEY) {
-      return generateFallbackCoachingTips(scores);
-    }
+    const provider = getAIProvider();
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    // Check if provider is essentially "mock" or functional (simplified check)
+    // Actually getAIProvider will return a provider instance. If API key is missing, 
+    // real provider methods might throw or warn.
+    // Better to just try/catch the generation.
 
     const prompt = `You are a supportive financial coach. Based on the following financial health scores, provide encouraging and actionable weekly coaching tips.
 
@@ -401,15 +396,12 @@ Provide a JSON response with 3 specific coaching tips:
   "encouragement": "One sentence of positive reinforcement"
 }`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('AI response invalid');
-    }
+    // Use AI Provider
+    const analysis = await provider.generateJSON(prompt, {
+      model: 'experimental'
+    });
 
-    return JSON.parse(jsonMatch[0]);
+    return analysis;
   } catch (error) {
     console.error('Error generating coaching tips:', error);
     return generateFallbackCoachingTips(scores);
@@ -471,8 +463,8 @@ function generateFallbackCoachingTips(scores) {
       reward: '100 XP + Budget Master badge',
       difficulty: 'medium'
     },
-    encouragement: scores.overallScore >= 70 
-      ? 'You\'re doing great! Keep up the momentum.' 
+    encouragement: scores.overallScore >= 70
+      ? 'You\'re doing great! Keep up the momentum.'
       : 'Small steps lead to big changes. You\'ve got this!'
   };
 }

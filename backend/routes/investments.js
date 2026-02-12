@@ -12,7 +12,7 @@ import ApiResponse from '../utils/ApiResponse.js';
 const router = express.Router();
 
 // Apply authentication to all routes
-router.use(authenticateToken);
+router.use(protect);
 
 // Investment CRUD Routes
 

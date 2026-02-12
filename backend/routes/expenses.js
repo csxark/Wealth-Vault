@@ -233,6 +233,7 @@ router.post(
   "/",
   protect,
   guardExpenseCreation(), // Security guard middleware
+  securityInterceptor(),
   [
     body("amount").isFloat({ min: 0.01 }),
     body("description").trim().isLength({ min: 1, max: 200 }),
@@ -464,32 +465,8 @@ router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), as
     // Proactively monitor budget thresholds
     await budgetEngine.monitorBudget(req.user.id, updateData.categoryId || oldExpense.categoryId);
 
-    // Log state delta for forensic tracking
-    await logStateDelta({
-      userId: req.user.id,
-      resourceType: 'expense',
-      resourceId: req.params.id,
-      operation: 'UPDATE',
-      beforeState: oldExpense,
-      afterState: updatedExpense,
-      triggeredBy: 'user',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-    });
+    // Audit logging handled by securityInterceptor middleware
 
-    // Log expense update
-    logAudit(req, {
-      userId: req.user.id,
-      action: AuditActions.EXPENSE_UPDATE,
-      resourceType: ResourceTypes.EXPENSE,
-      resourceId: req.params.id,
-      metadata: {
-        updatedFields: Object.keys(updateData),
-        oldAmount: oldExpense.amount,
-        newAmount: updateData.amount,
-      },
-      status: 'success',
-    });
 
     const result = await db.query.expenses.findFirst({
       where: eq(expenses.id, updatedExpense.id),
@@ -521,32 +498,8 @@ router.delete("/:id", protect, checkOwnership("Expense"), securityInterceptor(),
       await updateCategoryStats(expense.categoryId);
     }
 
-    // Log state delta for forensic tracking
-    await logStateDelta({
-      userId: req.user.id,
-      resourceType: 'expense',
-      resourceId: req.params.id,
-      operation: 'DELETE',
-      beforeState: expense,
-      afterState: null,
-      triggeredBy: 'user',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-    });
+    // Audit logging handled by securityInterceptor middleware
 
-    // Log expense deletion
-    logAudit(req, {
-      userId: req.user.id,
-      action: AuditActions.EXPENSE_DELETE,
-      resourceType: ResourceTypes.EXPENSE,
-      resourceId: req.params.id,
-      metadata: {
-        amount: expense.amount,
-        description: expense.description,
-        categoryId: expense.categoryId,
-      },
-      status: 'success',
-    });
 
     res.json({ success: true, message: "Expense deleted successfully" });
   } catch (error) {
@@ -1050,6 +1003,76 @@ router.post('/retrain-model', async (req, res) => {
   } catch (error) {
     console.error('Error retraining model:', error);
     res.status(500).json({ error: 'Failed to retrain categorization model' });
+  }
+});
+
+/**
+ * POST /api/expenses/upload-receipt
+ * Upload and process receipt image for OCR and auto-categorization
+ */
+router.post('/upload-receipt', async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Check if file was uploaded
+    if (!req.files || !req.files.receipt) {
+      return res.status(400).json({
+        error: 'No receipt image uploaded'
+      });
+    }
+
+    const receiptFile = req.files.receipt;
+
+    // Validate image
+    if (!receiptService.validateImage(receiptFile.data)) {
+      return res.status(400).json({
+        error: 'Invalid image file. Please upload a valid image under 10MB.'
+      });
+    }
+
+    // Process receipt
+    const processedData = await receiptService.processReceipt(receiptFile.data, userId);
+
+    // Log audit event
+    await logAuditEventAsync({
+      userId,
+      action: 'RECEIPT_UPLOAD',
+      resourceType: 'RECEIPT',
+      resourceId: null,
+      metadata: {
+        fileName: receiptFile.name,
+        fileSize: receiptFile.size,
+        extractedAmount: processedData.amount,
+        extractedMerchant: processedData.merchant,
+        suggestedCategory: processedData.suggestedCategory
+      },
+      status: 'success',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      data: processedData,
+      message: 'Receipt processed successfully'
+    });
+  } catch (error) {
+    console.error('Error uploading receipt:', error);
+
+    // Log failed audit event
+    await logAuditEventAsync({
+      userId: req.user.id,
+      action: 'RECEIPT_UPLOAD',
+      resourceType: 'RECEIPT',
+      resourceId: null,
+      metadata: {
+        error: error.message
+      },
+      status: 'failure',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.status(500).json({ error: 'Failed to process receipt' });
   }
 });
 

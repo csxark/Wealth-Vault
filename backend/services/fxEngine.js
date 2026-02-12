@@ -1,23 +1,22 @@
-
 import db from '../config/db.js';
-import { fxTransactions, fxRates, currencyWallets } from '../db/schema.js';
+import { fxTransactions, currencyWallets } from '../db/schema.js';
 import walletService from './walletService.js';
-import { eq, and } from 'drizzle-orm';
+import currencyService from './currencyService.js';
+import { eq } from 'drizzle-orm';
 
 class FXEngine {
     /**
      * Perform currency conversion
      */
     async convertCurrency(userId, { sourceCurrency, targetCurrency, amount }) {
-        const pair = `${sourceCurrency.toUpperCase()}/${targetCurrency.toUpperCase()}`;
-
-        // 1. Get current exchange rate
-        const [rateData] = await db.select().from(fxRates).where(eq(fxRates.pair, pair));
-        if (!rateData) throw new Error(`Exchange rate for ${pair} not found`);
-
-        const rate = parseFloat(rateData.rate);
-        const feePercent = 0.005; // 0.5% standard fee
         const sourceAmount = parseFloat(amount);
+
+        // 1. Get Exchange Rate via CurrencyService (Standardized)
+        // Uses DB cache or API fetch
+        const rate = await currencyService.getExchangeRate(sourceCurrency, targetCurrency);
+        if (!rate) throw new Error(`Exchange rate for ${sourceCurrency}/${targetCurrency} not found`);
+
+        const feePercent = 0.005; // 0.5% standard fee
         const targetAmount = sourceAmount * rate * (1 - feePercent);
         const fee = sourceAmount * rate * feePercent;
 

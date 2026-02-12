@@ -149,6 +149,54 @@ export const portfolios = pgTable('portfolios', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+export const investments = pgTable('investments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    symbol: text('symbol').notNull(),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // stock, crypto, etf, mutual_fund
+    quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
+    averageCost: numeric('average_cost', { precision: 18, scale: 8 }).notNull(),
+    totalCost: numeric('total_cost', { precision: 18, scale: 2 }).notNull(),
+    currentPrice: numeric('current_price', { precision: 18, scale: 8 }),
+    marketValue: numeric('market_value', { precision: 18, scale: 2 }),
+    unrealizedGainLoss: numeric('unrealized_gain_loss', { precision: 18, scale: 2 }),
+    unrealizedGainLossPercent: numeric('unrealized_gain_loss_percent', { precision: 10, scale: 2 }),
+    baseCurrencyValue: numeric('base_currency_value', { precision: 18, scale: 2 }),
+    baseCurrencyCode: text('base_currency_code'),
+    valuationDate: timestamp('valuation_date'),
+    lastPriceUpdate: timestamp('last_price_update'),
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_investments_user').on(table.userId),
+    portfolioIdx: index('idx_investments_portfolio').on(table.portfolioId),
+    symbolIdx: index('idx_investments_symbol').on(table.symbol),
+}));
+
+export const investmentTransactions = pgTable('investment_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    type: text('type').notNull(), // buy, sell, dividend, interest
+    quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
+    price: numeric('price', { precision: 18, scale: 8 }).notNull(),
+    fees: numeric('fees', { precision: 12, scale: 2 }).default('0'),
+    totalAmount: numeric('total_amount', { precision: 18, scale: 2 }).notNull(),
+    date: timestamp('date').notNull(),
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_inv_trans_user').on(table.userId),
+    investmentIdx: index('idx_inv_trans_investment').on(table.investmentId),
+    dateIdx: index('idx_inv_trans_date').on(table.date),
+}));
+
 // Time-Machine: Replay Scenarios
 export const replayScenarios = pgTable('replay_scenarios', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -215,6 +263,9 @@ export const fixedAssets = pgTable('fixed_assets', {
     category: text('category').notNull(),
     purchasePrice: numeric('purchase_price', { precision: 12, scale: 2 }).notNull(),
     currentValue: numeric('current_value', { precision: 12, scale: 2 }).notNull(),
+    baseCurrencyValue: numeric('base_currency_value', { precision: 12, scale: 2 }),
+    baseCurrencyCode: text('base_currency_code'),
+    valuationDate: timestamp('valuation_date'),
     appreciationRate: numeric('appreciation_rate', { precision: 5, scale: 2 }),
     createdAt: timestamp('created_at').defaultNow(),
 });
@@ -294,6 +345,9 @@ export const debts = pgTable('debts', {
     debtType: text('debt_type').notNull(),
     principalAmount: numeric('principal_amount', { precision: 12, scale: 2 }).notNull(),
     currentBalance: numeric('current_balance', { precision: 12, scale: 2 }).notNull(),
+    baseCurrencyValue: numeric('base_currency_value', { precision: 12, scale: 2 }),
+    baseCurrencyCode: text('base_currency_code'),
+    valuationDate: timestamp('valuation_date'),
     apr: numeric('apr', { precision: 5, scale: 3 }).notNull(),
     minimumPayment: numeric('minimum_payment', { precision: 12, scale: 2 }).notNull(),
     paymentDueDay: integer('payment_due_day'),
@@ -907,3 +961,110 @@ export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
     statusIdx: index('idx_hedge_status').on(table.status),
 }));
 
+// ============================================================================
+// PORTFOLIO REBALANCING & ASSET DRIFT MANAGER (#308)
+// ============================================================================
+
+// Target Allocations - Define desired % for each asset in a portfolio
+export const targetAllocations = pgTable('target_allocations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').notNull(), // Links to portfolios table
+    symbol: text('symbol').notNull(), // Asset symbol (BTC, AAPL, etc)
+    targetPercentage: numeric('target_percentage', { precision: 5, scale: 2 }).notNull(), // e.g. 20.00 for 20%
+    toleranceBand: numeric('tolerance_band', { precision: 5, scale: 2 }).default('5.00'), // e.g. 5% drift allowed
+    rebalanceFrequency: text('rebalance_frequency').default('monthly'), // monthly, quarterly, yearly
+    lastRebalancedAt: timestamp('last_rebalanced_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_target_allocations_user').on(table.userId),
+    portfolioIdx: index('idx_target_allocations_portfolio').on(table.portfolioId),
+}));
+
+// Rebalance History - Logs of performed rebalancing operations
+export const rebalanceHistory = pgTable('rebalance_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').notNull(),
+    status: text('status').default('proposed'), // proposed, executing, completed, failed
+    driftAtExecution: jsonb('drift_at_execution').notNull(), // Snapshot of drift before trades
+    tradesPerformed: jsonb('trades_performed').default([]), // List of buy/sell orders
+    totalTaxImpact: numeric('total_tax_impact', { precision: 12, scale: 2 }).default('0'),
+    feesPaid: numeric('fees_paid', { precision: 12, scale: 2 }).default('0'),
+    metadata: jsonb('metadata').default({}),
+    executedAt: timestamp('executed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_rebalance_history_user').on(table.userId),
+}));
+
+// Drift Logs - Hourly health checks for portfolios
+export const driftLogs = pgTable('drift_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').notNull(),
+    currentAllocations: jsonb('current_allocations').notNull(), // { 'BTC': 25%, 'ETH': 15% }
+    maxDriftDetected: numeric('max_drift_detected', { precision: 5, scale: 2 }).notNull(),
+    isBreachDetected: boolean('is_breach_detected').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_drift_logs_user').on(table.userId),
+    portfolioIdx: index('idx_drift_logs_portfolio').on(table.portfolioId),
+}));
+
+// ============================================================================
+// AUDIT & LOGGING SYSTEM (#319)
+// ============================================================================
+
+export const auditLogs = pgTable('audit_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    resourceType: text('resource_type'),
+    resourceId: text('resource_id'),
+    originalState: jsonb('original_state'),
+    newState: jsonb('new_state'),
+    delta: jsonb('delta'),
+    deltaHash: text('delta_hash'),
+    metadata: jsonb('metadata').default({}),
+    status: text('status').default('success'),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    sessionId: text('session_id'),
+    requestId: text('request_id'),
+    performedAt: timestamp('performed_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_audit_user').on(table.userId),
+    actionIdx: index('idx_audit_action').on(table.action),
+    resourceIdx: index('idx_audit_resource').on(table.resourceType, table.resourceId),
+    dateIdx: index('idx_audit_date').on(table.performedAt),
+}));
+
+export const auditSnapshots = pgTable('audit_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    snapshotData: jsonb('snapshot_data').notNull(),
+    hash: text('hash').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const forensicQueries = pgTable('forensic_queries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    queryType: text('query_type').notNull(), // replay, trace, explain
+    targetDate: timestamp('target_date'),
+    targetResourceId: text('target_resource_id'),
+    queryParams: jsonb('query_params').default({}),
+    resultSummary: jsonb('result_summary').default({}),
+    aiExplanation: jsonb('ai_explanation'),
+    executionTime: integer('execution_time'), // ms
+    status: text('status').default('pending'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_forensic_user').on(table.userId),
+    typeIdx: index('idx_forensic_type').on(table.queryType),
+}));
