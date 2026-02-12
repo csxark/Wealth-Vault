@@ -46,6 +46,19 @@ export default {
         'background': {
           light: "#F3F4F6",
           dark: "#0F172A",
+          DEFAULT: "var(--bg-primary)",
+          secondary: "var(--bg-secondary)",
+          tertiary: "var(--bg-tertiary)",
+        },
+        'text': {
+          primary: "var(--text-primary)",
+          secondary: "var(--text-secondary)",
+          muted: "var(--text-muted)",
+          inverted: "var(--text-inverted)",
+        },
+        'border': {
+          DEFAULT: "var(--border-primary)",
+          secondary: "var(--border-secondary)",
         },
         'glass': {
           light: "rgba(255, 255, 255, 0.7)",

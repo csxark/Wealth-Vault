@@ -2,8 +2,9 @@ import express from "express";
 import { body, validationResult } from "express-validator";
 import { eq, and, sql, desc, sum, gte, lte } from "drizzle-orm";
 import db from "../config/db.js";
-import { vaults, vaultMembers, expenses, categories, familySettings } from "../db/schema.js";
+import { vaults, vaultMembers, expenses, categories, familySettings, forecasts } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
+import { securityInterceptor } from "../middleware/auditMiddleware.js";
 import { checkVaultAccess, isVaultOwner } from "../middleware/vaultAuth.js";
 import { asyncHandler, ValidationError, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
 import forecastingService from "../services/forecastingService.js";
@@ -99,38 +100,49 @@ router.get("/vault/:vaultId", protect, checkVaultAccess(), asyncHandler(async (r
  *     summary: Update vault budget
  *     tags: [Budgets]
  */
-router.put("/vault/:vaultId", protect, isVaultOwner, [
-  body("monthlyBudget").optional().isFloat({ min: 0 }),
-  body("defaultSplitMethod").optional().isIn(['equal', 'percentage', 'custom']),
-  body("enableReimbursements").optional().isBoolean(),
-], asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
-  }
+router.put("/vault/:vaultId", protect, isVaultOwner,
+  async (req, res, next) => {
+    try {
+      const [settings] = await db.select().from(familySettings).where(eq(familySettings.vaultId, req.params.vaultId));
+      req.resource = settings;
+      next();
+    } catch (e) {
+      next();
+    }
+  },
+  securityInterceptor(),
+  [
+    body("monthlyBudget").optional().isFloat({ min: 0 }),
+    body("defaultSplitMethod").optional().isIn(['equal', 'percentage', 'custom']),
+    body("enableReimbursements").optional().isBoolean(),
+  ], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation failed", errors.array());
+    }
 
-  const { vaultId } = req.params;
-  const { monthlyBudget, defaultSplitMethod, enableReimbursements } = req.body;
+    const { vaultId } = req.params;
+    const { monthlyBudget, defaultSplitMethod, enableReimbursements } = req.body;
 
-  // Update or create vault settings
-  const updateData = {};
-  if (monthlyBudget !== undefined) updateData.monthlyBudget = monthlyBudget.toString();
-  if (defaultSplitMethod) updateData.defaultSplitMethod = defaultSplitMethod;
-  if (enableReimbursements !== undefined) updateData.enableReimbursements = enableReimbursements;
-  updateData.updatedAt = new Date();
+    // Update or create vault settings
+    const updateData = {};
+    if (monthlyBudget !== undefined) updateData.monthlyBudget = monthlyBudget.toString();
+    if (defaultSplitMethod) updateData.defaultSplitMethod = defaultSplitMethod;
+    if (enableReimbursements !== undefined) updateData.enableReimbursements = enableReimbursements;
+    updateData.updatedAt = new Date();
 
-  const [updatedSettings] = await db
-    .update(familySettings)
-    .set(updateData)
-    .where(eq(familySettings.vaultId, vaultId))
-    .returning();
+    const [updatedSettings] = await db
+      .update(familySettings)
+      .set(updateData)
+      .where(eq(familySettings.vaultId, vaultId))
+      .returning();
 
-  if (!updatedSettings) {
-    throw new NotFoundError('Vault settings not found');
-  }
+    if (!updatedSettings) {
+      throw new NotFoundError('Vault settings not found');
+    }
 
-  res.success(updatedSettings, 'Vault budget updated successfully');
-}));
+    res.success(updatedSettings, 'Vault budget updated successfully');
+  }));
 
 /**
  * @swagger
@@ -206,7 +218,7 @@ router.post("/forecast", protect, [
   body("scenario").optional().isIn(['baseline', 'optimistic', 'pessimistic']),
   body("seasonalAdjustment").optional().isBoolean(),
   body("externalFactors").optional().isArray(),
-], asyncHandler(async (req, res) => {
+], securityInterceptor(), asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new ValidationError("Validation failed", errors.array());
@@ -248,7 +260,7 @@ router.post("/forecast/simulation", protect, [
   body("simulationInputs.incomeChange").optional().isFloat(),
   body("simulationInputs.expenseAdjustments").optional().isArray(),
   body("simulationInputs.oneTimeExpenses").optional().isArray(),
-], asyncHandler(async (req, res) => {
+], securityInterceptor(), asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new ValidationError("Validation failed", errors.array());
@@ -309,12 +321,23 @@ router.get("/forecast/:forecastId", protect, asyncHandler(async (req, res) => {
  *     summary: Delete forecast
  *     tags: [Budgets]
  */
-router.delete("/forecast/:forecastId", protect, asyncHandler(async (req, res) => {
-  const { forecastId } = req.params;
+router.delete("/forecast/:forecastId", protect,
+  async (req, res, next) => {
+    try {
+      const [forecast] = await db.select().from(forecasts).where(and(eq(forecasts.id, req.params.forecastId), eq(forecasts.userId, req.user.id)));
+      req.resource = forecast;
+      next();
+    } catch (e) {
+      next();
+    }
+  },
+  securityInterceptor(),
+  asyncHandler(async (req, res) => {
+    const { forecastId } = req.params;
 
-  await forecastingService.deleteForecast(forecastId, req.user.id);
+    await forecastingService.deleteForecast(forecastId, req.user.id);
 
-  res.success(null, 'Forecast deleted successfully');
-}));
+    res.success(null, 'Forecast deleted successfully');
+  }));
 
 export default router;
