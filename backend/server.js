@@ -25,7 +25,8 @@ import { logInfo, logError } from "./utils/logger.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
 import { responseWrapper } from "./middleware/responseWrapper.js";
 import { paginationMiddleware } from "./utils/pagination.js";
-import { errorHandler, notFound } from "./middleware/errorHandler.js";
+import { notFound } from "./middleware/errorHandler.js";
+import { globalErrorHandler } from "./middleware/globalErrorHandler.js";
 
 // Import routes
 import authRoutes from "./routes/auth.js";
@@ -297,7 +298,7 @@ app.use(notFound);
 app.use(errorLogger);
 
 // Centralized error handling middleware (must be last)
-app.use(errorHandler);
+app.use(globalErrorHandler);
 
 const PORT = process.env.PORT || 5000;
 
