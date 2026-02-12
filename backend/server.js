@@ -60,6 +60,7 @@ import expenseSharesRoutes from "./routes/expenseShares.js";
 import reimbursementsRoutes from "./routes/reimbursements.js";
 import forecastRoutes from "./routes/forecasts.js";
 import liquidityOptimizerRoutes from "./routes/liquidityOptimizer.js";
+import forensicRoutes from "./routes/forensic.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
@@ -278,6 +279,7 @@ app.use("/api/categorization", userLimiter, categorizationRoutes);
 app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
 app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
 app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
+app.use("/api/forensic", userLimiter, forensicRoutes);
 
 
 

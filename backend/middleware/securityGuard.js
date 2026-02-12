@@ -7,6 +7,7 @@
 import { detectExpenseAnomaly, createSecurityMarker } from '../services/anomalyDetection.js';
 import { analyzeTransactionRisk } from '../services/securityAI.js';
 import { logAudit, AuditActions, ResourceTypes } from '../services/auditService.js';
+import behaviorForensicService from '../services/behaviorForensicService.js';
 
 /**
  * Security guard middleware for expense creation
@@ -31,7 +32,7 @@ export const guardExpenseCreation = () => {
       }
 
       const expenseData = req.body;
-      
+
       // Run both statistical and AI analysis in parallel
       const [anomalyResult, aiRiskAnalysis] = await Promise.all([
         detectExpenseAnomaly(userId, expenseData).catch(err => {
@@ -44,13 +45,63 @@ export const guardExpenseCreation = () => {
         })
       ]);
 
+      // Behavioral Forensic Shield Interception (L3)
+      const shieldResult = await behaviorForensicService.shieldTransaction(userId, expenseData);
+
+      if (shieldResult.status === 'blocked') {
+        await logAudit(req, {
+          userId,
+          action: AuditActions.EXPENSE_CREATE,
+          resourceType: ResourceTypes.EXPENSE,
+          status: 'blocked',
+          metadata: {
+            reason: 'behavioral_forensic_block',
+            assessment: shieldResult.assessment
+          }
+        });
+
+        return res.status(403).json({
+          success: false,
+          message: 'Behavioral Forensic Engine: Transaction blocked due to extreme deviation from normalcy baseline',
+          error: 'FORENSIC_BLOCK',
+          details: shieldResult.assessment
+        });
+      }
+
+      if (shieldResult.status === 'held') {
+        await logAudit(req, {
+          userId,
+          action: AuditActions.EXPENSE_CREATE,
+          resourceType: ResourceTypes.EXPENSE,
+          status: 'held',
+          metadata: {
+            reason: 'behavioral_forensic_hold',
+            interceptId: shieldResult.interceptId,
+            assessment: shieldResult.assessment
+          }
+        });
+
+        return res.status(202).json({
+          success: true,
+          message: 'Transaction held for behavioral verification',
+          status: 'held',
+          interceptId: shieldResult.interceptId,
+          verificationRequired: true,
+          details: {
+            reason: 'Transaction deviates from your behavioral baseline',
+            recommendation: 'Please verify via the Security Chatbot'
+          }
+        });
+      }
+
+      // Fallback to legacy checks
       // Determine if transaction should be blocked, flagged, or allowed
-      const shouldBlock = aiRiskAnalysis.recommendation === 'block' || 
-                         aiRiskAnalysis.riskScore >= 80;
-      
-      const shouldFlag = anomalyResult.isAnomalous || 
-                        aiRiskAnalysis.isSuspicious ||
-                        aiRiskAnalysis.riskScore >= 40;
+      const shouldBlock = aiRiskAnalysis.recommendation === 'block' ||
+        aiRiskAnalysis.riskScore >= 80;
+
+      const shouldFlag = anomalyResult.isAnomalous ||
+        aiRiskAnalysis.isSuspicious ||
+        aiRiskAnalysis.riskScore >= 40;
 
       // Store security analysis in request for later use
       req.securityAnalysis = {
@@ -123,11 +174,11 @@ export const guardExpenseCreation = () => {
 
         // Attach a post-processing hook to create security marker after expense is created
         const originalJson = res.json.bind(res);
-        res.json = function(data) {
+        res.json = function (data) {
           // Only process successful responses
           if (data.success && data.data?.expense?.id) {
             const expenseId = data.data.expense.id;
-            
+
             // Create security marker asynchronously
             createSecurityMarkerForExpense(userId, expenseId, req.securityFlags)
               .catch(err => console.error('Error creating security marker:', err));
@@ -165,7 +216,7 @@ export const guardExpenseCreation = () => {
 async function createSecurityMarkerForExpense(userId, expenseId, securityFlags) {
   try {
     const { anomaly, aiRisk } = securityFlags.details;
-    
+
     const marker = await createSecurityMarker(userId, expenseId, {
       markerType: securityFlags.markerType,
       severity: securityFlags.severity,
@@ -181,7 +232,7 @@ async function createSecurityMarkerForExpense(userId, expenseId, securityFlags) 
       const { db } = await import('../config/db.js');
       const { securityMarkers } = await import('../db/schema.js');
       const { eq } = await import('drizzle-orm');
-      
+
       await db
         .update(securityMarkers)
         .set({
@@ -220,7 +271,7 @@ export const guardHighValueOperation = (thresholdAmount = 5000) => {
 
       // Check if operation involves high value
       const amount = parseFloat(req.body?.amount || req.params?.amount || 0);
-      
+
       if (amount >= thresholdAmount) {
         // Log high-value operation attempt
         await logAudit(req, {
@@ -240,7 +291,7 @@ export const guardHighValueOperation = (thresholdAmount = 5000) => {
         const { db } = await import('../config/db.js');
         const { users } = await import('../db/schema.js');
         const { eq } = await import('drizzle-orm');
-        
+
         const [user] = await db
           .select({ mfaEnabled: users.mfaEnabled })
           .from(users)
@@ -285,13 +336,13 @@ export const guardBulkOperation = () => {
       }
 
       // Check for bulk operations (arrays in request body)
-      const isBulkOperation = Array.isArray(req.body?.expenses) || 
-                             Array.isArray(req.body?.transactions) ||
-                             Array.isArray(req.body?.items);
+      const isBulkOperation = Array.isArray(req.body?.expenses) ||
+        Array.isArray(req.body?.transactions) ||
+        Array.isArray(req.body?.items);
 
       if (isBulkOperation) {
         const itemCount = (req.body?.expenses || req.body?.transactions || req.body?.items || []).length;
-        
+
         // Flag suspiciously large bulk operations
         if (itemCount > 100) {
           await logAudit(req, {

@@ -1255,6 +1255,62 @@ export const liquidityOptimizerActions = pgTable('liquidity_optimizer_actions', 
 });
 
 // ============================================================================
+// BEHAVIORAL FORENSIC ENGINE & FRAUD PREVENTION SHIELD L3 (#342)
+// ============================================================================
+
+export const behavioralProfiles = pgTable('behavioral_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    normalcyBaseline: jsonb('normalcy_baseline').default({
+        avgTransactionValue: 0,
+        spendingVelocity: 0,
+        commonGeolocations: [],
+        commonDeviceFingerprints: [],
+        peakSpendingHours: [],
+        categoryDistributions: {}
+    }),
+    riskScore: integer('risk_score').default(0),
+    trustLevel: text('trust_level').default('standard'), // trusted, standard, suspicious, restricted
+    lastAnalysisAt: timestamp('last_analysis_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const fraudPreventionShields = pgTable('fraud_prevention_shields', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    isEnabled: boolean('is_enabled').default(true),
+    strictnessLevel: text('strictness_level').default('moderate'), // passive, moderate, aggressive, paranoid
+    blockingThreshold: integer('blocking_threshold').default(80), // Risk score to automatically block
+    reviewThreshold: integer('review_threshold').default(50), // Risk score to hold for verification
+    interceptedCount: integer('intercepted_count').default(0),
+    totalSaved: numeric('total_saved', { precision: 12, scale: 2 }).default('0'),
+    settings: jsonb('settings').default({
+        blockHighValue: true,
+        blockUnusualLocation: true,
+        blockNewDevice: false,
+        requireMFABeyondLimit: 1000
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const fraudIntercepts = pgTable('fraud_intercepts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    transactionData: jsonb('transaction_data').notNull(),
+    riskScore: integer('risk_score').notNull(),
+    riskReasons: jsonb('risk_reasons').default([]),
+    status: text('status').default('held'), // held, verified, blocked, released
+    verificationMethod: text('verification_method'), // chatbot_mfa, manual_review, security_challenge
+    releasedAt: timestamp('released_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ============================================================================
 // GOVERNANCE RELATIONS
 // ============================================================================
 
@@ -1300,6 +1356,18 @@ export const liquidityProjectionsRelations = relations(liquidityProjections, ({ 
 export const liquidityOptimizerActionsRelations = relations(liquidityOptimizerActions, ({ one }) => ({
     user: one(users, { fields: [liquidityOptimizerActions.userId], references: [users.id] }),
     projection: one(liquidityProjections, { fields: [liquidityOptimizerActions.projectionId], references: [liquidityProjections.id] }),
+}));
+
+export const behavioralProfilesRelations = relations(behavioralProfiles, ({ one }) => ({
+    user: one(users, { fields: [behavioralProfiles.userId], references: [users.id] }),
+}));
+
+export const fraudPreventionShieldsRelations = relations(fraudPreventionShields, ({ one }) => ({
+    user: one(users, { fields: [fraudPreventionShields.userId], references: [users.id] }),
+}));
+
+export const fraudInterceptsRelations = relations(fraudIntercepts, ({ one }) => ({
+    user: one(users, { fields: [fraudIntercepts.userId], references: [users.id] }),
 }));
 
 // Challenge Participants Table
