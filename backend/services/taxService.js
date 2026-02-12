@@ -67,7 +67,7 @@ const TAX_BRACKETS_2026 = {
  */
 export function calculateFederalTax(taxableIncome, filingStatus = 'single') {
   const brackets = TAX_BRACKETS_2026[filingStatus]?.brackets;
-  
+
   if (!brackets) {
     throw new Error(`Invalid filing status: ${filingStatus}`);
   }
@@ -84,7 +84,7 @@ export function calculateFederalTax(taxableIncome, filingStatus = 'single') {
 
     const incomeInBracket = Math.min(taxableIncome, bracket.max) - bracket.min + 1;
     const taxInBracket = incomeInBracket * bracket.rate;
-    
+
     totalTax += taxInBracket;
     marginalRate = bracket.rate;
 
@@ -116,10 +116,10 @@ export function calculateFederalTax(taxableIncome, filingStatus = 'single') {
  */
 export function getStandardDeduction(filingStatus, dependents = 0) {
   const baseDeduction = TAX_BRACKETS_2026[filingStatus]?.standardDeduction || TAX_BRACKETS_2026.single.standardDeduction;
-  
+
   // Additional deduction per dependent (for head of household)
   const dependentDeduction = filingStatus === 'head_of_household' ? dependents * 1500 : 0;
-  
+
   return baseDeduction + dependentDeduction;
 }
 
@@ -140,7 +140,7 @@ export async function getUserTaxProfile(userId) {
         taxJurisdiction: 'US_FEDERAL',
         standardDeduction: getStandardDeduction('single', 0)
       }).returning();
-      
+
       profile = created;
     }
 
@@ -148,6 +148,27 @@ export async function getUserTaxProfile(userId) {
   } catch (error) {
     console.error('Error fetching tax profile:', error);
     throw error;
+  }
+}
+
+/**
+ * Calculate Capital Gains Tax
+ * @param {number} gain - The realized gain
+ * @param {boolean} isLongTerm - Whether it's long term (>1 year)
+ * @param {string} incomeBracket - User's marginal tax bracket (for short-term)
+ * @returns {number} Estimated tax
+ */
+export function calculateCapitalGainsTax(gain, isLongTerm = true, incomeBracket = '22%') {
+  if (gain <= 0) return 0;
+
+  if (isLongTerm) {
+    // Simplified 2026 LTCG rates: 0%, 15%, 20%
+    // Most users fall into 15%
+    return gain * 0.15;
+  } else {
+    // Short-term gains are taxed at ordinary income rates
+    const rate = parseFloat(incomeBracket.replace('%', '')) / 100 || 0.22;
+    return gain * rate;
   }
 }
 
@@ -194,7 +215,7 @@ export async function updateTaxProfile(userId, updates) {
 export async function calculateYTDTaxSummary(userId, year = new Date().getFullYear()) {
   try {
     const profile = await getUserTaxProfile(userId);
-    
+
     // Get all expenses for the year
     const startOfYear = new Date(year, 0, 1);
     const endOfYear = new Date(year, 11, 31, 23, 59, 59);
@@ -216,13 +237,13 @@ export async function calculateYTDTaxSummary(userId, year = new Date().getFullYe
 
     // Fetch tax category details for deductible expenses
     const deductionsByCategory = {};
-    
+
     for (const expense of deductibleExpenses) {
       if (expense.taxCategoryId) {
         const taxCat = await db.query.taxCategories.findFirst({
           where: eq(taxCategories.id, expense.taxCategoryId)
         });
-        
+
         if (taxCat) {
           const categoryName = taxCat.categoryName;
           deductionsByCategory[categoryName] = (deductionsByCategory[categoryName] || 0) + parseFloat(expense.amount);
@@ -234,7 +255,7 @@ export async function calculateYTDTaxSummary(userId, year = new Date().getFullYe
     const grossIncome = parseFloat(profile.annualIncome || 0);
     const standardDeduction = parseFloat(profile.standardDeduction || 0);
     const itemizedDeductions = totalDeductions;
-    
+
     // Use greater of standard or itemized deduction
     const totalDeductionAmount = Math.max(standardDeduction, itemizedDeductions);
     const taxableIncome = Math.max(0, grossIncome - totalDeductionAmount);
@@ -284,7 +305,7 @@ export async function calculateTaxSavingsOpportunities(userId, year = new Date()
   try {
     const summary = await calculateYTDTaxSummary(userId, year);
     const profile = await getUserTaxProfile(userId);
-    
+
     const opportunities = [];
 
     // Check if itemizing would save money
@@ -516,6 +537,7 @@ export async function initializeDefaultTaxCategories() {
 
 export default {
   calculateFederalTax,
+  calculateCapitalGainsTax,
   getStandardDeduction,
   getUserTaxProfile,
   updateTaxProfile,

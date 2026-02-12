@@ -59,6 +59,8 @@ import budgetRoutes from "./routes/budgets.js";
 import expenseSharesRoutes from "./routes/expenseShares.js";
 import reimbursementsRoutes from "./routes/reimbursements.js";
 import forecastRoutes from "./routes/forecasts.js";
+import liquidityOptimizerRoutes from "./routes/liquidityOptimizer.js";
+import rebalancingRoutes from "./routes/rebalancing.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -82,6 +84,7 @@ import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
 import dividendProcessor from "./jobs/dividendProcessor.js";
+import liquidityOptimizerJob from "./jobs/liquidityOptimizerJob.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
@@ -274,6 +277,7 @@ app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
 app.use("/api/categorization", userLimiter, categorizationRoutes);
 app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
 app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
+app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 
 
 
@@ -337,6 +341,7 @@ if (process.env.NODE_ENV !== 'test') {
     recurringPaymentProcessor.start();
     categorizationTrainer.start();
     fxRateUpdater.start();
+    liquidityOptimizerJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
