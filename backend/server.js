@@ -85,6 +85,13 @@ import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
 
+// Event Listeners
+import { initializeBudgetListeners } from "./listeners/budgetListeners.js";
+import { initializeNotificationListeners } from "./listeners/notificationListeners.js";
+import { initializeAnalyticsListeners } from "./listeners/analyticsListeners.js";
+import { initializeSubscriptionListeners } from "./listeners/subscriptionListeners.js";
+import { initializeSavingsListeners } from "./listeners/savingsListeners.js";
+
 // Load environment variables
 dotenv.config();
 
@@ -113,6 +120,13 @@ scheduleWeeklyHabitDigest();
 initializeUploads().catch((err) => {
   console.error("❌ Failed to initialize upload directories:", err);
 });
+
+// Initialize Event Listeners
+initializeBudgetListeners();
+initializeNotificationListeners();
+initializeAnalyticsListeners();
+initializeSubscriptionListeners();
+initializeSavingsListeners();
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
