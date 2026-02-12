@@ -910,4 +910,74 @@ router.post('/retrain-model', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/expenses/upload-receipt
+ * Upload and process receipt image for OCR and auto-categorization
+ */
+router.post('/upload-receipt', async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Check if file was uploaded
+    if (!req.files || !req.files.receipt) {
+      return res.status(400).json({
+        error: 'No receipt image uploaded'
+      });
+    }
+
+    const receiptFile = req.files.receipt;
+
+    // Validate image
+    if (!receiptService.validateImage(receiptFile.data)) {
+      return res.status(400).json({
+        error: 'Invalid image file. Please upload a valid image under 10MB.'
+      });
+    }
+
+    // Process receipt
+    const processedData = await receiptService.processReceipt(receiptFile.data, userId);
+
+    // Log audit event
+    await logAuditEventAsync({
+      userId,
+      action: 'RECEIPT_UPLOAD',
+      resourceType: 'RECEIPT',
+      resourceId: null,
+      metadata: {
+        fileName: receiptFile.name,
+        fileSize: receiptFile.size,
+        extractedAmount: processedData.amount,
+        extractedMerchant: processedData.merchant,
+        suggestedCategory: processedData.suggestedCategory
+      },
+      status: 'success',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      data: processedData,
+      message: 'Receipt processed successfully'
+    });
+  } catch (error) {
+    console.error('Error uploading receipt:', error);
+
+    // Log failed audit event
+    await logAuditEventAsync({
+      userId: req.user.id,
+      action: 'RECEIPT_UPLOAD',
+      resourceType: 'RECEIPT',
+      resourceId: null,
+      metadata: {
+        error: error.message
+      },
+      status: 'failure',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.status(500).json({ error: 'Failed to process receipt' });
+  }
+});
+
 export default router;

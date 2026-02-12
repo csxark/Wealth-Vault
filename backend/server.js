@@ -54,7 +54,10 @@ import vaultConsolidationRoutes from "./routes/vault-consolidation.js";
 import recurringPaymentsRoutes from "./routes/recurring-payments.js";
 import categorizationRoutes from "./routes/categorization.js";
 import currencyPortfolioRoutes from "./routes/currency-portfolio.js";
-import rebalancingRoutes from "./routes/rebalancing.js";
+import budgetRoutes from "./routes/budgets.js";
+import expenseSharesRoutes from "./routes/expenseShares.js";
+import reimbursementsRoutes from "./routes/reimbursements.js";
+import forecastRoutes from "./routes/forecasts.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -298,57 +301,56 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  logInfo('Server started successfully', {
-    port: PORT,
-    environment: process.env.NODE_ENV || 'development',
-    frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    logInfo('Server started successfully', {
+      port: PORT,
+      environment: process.env.NODE_ENV || 'development',
+      frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
+    });
+
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(
+      `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`,
+    );
+    console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+    console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
+    console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
+
+    // Start background jobs
+    scheduleMonthlyReports();
+    scheduleWeeklyHabitDigest();
+    scheduleTaxReminders();
+    subscriptionMonitor.initialize();
+    fxRateSync.start();
+    valuationUpdater.start();
+    inactivityMonitor.start();
+    taxEstimator.start();
+    debtRecalculator.startScheduledJob();
+    rateSyncer.start();
+    forecastUpdater.start();
+    riskAuditor.start();
+    leaseMonitor.start();
+    dividendProcessor.start();
+    consolidationSync.start();
+    recurringPaymentProcessor.start();
+    categorizationTrainer.start();
+    fxRateUpdater.start();
+
+    // Add debt services to app.locals for middleware/route access
+    app.locals.debtEngine = debtEngine;
+    app.locals.payoffOptimizer = payoffOptimizer;
+    app.locals.refinanceScout = refinanceScout;
+
+    // Initialize default tax categories and market indices
+    initializeDefaultTaxCategories().catch(err => {
+      console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
+    });
+
+    marketData.initializeDefaults().catch(err => {
+      console.warn('⚠️ Market indices initialization skipped:', err.message);
+    });
   });
+}
 
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(
-    `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`,
-  );
-  console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
-  console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
-  console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
-
-  // Start background jobs
-  scheduleMonthlyReports();
-  scheduleWeeklyHabitDigest();
-  scheduleTaxReminders();
-  subscriptionMonitor.initialize();
-  fxRateSync.start();
-  valuationUpdater.start();
-  inactivityMonitor.start();
-  taxEstimator.start();
-  debtRecalculator.startScheduledJob();
-  rateSyncer.start();
-  forecastUpdater.start();
-  riskAuditor.start();
-  leaseMonitor.start();
-  dividendProcessor.start();
-  consolidationSync.start();
-  recurringPaymentProcessor.start();
-  categorizationTrainer.start();
-  fxRateUpdater.start();
-  driftMonitor.start();
-
-
-
-
-
-  // Add debt services to app.locals for middleware/route access
-  app.locals.debtEngine = debtEngine;
-  app.locals.payoffOptimizer = payoffOptimizer;
-  app.locals.refinanceScout = refinanceScout;
-
-  // Initialize default tax categories and market indices
-  initializeDefaultTaxCategories().catch(err => {
-    console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
-  });
-
-  marketData.initializeDefaults().catch(err => {
-    console.warn('⚠️ Market indices initialization skipped:', err.message);
-  });
-});
+export default app;
