@@ -12,8 +12,10 @@ import { getDefaultCategories } from "../utils/defaults.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
 import { validatePasswordStrength, isCommonPassword } from "../utils/passwordValidator.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
-import { ValidationError, ConflictError, UnauthorizedError, NotFoundError } from "../utils/errors.js";
+import { AppError } from "../utils/AppError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 import deadMansSwitch from "../services/deadMansSwitch.js";
+
 import {
   createDeviceSession,
   refreshAccessToken,
@@ -127,12 +129,12 @@ router.post(
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Invalid email format", errors.array());
+      return next(new AppError(400, "Invalid email format", errors.array()));
     }
 
     const { email } = req.body;
     if (!email) {
-      throw new ValidationError("Email is required");
+      return next(new AppError(400, "Email is required"));
     }
 
     const [existingUser] = await db
@@ -140,7 +142,7 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
 
-    return res.success({ exists: !!existingUser }, 'Email check completed');
+    return new ApiResponse(200, { exists: !!existingUser }, 'Email check completed').send(res);
   })
 );
 
@@ -228,7 +230,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Validation failed", errors.array());
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
 
     const {
@@ -243,10 +245,8 @@ router.post(
 
     // Check for required fields
     if (!email || !password || !firstName || !lastName) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: email, password, firstName, and lastName are required.'
-      });
+      return next(new AppError(400, "Missing required fields: email, password, firstName, and lastName are required."));
+
     }
 
     const [existingUser] = await db
@@ -254,18 +254,18 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
     if (existingUser) {
-      throw new ConflictError("User with this email already exists");
+      return next(new AppError(409, "User with this email already exists"));
     }
 
     // Check if password is common
     if (isCommonPassword(password)) {
-      throw new ValidationError("This password is too common. Please choose a more secure password.");
+      return next(new AppError(400, "This password is too common. Please choose a more secure password."));
     }
 
     // Validate password strength
     const passwordValidation = validatePasswordStrength(password, [email, firstName, lastName]);
     if (!passwordValidation.success) {
-      throw new ValidationError(passwordValidation.message, passwordValidation.feedback);
+      return next(new AppError(400, passwordValidation.message, passwordValidation.feedback));
     }
 
     // Hash password
@@ -320,10 +320,10 @@ router.post(
       status: 'success',
     });
 
-    res.created({
+    return new ApiResponse(201, {
       user: getPublicProfile(newUser),
       ...tokens,
-    }, "User registered successfully");
+    }, "User registered successfully").send(res);
   })
 );
 
@@ -383,17 +383,17 @@ router.post(
     body("password").notEmpty().withMessage("Password is required"),
     body("mfaToken").optional().isString(),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Validation failed", errors.array());
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
 
     const { email, password, mfaToken } = req.body;
 
     // Check for required fields
     if (!email || !password) {
-      throw new ValidationError("Missing required fields: email and password are required.");
+      return next(new AppError(400, "Missing required fields: email and password are required."));
     }
 
     const [user] = await db
@@ -415,17 +415,11 @@ router.post(
         details: { reason: 'invalid_credentials' },
       });
 
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
-      });
+      return next(new AppError(401, "Invalid credentials"));
     }
 
     if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: "Account is deactivated. Please contact support.",
-      });
+      return next(new AppError(401, "Account is deactivated. Please contact support."));
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -564,54 +558,34 @@ router.post(
       status: 'success',
     });
 
-    res.json({
-      success: true,
-      message: "Login successful",
-      data: {
-        user: getPublicProfile(user),
-        ...tokens,
-      },
-    });
+    return new ApiResponse(200, {
+      user: getPublicProfile(user),
+      ...tokens,
+    }, "Login successful").send(res);
+
   })
 );
 
 // @route   GET /api/auth/me
 // @desc    Get current user profile
 // @access  Private
-router.get("/me", protect, async (req, res) => {
-  try {
-    const userId = req.user.id;
+router.get("/me", protect, asyncHandler(async (req, res, next) => {
+  const userId = req.user.id;
 
-    // Fetch user with categories using relational query if possible, or separate queries
-    // Drizzle relations allows db.query.users.findFirst
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      with: {
-        categories: true,
-      },
-    });
+  // Fetch user with categories using relational query if possible
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    with: {
+      categories: true,
+    },
+  });
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        user: getPublicProfile(user),
-      },
-    });
-  } catch (error) {
-    console.error("Get profile error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error while fetching profile",
-    });
+  if (!user) {
+    return next(new AppError(404, "User not found"));
   }
-});
+
+  return new ApiResponse(200, { user: getPublicProfile(user) }, 'Profile retrieved successfully').send(res);
+}));
 
 // @route   PUT /api/auth/profile
 // @desc    Update user profile
@@ -629,68 +603,52 @@ router.put(
     body("monthlyBudget").optional().isFloat({ min: 0 }),
     body("emergencyFund").optional().isFloat({ min: 0 }),
   ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
-      }
-
-      const updateFields = {};
-      const allowedFields = [
-        "firstName",
-        "lastName",
-        "profilePicture",
-        "dateOfBirth",
-        "phoneNumber",
-        "currency",
-        "monthlyIncome",
-        "monthlyBudget",
-        "emergencyFund",
-        "preferences",
-      ];
-
-      allowedFields.forEach((field) => {
-        if (req.body[field] !== undefined) {
-          updateFields[field] = req.body[field];
-        }
-      });
-
-      updateFields.updatedAt = new Date();
-
-      const [updatedUser] = await db
-        .update(users)
-        .set(updateFields)
-        .where(eq(users.id, req.user.id))
-        .returning();
-
-      // Log profile update
-      logAudit(req, {
-        userId: req.user.id,
-        action: AuditActions.PROFILE_UPDATE,
-        resourceType: ResourceTypes.USER,
-        resourceId: req.user.id,
-        metadata: { updatedFields: Object.keys(updateFields).filter(f => f !== 'updatedAt') },
-        status: 'success',
-      });
-
-      res.json({
-        success: true,
-        message: "Profile updated successfully",
-        data: {
-          user: getPublicProfile(updatedUser),
-        },
-      });
-    } catch (error) {
-      console.error("Profile update error:", error);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Server error while updating profile",
-        });
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
-  }
+
+    const updateFields = {};
+    const allowedFields = [
+      "firstName",
+      "lastName",
+      "profilePicture",
+      "dateOfBirth",
+      "phoneNumber",
+      "currency",
+      "monthlyIncome",
+      "monthlyBudget",
+      "emergencyFund",
+      "preferences",
+    ];
+
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updateFields[field] = req.body[field];
+      }
+    });
+
+    updateFields.updatedAt = new Date();
+
+    const [updatedUser] = await db
+      .update(users)
+      .set(updateFields)
+      .where(eq(users.id, req.user.id))
+      .returning();
+
+    // Log profile update
+    logAudit(req, {
+      userId: req.user.id,
+      action: AuditActions.PROFILE_UPDATE,
+      resourceType: ResourceTypes.USER,
+      resourceId: req.user.id,
+      metadata: { updatedFields: Object.keys(updateFields).filter(f => f !== 'updatedAt') },
+      status: 'success',
+    });
+
+    return new ApiResponse(200, { user: getPublicProfile(updatedUser) }, "Profile updated successfully").send(res);
+  })
 );
 
 // @route   PUT /api/auth/change-password
@@ -703,95 +661,69 @@ router.put(
     body("currentPassword").notEmpty(),
     body("newPassword").isLength({ min: 6 }),
   ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
-      }
-
-      const { currentPassword, newPassword } = req.body;
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, req.user.id));
-
-      const isMatch = await bcrypt.compare(currentPassword, user.password);
-      if (!isMatch) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Current password is incorrect" });
-      }
-
-      // Check if new password is the same as current password
-      if (currentPassword === newPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "New password must be different from current password",
-        });
-      }
-
-      // Check if password is common
-      if (isCommonPassword(newPassword)) {
-        return res.status(400).json({
-          success: false,
-          message: "This password is too common. Please choose a more secure password.",
-        });
-      }
-
-      // Validate new password strength
-      const passwordValidation = validatePasswordStrength(newPassword, [user.email, user.firstName, user.lastName]);
-      if (!passwordValidation.success) {
-        return res.status(400).json({
-          success: false,
-          message: passwordValidation.message,
-          feedback: passwordValidation.feedback,
-          score: passwordValidation.score,
-        });
-      }
-
-      const salt = await bcrypt.genSalt(12);
-      const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-      await db
-        .update(users)
-        .set({ password: hashedPassword, updatedAt: new Date() })
-        .where(eq(users.id, user.id));
-
-      // Revoke all other sessions for security
-      const currentSessionId = req.sessionId;
-      const allSessions = await getUserSessions(user.id);
-
-      for (const session of allSessions) {
-        if (session.id !== currentSessionId) {
-          await revokeDeviceSession(session.id, user.id, 'password_change');
-        }
-      }
-
-      // Log password change
-      logAudit(req, {
-        userId: user.id,
-        action: AuditActions.AUTH_PASSWORD_CHANGE,
-        resourceType: ResourceTypes.USER,
-        resourceId: user.id,
-        metadata: { sessionsRevoked: allSessions.length - 1 },
-        status: 'success',
-      });
-
-      res.json({
-        success: true,
-        message: "Password changed successfully. Other sessions have been logged out for security.",
-      });
-    } catch (error) {
-      console.error("Password change error:", error);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Server error while changing password",
-        });
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
-  }
+
+    const { currentPassword, newPassword } = req.body;
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, req.user.id));
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return next(new AppError(400, "Current password is incorrect"));
+    }
+
+    // Check if new password is the same as current password
+    if (currentPassword === newPassword) {
+      return next(new AppError(400, "New password must be different from current password"));
+    }
+
+    // Check if password is common
+    if (isCommonPassword(newPassword)) {
+      return next(new AppError(400, "This password is too common. Please choose a more secure password."));
+    }
+
+    // Validate new password strength
+    const passwordValidation = validatePasswordStrength(newPassword, [user.email, user.firstName, user.lastName]);
+    if (!passwordValidation.success) {
+      return next(new AppError(400, passwordValidation.message, passwordValidation.feedback));
+    }
+
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    await db
+      .update(users)
+      .set({ password: hashedPassword, updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+
+    // Revoke all other sessions for security
+    const currentSessionId = req.sessionId;
+    const allSessions = await getUserSessions(user.id);
+
+    for (const session of allSessions) {
+      if (session.id !== currentSessionId) {
+        await revokeDeviceSession(session.id, user.id, 'password_change');
+      }
+    }
+
+    // Log password change
+    logAudit(req, {
+      userId: user.id,
+      action: AuditActions.AUTH_PASSWORD_CHANGE,
+      resourceType: ResourceTypes.USER,
+      resourceId: user.id,
+      metadata: { sessionsRevoked: allSessions.length - 1 },
+      status: 'success',
+    });
+
+    return new ApiResponse(200, null, "Password changed successfully. Other sessions have been logged out for security.").send(res);
+  })
 );
 
 // @route   POST /api/auth/refresh
@@ -801,10 +733,10 @@ router.post("/refresh",
   [
     body("refreshToken").notEmpty().withMessage("Refresh token is required"),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Validation failed", errors.array());
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
 
     const { refreshToken } = req.body;
@@ -812,18 +744,15 @@ router.post("/refresh",
 
     const tokens = await refreshAccessToken(refreshToken, ipAddress);
 
-    res.json({
-      success: true,
-      message: "Token refreshed successfully",
-      data: tokens,
-    });
+    return new ApiResponse(200, tokens, "Token refreshed successfully").send(res);
+
   })
 );
 
 // @route   POST /api/auth/logout
 // @desc    Logout user from current device
 // @access  Private
-router.post("/logout", protect, asyncHandler(async (req, res) => {
+router.post("/logout", protect, asyncHandler(async (req, res, next) => {
   const sessionId = req.sessionId;
   const userId = req.user.id;
 
@@ -840,16 +769,14 @@ router.post("/logout", protect, asyncHandler(async (req, res) => {
     status: 'success',
   });
 
-  res.json({
-    success: true,
-    message: "Logged out successfully"
-  });
+  return new ApiResponse(200, null, "Logged out successfully").send(res);
+
 }));
 
 // @route   POST /api/auth/logout-all
 // @desc    Logout user from all devices
 // @access  Private
-router.post("/logout-all", protect, asyncHandler(async (req, res) => {
+router.post("/logout-all", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const revokedCount = await revokeAllUserSessions(userId, 'logout_all');
 
@@ -862,23 +789,19 @@ router.post("/logout-all", protect, asyncHandler(async (req, res) => {
     status: 'success',
   });
 
-  res.json({
-    success: true,
-    message: `Logged out from ${revokedCount} devices successfully`
-  });
+  return new ApiResponse(200, null, `Logged out from ${revokedCount} devices successfully`).send(res);
+
 }));
 
 // @route   GET /api/auth/sessions
 // @desc    Get user's active sessions
 // @access  Private
-router.get("/sessions", protect, asyncHandler(async (req, res) => {
+router.get("/sessions", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const sessions = await getUserSessions(userId);
 
-  res.json({
-    success: true,
-    data: { sessions },
-  });
+  return new ApiResponse(200, { sessions }, "User's active sessions retrieved successfully").send(res);
+
 }));
 
 // @route   DELETE /api/auth/sessions/:sessionId
@@ -947,13 +870,14 @@ router.post(
       status: 'success',
     });
 
-    return res.success({
+    return new ApiResponse(200, {
+
       profilePicture: savedFile.url,
       fileInfo: {
         size: savedFile.size,
         filename: savedFile.filename
       }
-    }, 'Profile picture uploaded successfully');
+    }, 'Profile picture uploaded successfully').send(res);
   })
 );
 
@@ -994,7 +918,8 @@ router.delete(
       status: 'success',
     });
 
-    return res.success(null, 'Profile picture deleted successfully');
+    return new ApiResponse(200, null, 'Profile picture deleted successfully').send(res);
+
   })
 );
 
@@ -1008,7 +933,8 @@ router.get(
     const userId = req.user.id;
     const usage = await fileStorageService.getUserStorageUsage(userId);
 
-    return res.success({
+    return new ApiResponse(200, {
+
       usage: {
         totalSize: usage.totalSize,
         fileCount: usage.fileCount,
@@ -1016,7 +942,7 @@ router.get(
         remainingSpace: USER_STORAGE_QUOTA - usage.totalSize,
         usagePercentage: Math.round((usage.totalSize / USER_STORAGE_QUOTA) * 100)
       }
-    }, 'Storage usage retrieved successfully');
+    }, 'Storage usage retrieved successfully').send(res);
   })
 );
 
@@ -1034,15 +960,12 @@ router.get(
  *       200:
  *         description: MFA setup initiated
  */
-router.post("/mfa/setup", protect, asyncHandler(async (req, res) => {
+router.post("/mfa/setup", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
   if (user.mfaEnabled) {
-    return res.status(400).json({
-      success: false,
-      message: "MFA is already enabled for this account",
-    });
+    return next(new AppError(400, "MFA is already enabled for this account"));
   }
 
   // Generate MFA secret
@@ -1065,16 +988,12 @@ router.post("/mfa/setup", protect, asyncHandler(async (req, res) => {
     })
     .where(eq(users.id, userId));
 
-  res.json({
-    success: true,
-    message: "MFA setup initiated. Scan QR code with authenticator app.",
-    data: {
-      secret,
-      qrCode,
-      recoveryCodes, // Show these only once
-      otpauth_url,
-    },
-  });
+  return new ApiResponse(200, {
+    secret,
+    qrCode,
+    recoveryCodes, // Show these only once
+    otpauth_url,
+  }, "MFA setup initiated. Scan QR code with authenticator app.").send(res);
 }));
 
 /**
@@ -1103,10 +1022,10 @@ router.post("/mfa/setup", protect, asyncHandler(async (req, res) => {
  */
 router.post("/mfa/verify", protect, [
   body("token").notEmpty().isLength({ min: 6, max: 6 }),
-], asyncHandler(async (req, res) => {
+], asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
+    return next(new AppError(400, "Validation failed", errors.array()));
   }
 
   const { token } = req.body;
@@ -1114,27 +1033,18 @@ router.post("/mfa/verify", protect, [
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
   if (user.mfaEnabled) {
-    return res.status(400).json({
-      success: false,
-      message: "MFA is already enabled",
-    });
+    return next(new AppError(400, "MFA is already enabled"));
   }
 
   if (!user.mfaSecret) {
-    return res.status(400).json({
-      success: false,
-      message: "MFA setup not initiated. Call /mfa/setup first.",
-    });
+    return next(new AppError(400, "MFA setup not initiated. Call /mfa/setup first."));
   }
 
   // Verify token
   const isValid = verifyTOTP(user.mfaSecret, token);
 
   if (!isValid) {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid MFA token",
-    });
+    return next(new AppError(401, "Invalid MFA token"));
   }
 
   // Enable MFA
@@ -1163,10 +1073,7 @@ router.post("/mfa/verify", protect, [
   // Send notification
   await securityService.sendSecurityNotification(user, securityEvent);
 
-  res.json({
-    success: true,
-    message: "MFA enabled successfully",
-  });
+  return new ApiResponse(200, null, "MFA enabled successfully").send(res);
 }));
 
 /**
@@ -1198,10 +1105,10 @@ router.post("/mfa/verify", protect, [
 router.post("/mfa/disable", protect, [
   body("password").notEmpty(),
   body("token").optional().isLength({ min: 6, max: 6 }),
-], asyncHandler(async (req, res) => {
+], asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
+    return next(new AppError(400, "Validation failed", errors.array()));
   }
 
   const { password, token } = req.body;
@@ -1231,10 +1138,7 @@ router.post("/mfa/disable", protect, [
       // Try recovery code
       const recoveryCodeIndex = verifyRecoveryCode(token, user.mfaRecoveryCodes || []);
       if (recoveryCodeIndex === -1) {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid MFA token or recovery code",
-        });
+        return next(new AppError(401, "Invalid MFA token or recovery code"));
       }
     }
   }
@@ -1267,10 +1171,7 @@ router.post("/mfa/disable", protect, [
   // Send notification
   await securityService.sendSecurityNotification(user, securityEvent);
 
-  res.json({
-    success: true,
-    message: "MFA disabled successfully",
-  });
+  return new ApiResponse(200, null, "MFA disabled successfully").send(res);
 }));
 
 /**
@@ -1282,23 +1183,17 @@ router.post("/mfa/disable", protect, [
  *     security:
  *       - bearerAuth: []
  */
-router.get("/mfa/recovery-codes", protect, asyncHandler(async (req, res) => {
+router.get("/mfa/recovery-codes", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
   if (!user.mfaEnabled) {
-    return res.status(400).json({
-      success: false,
-      message: "MFA is not enabled",
-    });
+    return next(new AppError(400, "MFA is not enabled"));
   }
 
   const status = getRecoveryCodeStatus(user.mfaRecoveryCodes || []);
 
-  res.json({
-    success: true,
-    data: status,
-  });
+  return new ApiResponse(200, status, "Recovery code status retrieved").send(res);
 }));
 
 /**
@@ -1323,10 +1218,10 @@ router.get("/mfa/recovery-codes", protect, asyncHandler(async (req, res) => {
  */
 router.post("/mfa/regenerate-recovery-codes", protect, [
   body("password").notEmpty(),
-], asyncHandler(async (req, res) => {
+], asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
+    return next(new AppError(400, "Validation failed", errors.array()));
   }
 
   const { password } = req.body;
@@ -1362,13 +1257,9 @@ router.post("/mfa/regenerate-recovery-codes", protect, [
     })
     .where(eq(users.id, userId));
 
-  res.json({
-    success: true,
-    message: "Recovery codes regenerated. Save these in a safe place.",
-    data: {
-      recoveryCodes,
-    },
-  });
+  return new ApiResponse(200, {
+    recoveryCodes,
+  }, "Recovery codes regenerated. Save these in a safe place.").send(res);
 }));
 
 /**
@@ -1386,19 +1277,16 @@ router.post("/mfa/regenerate-recovery-codes", protect, [
  *           type: integer
  *           default: 50
  */
-router.get("/security/events", protect, asyncHandler(async (req, res) => {
+router.get("/security/events", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const limit = parseInt(req.query.limit) || 50;
 
   const events = await securityService.getUserSecurityEvents(userId, limit);
 
-  res.json({
-    success: true,
-    data: {
-      events,
-      count: events.length,
-    },
-  });
+  return new ApiResponse(200, {
+    events,
+    count: events.length,
+  }, "Security events retrieved successfully").send(res);
 }));
 
 /**
@@ -1410,7 +1298,7 @@ router.get("/security/events", protect, asyncHandler(async (req, res) => {
  *     security:
  *       - bearerAuth: []
  */
-router.get("/mfa/status", protect, asyncHandler(async (req, res) => {
+router.get("/mfa/status", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
@@ -1418,13 +1306,10 @@ router.get("/mfa/status", protect, asyncHandler(async (req, res) => {
     getRecoveryCodeStatus(user.mfaRecoveryCodes || []) :
     null;
 
-  res.json({
-    success: true,
-    data: {
-      mfaEnabled: user.mfaEnabled,
-      recoveryCodesStatus: recoveryCodeStatus,
-    },
-  });
+  return new ApiResponse(200, {
+    mfaEnabled: user.mfaEnabled,
+    recoveryCodesStatus: recoveryCodeStatus,
+  }, "MFA status retrieved").send(res);
 }));
 
 export default router;

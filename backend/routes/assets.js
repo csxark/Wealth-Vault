@@ -1,6 +1,7 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { protect } from '../middleware/auth.js';
+import { protect, checkOwnership } from '../middleware/auth.js';
+import { securityInterceptor } from '../middleware/auditMiddleware.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import assetService from '../services/assetService.js';
 import projectionEngine from '../services/projectionEngine.js';
@@ -25,7 +26,7 @@ router.get('/', protect, asyncHandler(async (req, res) => {
  * @route   POST /api/assets
  * @desc    Create a new asset
  */
-router.post('/', protect, [
+router.post('/', protect, securityInterceptor(), [
     body('name').notEmpty().trim(),
     body('category').isIn(['real_estate', 'vehicle', 'jewelry ', 'art', 'collectible', 'stock', 'crypto', 'other']),
     body('purchasePrice').isFloat({ gt: 0 }),
@@ -51,7 +52,7 @@ router.get('/:id', protect, asyncHandler(async (req, res) => {
  * @route   PUT /api/assets/:id
  * @desc    Update asset details
  */
-router.put('/:id', protect, asyncHandler(async (req, res) => {
+router.put('/:id', protect, checkOwnership('Asset'), securityInterceptor(), asyncHandler(async (req, res) => {
     const updated = await assetService.updateAsset(req.params.id, req.user.id, req.body);
     new ApiResponse(200, updated, 'Asset updated successfully').send(res);
 }));
@@ -60,7 +61,7 @@ router.put('/:id', protect, asyncHandler(async (req, res) => {
  * @route   PUT /api/assets/:id/value
  * @desc    Update asset valuation
  */
-router.put('/:id/value', protect, [
+router.put('/:id/value', protect, checkOwnership('Asset'), securityInterceptor(), [
     body('value').isFloat({ gt: 0 }),
     body('source').optional().isIn(['manual', 'market_adjustment', 'appraisal'])
 ], asyncHandler(async (req, res) => {
@@ -73,7 +74,7 @@ router.put('/:id/value', protect, [
  * @route   DELETE /api/assets/:id
  * @desc    Delete an asset
  */
-router.delete('/:id', protect, asyncHandler(async (req, res) => {
+router.delete('/:id', protect, checkOwnership('Asset'), securityInterceptor(), asyncHandler(async (req, res) => {
     await assetService.deleteAsset(req.params.id, req.user.id);
     new ApiResponse(200, null, 'Asset deleted successfully').send(res);
 }));

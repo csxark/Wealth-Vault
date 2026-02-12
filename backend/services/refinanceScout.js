@@ -1,7 +1,7 @@
 import db from '../config/db.js';
 import { debts, refinanceOpportunities } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
-import { generateInsights } from './geminiservice.js';
+import { getAIProvider } from './aiProvider.js';
 import debtEngine from './debtEngine.js';
 
 class RefinanceScout {
@@ -97,7 +97,7 @@ class RefinanceScout {
             Mention if they should look for a 0% balance transfer card or a personal loan.
         `;
 
-    return await generateInsights(prompt);
+    return await getAIProvider().generateText(prompt);
   }
 
   /**

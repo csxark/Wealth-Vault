@@ -1,5 +1,7 @@
 import InvestmentRepository from '../repositories/InvestmentRepository.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
+import eventBus from '../events/eventBus.js';
+// Removed notificationService import - now decoupled via events
 
 /**
  * Investment Service
@@ -34,6 +36,9 @@ export const createInvestment = async (investmentData, userId) => {
       },
       status: 'success',
     });
+
+    // Emit event
+    eventBus.emit('INVESTMENT_CREATED', investment);
 
     return investment;
   } catch (error) {
@@ -100,6 +105,9 @@ export const updateInvestment = async (investmentId, updateData, userId) => {
       status: 'success',
     });
 
+    // Emit event
+    eventBus.emit('INVESTMENT_UPDATED', investment);
+
     return investment;
   } catch (error) {
     console.error('Error updating investment:', error);
@@ -132,6 +140,9 @@ export const deleteInvestment = async (investmentId, userId) => {
       },
       status: 'success',
     });
+
+    // Emit event
+    eventBus.emit('INVESTMENT_DELETED', { id: investmentId, userId });
 
     return true;
   } catch (error) {
@@ -346,6 +357,73 @@ export const calculateInvestmentMetrics = async (investmentId, userId) => {
   }
 };
 
+// Side-effects like notifications are now handled by event listeners in ../listeners/
+
+/**
+ * Batch update investment valuations based on FX rates
+ * @param {string} userId - User ID
+ * @param {Function} getConversionRate - Function(currency) => rate
+ * @param {string} baseCurrencyCode - User's base currency code
+ */
+export const batchUpdateValuations = async (userId, getConversionRate, baseCurrencyCode) => {
+  try {
+    const userInvestments = await db
+      .select()
+      .from(investments)
+      .where(
+        and(
+          eq(investments.userId, userId),
+          eq(investments.isActive, true)
+        )
+      );
+
+    const updates = userInvestments.map(async (inv) => {
+      const currency = inv.currency || 'USD';
+      const rate = getConversionRate(currency);
+
+      if (rate !== null) {
+        const marketValue = parseFloat(inv.marketValue || '0');
+        const baseValue = marketValue * rate;
+        const oldBaseValue = parseFloat(inv.baseCurrencyValue || '0');
+
+        // Check for significant value swing (> 5%) and notify user
+        if (oldBaseValue > 0) {
+          const change = Math.abs((baseValue - oldBaseValue) / oldBaseValue);
+          if (change > 0.05) {
+            const direction = baseValue > oldBaseValue ? 'increased' : 'decreased';
+
+            // Emit event instead of direct notification
+            eventBus.emit('INVESTMENT_VALUATION_CHANGED', {
+              userId,
+              investmentId: inv.id,
+              investmentName: inv.name,
+              investmentSymbol: inv.symbol,
+              changePercent: change * 100,
+              direction,
+              newValue: baseValue,
+              oldValue: oldBaseValue
+            });
+          }
+        }
+
+        await db
+          .update(investments)
+          .set({
+            baseCurrencyValue: baseValue.toFixed(2),
+            baseCurrencyCode: baseCurrencyCode,
+            valuationDate: new Date(),
+          })
+          .where(eq(investments.id, inv.id));
+      }
+    });
+
+    await Promise.all(updates);
+  } catch (error) {
+    console.error('Error batch updating investment valuations:', error);
+    throw error;
+  }
+};
+
 export default {
   createInvestment,
   getInvestments,
@@ -357,4 +435,5 @@ export default {
   updateInvestmentMetrics,
   updateInvestmentPrices,
   calculateInvestmentMetrics,
+  batchUpdateValuations,
 };

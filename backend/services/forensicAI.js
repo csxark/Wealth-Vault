@@ -1,4 +1,4 @@
-import geminiService from './geminiservice.js';
+import { getAIProvider } from './aiProvider.js';
 import replayEngine from './replayEngine.js';
 import db from '../config/db.js';
 import { forensicQueries, stateDeltas } from '../db/schema.js';
@@ -44,7 +44,7 @@ Provide a concise explanation of:
 
 Keep the explanation under 200 words and use simple language.`;
 
-            const explanation = await geminiService.generateInsights(prompt);
+            const explanation = await getAIProvider().generateText(prompt);
             return explanation;
         } catch (error) {
             console.error('Transaction explanation error:', error);
@@ -97,7 +97,8 @@ Explain:
 
 Keep it concise and actionable.`;
 
-            const analysis = await geminiService.generateInsights(prompt);
+            const provider = getAIProvider();
+            const analysis = await provider.generateText(prompt);
 
             return {
                 date1,
@@ -178,7 +179,8 @@ Provide:
 
 Be concise and professional.`;
 
-            const aiInsights = await geminiService.generateInsights(prompt);
+            const provider = getAIProvider();
+            const aiInsights = await provider.generateText(prompt);
 
             const executionTime = Date.now() - startTime;
 

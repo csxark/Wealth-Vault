@@ -25,7 +25,8 @@ import { logInfo, logError } from "./utils/logger.js";
 import { sanitizeInput, sanitizeMongo } from "./middleware/sanitizer.js";
 import { responseWrapper } from "./middleware/responseWrapper.js";
 import { paginationMiddleware } from "./utils/pagination.js";
-import { errorHandler, notFound } from "./middleware/errorHandler.js";
+import { notFound } from "./middleware/errorHandler.js";
+import { globalErrorHandler } from "./middleware/globalErrorHandler.js";
 
 // Import routes
 import authRoutes from "./routes/auth.js";
@@ -54,6 +55,10 @@ import vaultConsolidationRoutes from "./routes/vault-consolidation.js";
 import recurringPaymentsRoutes from "./routes/recurring-payments.js";
 import categorizationRoutes from "./routes/categorization.js";
 import currencyPortfolioRoutes from "./routes/currency-portfolio.js";
+import budgetRoutes from "./routes/budgets.js";
+import expenseSharesRoutes from "./routes/expenseShares.js";
+import reimbursementsRoutes from "./routes/reimbursements.js";
+import forecastRoutes from "./routes/forecasts.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -72,6 +77,7 @@ import consolidationSync from "./jobs/consolidationSync.js";
 import recurringPaymentProcessor from "./jobs/recurringPaymentProcessor.js";
 import categorizationTrainer from "./jobs/categorizationTrainer.js";
 import fxRateUpdater from "./jobs/fxRateUpdater.js";
+import driftMonitor from "./jobs/driftMonitor.js";
 import { scheduleWeeklyHabitDigest } from "./jobs/weeklyHabitDigest.js";
 import { scheduleTaxReminders } from "./jobs/taxReminders.js";
 import leaseMonitor from "./jobs/leaseMonitor.js";
@@ -79,6 +85,13 @@ import dividendProcessor from "./jobs/dividendProcessor.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
+
+// Event Listeners
+import { initializeBudgetListeners } from "./listeners/budgetListeners.js";
+import { initializeNotificationListeners } from "./listeners/notificationListeners.js";
+import { initializeAnalyticsListeners } from "./listeners/analyticsListeners.js";
+import { initializeSubscriptionListeners } from "./listeners/subscriptionListeners.js";
+import { initializeSavingsListeners } from "./listeners/savingsListeners.js";
 
 // Load environment variables
 dotenv.config();
@@ -108,6 +121,13 @@ scheduleWeeklyHabitDigest();
 initializeUploads().catch((err) => {
   console.error("❌ Failed to initialize upload directories:", err);
 });
+
+// Initialize Event Listeners
+initializeBudgetListeners();
+initializeNotificationListeners();
+initializeAnalyticsListeners();
+initializeSubscriptionListeners();
+initializeSavingsListeners();
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -253,6 +273,8 @@ app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
 app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
 app.use("/api/categorization", userLimiter, categorizationRoutes);
 app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
+app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
+
 
 
 
@@ -276,59 +298,60 @@ app.use(notFound);
 app.use(errorLogger);
 
 // Centralized error handling middleware (must be last)
-app.use(errorHandler);
+app.use(globalErrorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  logInfo('Server started successfully', {
-    port: PORT,
-    environment: process.env.NODE_ENV || 'development',
-    frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    logInfo('Server started successfully', {
+      port: PORT,
+      environment: process.env.NODE_ENV || 'development',
+      frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
+    });
+
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(
+      `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`,
+    );
+    console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+    console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
+    console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
+
+    // Start background jobs
+    scheduleMonthlyReports();
+    scheduleWeeklyHabitDigest();
+    scheduleTaxReminders();
+    subscriptionMonitor.initialize();
+    fxRateSync.start();
+    valuationUpdater.start();
+    inactivityMonitor.start();
+    taxEstimator.start();
+    debtRecalculator.startScheduledJob();
+    rateSyncer.start();
+    forecastUpdater.start();
+    riskAuditor.start();
+    leaseMonitor.start();
+    dividendProcessor.start();
+    consolidationSync.start();
+    recurringPaymentProcessor.start();
+    categorizationTrainer.start();
+    fxRateUpdater.start();
+
+    // Add debt services to app.locals for middleware/route access
+    app.locals.debtEngine = debtEngine;
+    app.locals.payoffOptimizer = payoffOptimizer;
+    app.locals.refinanceScout = refinanceScout;
+
+    // Initialize default tax categories and market indices
+    initializeDefaultTaxCategories().catch(err => {
+      console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
+    });
+
+    marketData.initializeDefaults().catch(err => {
+      console.warn('⚠️ Market indices initialization skipped:', err.message);
+    });
   });
+}
 
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(
-    `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`,
-  );
-  console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
-  console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
-  console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
-
-  // Start background jobs
-  scheduleMonthlyReports();
-  scheduleWeeklyHabitDigest();
-  scheduleTaxReminders();
-  subscriptionMonitor.initialize();
-  fxRateSync.start();
-  valuationUpdater.start();
-  inactivityMonitor.start();
-  taxEstimator.start();
-  debtRecalculator.startScheduledJob();
-  rateSyncer.start();
-  forecastUpdater.start();
-  riskAuditor.start();
-  leaseMonitor.start();
-  dividendProcessor.start();
-  consolidationSync.start();
-  recurringPaymentProcessor.start();
-  categorizationTrainer.start();
-  fxRateUpdater.start();
-
-
-
-
-  // Add debt services to app.locals for middleware/route access
-  app.locals.debtEngine = debtEngine;
-  app.locals.payoffOptimizer = payoffOptimizer;
-  app.locals.refinanceScout = refinanceScout;
-
-  // Initialize default tax categories and market indices
-  initializeDefaultTaxCategories().catch(err => {
-    console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
-  });
-
-  marketData.initializeDefaults().catch(err => {
-    console.warn('⚠️ Market indices initialization skipped:', err.message);
-  });
-});
+export default app;

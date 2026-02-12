@@ -1,4 +1,4 @@
-import geminiService from './geminiservice.js';
+import { getAIProvider } from './aiProvider.js';
 import db from '../config/db.js';
 import { riskProfiles, currencyWallets, fixedAssets } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -43,8 +43,11 @@ class Rebalancer {
         `;
 
         try {
-            const advice = await geminiService.generateInsights(prompt);
-            return JSON.parse(advice.replace(/```json|```/g, '').trim());
+            const provider = getAIProvider();
+            const advice = await provider.generateJSON(prompt, {
+                model: 'experimental'
+            });
+            return advice;
         } catch (error) {
             console.error("Rebalancing AI Error:", error);
             return { error: "Could not generate AI rebalancing advice" };

@@ -14,28 +14,43 @@ export const AuditActions = {
   AUTH_PASSWORD_CHANGE: 'AUTH_PASSWORD_CHANGE',
   AUTH_TOKEN_REFRESH: 'AUTH_TOKEN_REFRESH',
   AUTH_SESSION_REVOKED: 'AUTH_SESSION_REVOKED',
-  
+
   // User Profile
   PROFILE_UPDATE: 'PROFILE_UPDATE',
   PROFILE_PICTURE_UPLOAD: 'PROFILE_PICTURE_UPLOAD',
   PROFILE_PICTURE_DELETE: 'PROFILE_PICTURE_DELETE',
   ACCOUNT_DEACTIVATE: 'ACCOUNT_DEACTIVATE',
-  
+
   // Expenses
   EXPENSE_CREATE: 'EXPENSE_CREATE',
   EXPENSE_UPDATE: 'EXPENSE_UPDATE',
   EXPENSE_DELETE: 'EXPENSE_DELETE',
   EXPENSE_IMPORT: 'EXPENSE_IMPORT',
-  
+
   // Goals
   GOAL_CREATE: 'GOAL_CREATE',
   GOAL_UPDATE: 'GOAL_UPDATE',
   GOAL_DELETE: 'GOAL_DELETE',
-  
+
   // Categories
   CATEGORY_CREATE: 'CATEGORY_CREATE',
   CATEGORY_UPDATE: 'CATEGORY_UPDATE',
   CATEGORY_DELETE: 'CATEGORY_DELETE',
+
+  // Investments
+  INVESTMENT_CREATE: 'INVESTMENT_CREATE',
+  INVESTMENT_UPDATE: 'INVESTMENT_UPDATE',
+  INVESTMENT_DELETE: 'INVESTMENT_DELETE',
+
+  // Assets
+  ASSET_CREATE: 'ASSET_CREATE',
+  ASSET_UPDATE: 'ASSET_UPDATE',
+  ASSET_DELETE: 'ASSET_DELETE',
+
+  // Budgets & Forecasts
+  BUDGET_UPDATE: 'BUDGET_UPDATE',
+  FORECAST_CREATE: 'FORECAST_CREATE',
+  FORECAST_DELETE: 'FORECAST_DELETE',
 };
 
 // Resource Types
@@ -45,6 +60,11 @@ export const ResourceTypes = {
   GOAL: 'goal',
   CATEGORY: 'category',
   SESSION: 'session',
+  INVESTMENT: 'investment',
+  ASSET: 'asset',
+  PORTFOLIO: 'portfolio',
+  BUDGET: 'budget',
+  FORECAST: 'forecast',
 };
 
 /**
@@ -388,7 +408,7 @@ export const detectSuspiciousActivity = async (userId, options = {}) => {
   const alerts = [];
 
   // Check for excessive deletions
-  const deleteActions = recentLogs.filter(log => 
+  const deleteActions = recentLogs.filter(log =>
     log.action.includes('DELETE')
   );
   if (deleteActions.length >= deleteThreshold) {
@@ -404,7 +424,7 @@ export const detectSuspiciousActivity = async (userId, options = {}) => {
   }
 
   // Check for failed authentication attempts
-  const failedAuthActions = recentLogs.filter(log => 
+  const failedAuthActions = recentLogs.filter(log =>
     log.action === AuditActions.AUTH_LOGIN_FAILED
   );
   if (failedAuthActions.length >= failedAuthThreshold) {
@@ -420,7 +440,7 @@ export const detectSuspiciousActivity = async (userId, options = {}) => {
   }
 
   // Check for bulk updates
-  const updateActions = recentLogs.filter(log => 
+  const updateActions = recentLogs.filter(log =>
     log.action.includes('UPDATE')
   );
   if (updateActions.length >= bulkUpdateThreshold) {
@@ -495,7 +515,7 @@ export const getAuditAnalytics = async (options = {}) => {
   } = options;
 
   const conditions = [];
-  
+
   if (userId) conditions.push(eq(auditLogs.userId, userId));
   if (resourceType) conditions.push(eq(auditLogs.resourceType, resourceType));
   if (startDate) conditions.push(gte(auditLogs.performedAt, new Date(startDate)));
@@ -506,7 +526,7 @@ export const getAuditAnalytics = async (options = {}) => {
   const [logs, actionCounts, statusCounts] = await Promise.all([
     // Get all logs
     db.select().from(auditLogs).where(whereClause),
-    
+
     // Count by action
     db
       .select({
@@ -516,7 +536,7 @@ export const getAuditAnalytics = async (options = {}) => {
       .from(auditLogs)
       .where(whereClause)
       .groupBy(auditLogs.action),
-    
+
     // Count by status
     db
       .select({
@@ -531,7 +551,7 @@ export const getAuditAnalytics = async (options = {}) => {
   // Calculate statistics
   const uniqueUsers = new Set(logs.map(log => log.userId).filter(Boolean)).size;
   const uniqueIPs = new Set(logs.map(log => log.ipAddress).filter(Boolean)).size;
-  
+
   const hourlyDistribution = {};
   logs.forEach(log => {
     const hour = new Date(log.performedAt).getHours();

@@ -24,6 +24,8 @@ class AssetService {
         // Create initial valuation entry
         await this.addValuation(asset.id, currentValue || purchasePrice, 'manual');
 
+        eventBus.emit('ASSET_CREATED', asset);
+
         return asset;
     }
 
@@ -152,6 +154,32 @@ class AssetService {
             ...updates,
             updatedAt: new Date()
         });
+    }
+
+    /**
+     * Batch update asset valuations
+     */
+    async batchUpdateValuations(userId, getConversionRate, baseCurrencyCode) {
+        const assets = await db.select().from(fixedAssets).where(eq(fixedAssets.userId, userId));
+
+        const updates = assets.map(async (asset) => {
+            const currency = asset.currency || 'USD';
+            const rate = getConversionRate(currency);
+
+            if (rate !== null) {
+                const currentValue = parseFloat(asset.currentValue || 0);
+                const baseValue = (currentValue * rate); // Parenthesis for clarity
+
+                await db.update(fixedAssets)
+                    .set({
+                        baseCurrencyValue: baseValue.toFixed(2),
+                        baseCurrencyCode: baseCurrencyCode,
+                        valuationDate: new Date()
+                    })
+                    .where(eq(fixedAssets.id, asset.id));
+            }
+        });
+        await Promise.all(updates);
     }
 }
 

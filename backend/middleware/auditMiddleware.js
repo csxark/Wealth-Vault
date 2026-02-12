@@ -14,17 +14,31 @@ import { v4 as uuidv4 } from 'uuid';
 const extractResourceInfo = (req) => {
   const path = req.route?.path || req.path;
   const method = req.method;
-  
+
   // Extract resource type from path
   let resourceType = null;
   let resourceId = req.params.id || req.params.expenseId || req.params.goalId || req.params.categoryId;
-  
+
   if (path.includes('/expenses')) {
     resourceType = ResourceTypes.EXPENSE;
   } else if (path.includes('/goals')) {
     resourceType = 'goal';
   } else if (path.includes('/categories')) {
     resourceType = ResourceTypes.CATEGORY;
+  } else if (path.includes('/investments')) {
+    resourceType = ResourceTypes.INVESTMENT;
+  } else if (path.includes('/assets')) {
+    resourceType = ResourceTypes.ASSET;
+  } else if (path.includes('/portfolios')) {
+    resourceType = ResourceTypes.PORTFOLIO;
+  } else if (path.includes('/budgets')) {
+    if (path.includes('/forecast')) {
+      resourceType = ResourceTypes.FORECAST;
+      resourceId = req.params.forecastId; // Might be undefined for POST /forecast
+    } else {
+      resourceType = ResourceTypes.BUDGET;
+      resourceId = req.params.vaultId;
+    }
   } else if (path.includes('/users') || path.includes('/profile')) {
     resourceType = ResourceTypes.USER;
     resourceId = resourceId || req.user?.id;
@@ -33,7 +47,7 @@ const extractResourceInfo = (req) => {
   } else if (path.includes('/settlements')) {
     resourceType = 'settlement';
   }
-  
+
   // Determine action based on method
   let action = null;
   if (method === 'POST' && resourceType) {
@@ -43,7 +57,7 @@ const extractResourceInfo = (req) => {
   } else if (method === 'DELETE') {
     action = `${resourceType?.toUpperCase()}_DELETE`;
   }
-  
+
   return { resourceType, resourceId, action };
 };
 
@@ -65,18 +79,22 @@ export const securityInterceptor = () => {
 
     // Extract resource information
     const { resourceType, resourceId, action } = extractResourceInfo(req);
-    
+
     // Store original state if available (for UPDATE/DELETE)
     if ((req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE') && resourceId) {
-      req.originalState = req.body._originalState || null;
-      delete req.body._originalState; // Clean up to avoid saving to DB
+      // Use req.resource (from checkOwnership) or explicit _originalState
+      req.originalState = req.resource || req.body._originalState || null;
+
+      if (req.body._originalState) {
+        delete req.body._originalState; // Clean up to avoid saving to DB
+      }
     }
 
     // Intercept response to capture new state
     const originalJson = res.json.bind(res);
     const originalSend = res.send.bind(res);
 
-    res.json = function(data) {
+    res.json = function (data) {
       // Only log if operation was successful (2xx status)
       if (res.statusCode >= 200 && res.statusCode < 300) {
         captureAuditLog(req, res, data, { resourceType, resourceId, action });
@@ -84,10 +102,10 @@ export const securityInterceptor = () => {
       return originalJson(data);
     };
 
-    res.send = function(data) {
+    res.send = function (data) {
       // Only log if operation was successful
-      if (res.statusCode >= 200 && res.statusCode < 300 && 
-          (req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE' || req.method === 'POST')) {
+      if (res.statusCode >= 200 && res.statusCode < 300 &&
+        (req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE' || req.method === 'POST')) {
         try {
           const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
           captureAuditLog(req, res, parsedData, { resourceType, resourceId, action });
@@ -117,13 +135,13 @@ const captureAuditLog = async (req, res, responseData, resourceInfo) => {
     // Extract new state from response data
     let newState = null;
     if (responseData?.data) {
-      newState = responseData.data.expense || 
-                 responseData.data.goal || 
-                 responseData.data.category || 
-                 responseData.data.user ||
-                 responseData.data.vault ||
-                 responseData.data.settlement ||
-                 responseData.data;
+      newState = responseData.data.expense ||
+        responseData.data.goal ||
+        responseData.data.category ||
+        responseData.data.user ||
+        responseData.data.vault ||
+        responseData.data.settlement ||
+        responseData.data;
     }
 
     // For deletions, originalState is the state, newState is null
@@ -200,7 +218,7 @@ export const auditBulkOperation = (resourceType, operationType = 'BULK_UPDATE') 
 export const auditSensitiveOperation = (action) => {
   return async (req, res, next) => {
     const { ipAddress, userAgent } = getClientInfo(req);
-    
+
     req.auditMetadata = {
       action,
       sensitive: true,
@@ -208,7 +226,7 @@ export const auditSensitiveOperation = (action) => {
       userAgent,
       timestamp: new Date()
     };
-    
+
     // Log attempt immediately (before operation)
     await logAuditEventWithDelta({
       userId: req.user?.id || null,
@@ -223,7 +241,7 @@ export const auditSensitiveOperation = (action) => {
       userAgent,
       requestId: req.requestId || uuidv4()
     });
-    
+
     next();
   };
 };

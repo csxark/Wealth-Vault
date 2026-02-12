@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import { eq, and, gte, lte, desc, sql, between } from "drizzle-orm";
 import db from "../config/db.js";
 import { expenses, categories, goals, reports, users, subscriptions, cancellationSuggestions, debts, debtPayments, refinanceOpportunities } from "../db/schema.js";
-import geminiService from './geminiservice.js';
+import { getAIProvider } from './aiProvider.js';
 import emailService from './emailService.js';
 import debtEngine from './debtEngine.js';
 import payoffOptimizer from './payoffOptimizer.js';
@@ -262,7 +262,8 @@ Subscription Analytics:
 
 Please provide actionable insights about spending patterns, goal progress, and financial health recommendations. Keep it concise and professional.`;
 
-      const insights = await geminiService.generateInsights(prompt);
+      const provider = getAIProvider();
+      const insights = await provider.generateText(prompt);
       return insights;
     } catch (error) {
       logger.error('Error generating AI insights:', error);
