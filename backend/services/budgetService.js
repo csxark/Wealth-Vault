@@ -1,9 +1,6 @@
-import db from '../config/db.js';
-import { expenses, categories, budgetAlerts } from '../db/schema.js';
-import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import BudgetRepository from '../repositories/BudgetRepository.js';
 import notificationService from './notificationService.js';
 import budgetRulesService from './budgetRulesService.js';
-import forecastingService from './forecastingService.js';
 
 class BudgetService {
   async checkBudgetAfterExpense(expenseData) {
@@ -11,10 +8,7 @@ class BudgetService {
 
     try {
       // Get category with budget info
-      const [category] = await db.query.categories.findMany({
-        where: and(eq(categories.id, categoryId), eq(categories.userId, userId)),
-        columns: { id: true, name: true, budget: true, spendingLimit: true }
-      });
+      const category = await BudgetRepository.findCategoryWithBudget(categoryId, userId);
 
       if (!category || !category.budget) {
         // Still check custom rules even without category budget
@@ -28,20 +22,7 @@ class BudgetService {
         const monthStart = new Date(currentYear, currentMonth, 1);
         const monthEnd = new Date(currentYear, currentMonth + 1, 0);
 
-        const [monthlySpending] = await db
-          .select({ total: sql`sum(${expenses.amount})` })
-          .from(expenses)
-          .where(
-            and(
-              eq(expenses.userId, userId),
-              eq(expenses.categoryId, categoryId),
-              eq(expenses.status, 'completed'),
-              gte(expenses.date, monthStart),
-              lte(expenses.date, monthEnd)
-            )
-          );
-
-        const currentMonthlySpending = Number(monthlySpending?.total || 0);
+        const currentMonthlySpending = await BudgetRepository.getCategorySpending(userId, categoryId, monthStart, monthEnd);
         const monthlyBudget = Number(category.budget.monthly || 0);
 
         // Check monthly budget alerts
@@ -92,21 +73,13 @@ class BudgetService {
     for (const { type, threshold, condition } of thresholds) {
       if (condition) {
         // Check if alert already exists for this period and type
-        const existingAlert = await db.query.budgetAlerts.findFirst({
-          where: and(
-            eq(budgetAlerts.userId, userId),
-            eq(budgetAlerts.categoryId, categoryId),
-            eq(budgetAlerts.alertType, type),
-            sql`DATE(${budgetAlerts.createdAt}) = CURRENT_DATE`,
-            sql`${budgetAlerts.metadata}::jsonb ->> 'period' = ${period}`
-          )
-        });
+        const existingAlert = await BudgetRepository.findAlert(userId, categoryId, type, period);
 
         if (!existingAlert) {
           const message = this.generateAlertMessage(type, categoryName, currentAmount, budgetAmount, threshold, period);
 
           // Create alert record
-          const [alert] = await db.insert(budgetAlerts).values({
+          const alert = await BudgetRepository.createAlert({
             userId,
             categoryId,
             alertType: type,
@@ -120,7 +93,7 @@ class BudgetService {
               period,
               triggeredAt: new Date().toISOString()
             }
-          }).returning();
+          });
 
           // Send notification
           await notificationService.sendBudgetAlert({
@@ -154,33 +127,13 @@ class BudgetService {
       const monthStart = new Date(currentYear, currentMonth, 1);
       const monthEnd = new Date(currentYear, currentMonth + 1, 0);
 
-      let conditions = [eq(categories.userId, userId), eq(categories.isActive, true)];
-      if (categoryId) {
-        conditions.push(eq(categories.id, categoryId));
-      }
-
-      const categoriesWithBudgets = await db.query.categories.findMany({
-        where: and(...conditions),
-        columns: { id: true, name: true, budget: true, spendingLimit: true, color: true, icon: true }
-      });
+      const categoriesWithBudgets = await BudgetRepository.findCategoriesWithBudgets(userId, categoryId);
 
       const budgetStatuses = [];
 
       for (const category of categoriesWithBudgets) {
-        const [monthlySpending] = await db
-          .select({ total: sql`sum(${expenses.amount})` })
-          .from(expenses)
-          .where(
-            and(
-              eq(expenses.userId, userId),
-              eq(expenses.categoryId, category.id),
-              eq(expenses.status, 'completed'),
-              gte(expenses.date, monthStart),
-              lte(expenses.date, monthEnd)
-            )
-          );
+        const currentSpending = await BudgetRepository.getCategorySpending(userId, category.id, monthStart, monthEnd);
 
-        const currentSpending = Number(monthlySpending?.total || 0);
         const monthlyBudget = Number(category.budget?.monthly || 0);
         const spendingLimit = Number(category.spendingLimit || 0);
 

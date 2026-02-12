@@ -1,7 +1,7 @@
 import express from 'express';
-import { body, param, query, validationResult } from 'express-validator';
-import { protect, checkOwnership } from '../middleware/auth.js';
-import { securityInterceptor } from '../middleware/auditMiddleware.js';
+import { body, param, query } from 'express-validator';
+import asyncHandler from 'express-async-handler';
+import { authenticateToken } from '../middleware/auth.js';
 import investmentService from '../services/investmentService.js';
 import portfolioService from '../services/portfolioService.js';
 import priceService from '../services/priceService.js';
@@ -9,6 +9,8 @@ import investmentAnalyticsService from '../services/investmentAnalyticsService.j
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../utils/AppError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
+import AppError from '../utils/AppError.js';
+import ApiResponse from '../utils/ApiResponse.js';
 
 const router = express.Router();
 
@@ -37,6 +39,7 @@ router.get('/', [
   query('isActive').optional().isBoolean(),
   handleValidationErrors,
 ], asyncHandler(async (req, res, next) => {
+], asyncHandler(async (req, res) => {
   const { portfolioId, type, isActive } = req.query;
   const filters = {};
 
@@ -47,6 +50,7 @@ router.get('/', [
   const investments = await investmentService.getInvestments(req.user.id, filters);
 
   return new ApiResponse(200, investments, 'Investments retrieved successfully').send(res);
+  new ApiResponse(200, investments, 'Investments fetched successfully').send(res);
 }));
 
 /**
@@ -65,6 +69,14 @@ router.get('/:id', [
   }
 
   return new ApiResponse(200, investment, 'Investment retrieved successfully').send(res);
+], asyncHandler(async (req, res) => {
+  const investment = await investmentService.getInvestmentById(req.params.id, req.user.id);
+
+  if (!investment) {
+    throw new AppError('Investment not found', 404);
+  }
+
+  new ApiResponse(200, investment, 'Investment fetched successfully').send(res);
 }));
 
 /**
@@ -83,6 +95,7 @@ router.post('/', [
   handleValidationErrors,
   securityInterceptor(),
 ], asyncHandler(async (req, res, next) => {
+], asyncHandler(async (req, res) => {
   const investmentData = {
     portfolioId: req.body.portfolioId,
     symbol: req.body.symbol.toUpperCase(),
@@ -101,6 +114,7 @@ router.post('/', [
   const investment = await investmentService.createInvestment(investmentData, req.user.id);
 
   return new ApiResponse(201, investment, 'Investment created successfully').send(res);
+  new ApiResponse(201, investment, 'Investment created successfully').send(res);
 }));
 
 /**
@@ -119,6 +133,7 @@ router.put('/:id', [
   checkOwnership('Investment'),
   securityInterceptor(),
 ], asyncHandler(async (req, res, next) => {
+], asyncHandler(async (req, res) => {
   const updateData = {};
   const allowedFields = ['name', 'type', 'assetClass', 'sector', 'country', 'tags', 'notes', 'isActive'];
 
@@ -135,6 +150,14 @@ router.put('/:id', [
   }
 
   return new ApiResponse(200, investment, 'Investment updated successfully').send(res);
+
+  const investment = await investmentService.updateInvestment(req.params.id, updateData, req.user.id);
+
+  if (!investment) {
+    throw new AppError('Investment not found', 404);
+  }
+
+  new ApiResponse(200, investment, 'Investment updated successfully').send(res);
 }));
 
 /**
@@ -150,6 +173,14 @@ router.delete('/:id', [
 ], asyncHandler(async (req, res, next) => {
   await investmentService.deleteInvestment(req.params.id, req.user.id);
   return new ApiResponse(200, null, 'Investment deleted successfully').send(res);
+], asyncHandler(async (req, res) => {
+  const success = await investmentService.deleteInvestment(req.params.id, req.user.id);
+
+  if (!success) {
+    throw new AppError('Investment not found or access denied', 404);
+  }
+
+  new ApiResponse(200, null, 'Investment deleted successfully').send(res);
 }));
 
 // Transaction Routes
@@ -167,6 +198,7 @@ router.post('/:id/transactions', [
   body('date').optional().isISO8601(),
   handleValidationErrors,
 ], asyncHandler(async (req, res, next) => {
+], asyncHandler(async (req, res) => {
   const transactionData = {
     type: req.body.type,
     quantity: req.body.quantity.toString(),
@@ -183,6 +215,7 @@ router.post('/:id/transactions', [
   const transaction = await investmentService.addInvestmentTransaction(req.params.id, transactionData, req.user.id);
 
   return new ApiResponse(201, transaction, 'Transaction added successfully').send(res);
+  new ApiResponse(201, transaction, 'Transaction added successfully').send(res);
 }));
 
 /**
@@ -196,6 +229,10 @@ router.get('/:id/transactions', [
 ], asyncHandler(async (req, res, next) => {
   const transactions = await investmentService.getInvestmentTransactions(req.params.id, req.user.id);
   return new ApiResponse(200, transactions, 'Transactions retrieved successfully').send(res);
+], asyncHandler(async (req, res) => {
+  const transactions = await investmentService.getInvestmentTransactions(req.params.id, req.user.id);
+
+  new ApiResponse(200, transactions, 'Transactions fetched successfully').send(res);
 }));
 
 // Portfolio Routes
@@ -208,6 +245,10 @@ router.get('/:id/transactions', [
 router.get('/portfolios', asyncHandler(async (req, res, next) => {
   const portfolios = await portfolioService.getPortfolios(req.user.id);
   return new ApiResponse(200, portfolios, 'Portfolios retrieved successfully').send(res);
+router.get('/portfolios', asyncHandler(async (req, res) => {
+  const portfolios = await portfolioService.getPortfolios(req.user.id);
+
+  new ApiResponse(200, portfolios, 'Portfolios fetched successfully').send(res);
 }));
 
 /**
@@ -222,6 +263,7 @@ router.post('/portfolios', [
   body('riskTolerance').optional().isIn(['conservative', 'moderate', 'aggressive']),
   handleValidationErrors,
 ], asyncHandler(async (req, res, next) => {
+], asyncHandler(async (req, res) => {
   const portfolioData = {
     name: req.body.name,
     description: req.body.description,
@@ -234,6 +276,7 @@ router.post('/portfolios', [
   const portfolio = await portfolioService.createPortfolio(portfolioData, req.user.id);
 
   return new ApiResponse(201, portfolio, 'Portfolio created successfully').send(res);
+  new ApiResponse(201, portfolio, 'Portfolio created successfully').send(res);
 }));
 
 /**
@@ -247,6 +290,14 @@ router.get('/portfolios/:id/summary', [
 ], asyncHandler(async (req, res, next) => {
   const summary = await portfolioService.getPortfolioSummary(req.params.id, req.user.id);
   return new ApiResponse(200, summary, 'Portfolio summary retrieved successfully').send(res);
+], asyncHandler(async (req, res) => {
+  const summary = await portfolioService.getPortfolioSummary(req.params.id, req.user.id);
+
+  if (!summary) {
+    throw new AppError('Portfolio not found', 404);
+  }
+
+  new ApiResponse(200, summary, 'Portfolio summary fetched successfully').send(res);
 }));
 
 // Price Routes
@@ -262,6 +313,10 @@ router.post('/portfolios/:id/update-prices', [
 ], asyncHandler(async (req, res, next) => {
   const result = await priceService.updatePortfolioPrices(req.params.id, req.user.id);
   return new ApiResponse(200, result, 'Price update completed').send(res);
+], asyncHandler(async (req, res) => {
+  const result = await priceService.updatePortfolioPrices(req.params.id, req.user.id);
+
+  new ApiResponse(200, result, 'Price update completed').send(res);
 }));
 
 /**
@@ -277,6 +332,11 @@ router.get('/:id/price-history', [
   const days = parseInt(req.query.days) || 30;
   const history = await priceService.getPriceHistory(req.params.id, days);
   return new ApiResponse(200, history, 'Price history retrieved successfully').send(res);
+], asyncHandler(async (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  const history = await priceService.getPriceHistory(req.params.id, days);
+
+  new ApiResponse(200, history, 'Price history fetched successfully').send(res);
 }));
 
 // Analytics Routes
@@ -292,6 +352,14 @@ router.get('/:id/analytics', [
 ], asyncHandler(async (req, res, next) => {
   const analytics = await investmentAnalyticsService.calculateInvestmentPerformance(req.params.id, req.user.id);
   return new ApiResponse(200, analytics, 'Investment analytics retrieved successfully').send(res);
+], asyncHandler(async (req, res) => {
+  const analytics = await investmentAnalyticsService.calculateInvestmentPerformance(req.params.id, req.user.id);
+
+  if (!analytics) {
+    throw new AppError('Investment not found', 404);
+  }
+
+  new ApiResponse(200, analytics, 'Investment analytics fetched successfully').send(res);
 }));
 
 /**
@@ -305,6 +373,14 @@ router.get('/portfolios/:id/analytics', [
 ], asyncHandler(async (req, res, next) => {
   const analytics = await investmentAnalyticsService.calculatePortfolioPerformance(req.params.id, req.user.id);
   return new ApiResponse(200, analytics, 'Portfolio analytics retrieved successfully').send(res);
+], asyncHandler(async (req, res) => {
+  const analytics = await investmentAnalyticsService.calculatePortfolioPerformance(req.params.id, req.user.id);
+
+  if (!analytics) {
+    throw new AppError('Portfolio not found', 404);
+  }
+
+  new ApiResponse(200, analytics, 'Portfolio analytics fetched successfully').send(res);
 }));
 
 /**
@@ -319,6 +395,7 @@ router.post('/portfolios/:id/optimize', [
   body('constraints').optional().isObject(),
   handleValidationErrors,
 ], asyncHandler(async (req, res, next) => {
+], asyncHandler(async (req, res) => {
   const optimizationParams = {
     riskTolerance: req.body.riskTolerance || 'moderate',
     targetReturn: req.body.targetReturn,
@@ -328,6 +405,19 @@ router.post('/portfolios/:id/optimize', [
   const optimizationResult = await portfolioService.optimizePortfolio(req.params.id, req.user.id, optimizationParams);
 
   return new ApiResponse(200, optimizationResult, 'Portfolio optimization completed').send(res);
+  try {
+    const optimizationResult = await portfolioService.optimizePortfolio(req.params.id, req.user.id, optimizationParams);
+
+    new ApiResponse(200, optimizationResult, 'Portfolio optimization completed').send(res);
+  } catch (error) {
+    if (error.message.includes('not found')) {
+      throw new AppError('Portfolio not found', 404);
+    }
+    if (error.message.includes('at least 2 investments')) {
+      throw new AppError(error.message, 400);
+    }
+    throw error;
+  }
 }));
 
 export default router;

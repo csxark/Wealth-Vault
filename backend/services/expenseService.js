@@ -1,6 +1,4 @@
-import { eq, and, lte, isNotNull } from 'drizzle-orm';
-import db from '../config/db.js';
-import { expenses } from '../db/schema.js';
+import ExpenseRepository from '../repositories/ExpenseRepository.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
 import eventBus from '../events/eventBus.js';
 // Removed savingsService and categorizationService imports to decouple
@@ -56,18 +54,7 @@ export const getDueRecurringExpenses = async () => {
   const now = new Date();
 
   try {
-    const dueExpenses = await db
-      .select()
-      .from(expenses)
-      .where(
-        and(
-          eq(expenses.isRecurring, true),
-          isNotNull(expenses.nextExecutionDate),
-          lte(expenses.nextExecutionDate, now)
-        )
-      );
-
-    return dueExpenses;
+    return await ExpenseRepository.getDueRecurringTransactions(now);
   } catch (error) {
     console.error('Error fetching due recurring expenses:', error);
     throw error;
@@ -84,45 +71,39 @@ export const cloneRecurringExpense = async (sourceExpense) => {
 
   try {
     // Create a new expense based on the source
-    const [newExpense] = await db
-      .insert(expenses)
-      .values({
-        userId: sourceExpense.userId,
-        categoryId: sourceExpense.categoryId,
-        amount: sourceExpense.amount,
-        currency: sourceExpense.currency,
-        description: sourceExpense.description,
-        subcategory: sourceExpense.subcategory,
-        date: now, // Use current date for the new transaction
-        paymentMethod: sourceExpense.paymentMethod,
-        location: sourceExpense.location,
-        tags: sourceExpense.tags,
-        isRecurring: false, // Cloned expenses are not recurring themselves
-        recurringSourceId: sourceExpense.id, // Link back to the source
-        notes: sourceExpense.notes ? `[Auto-generated] ${sourceExpense.notes}` : '[Auto-generated from recurring transaction]',
-        status: 'completed',
-        metadata: {
-          createdBy: 'recurring_job',
-          sourceExpenseId: sourceExpense.id,
-          generatedAt: now.toISOString(),
-          version: 1,
-          flags: ['auto-generated']
-        },
-      })
-      .returning();
+    const newExpense = await ExpenseRepository.create({
+      userId: sourceExpense.userId,
+      categoryId: sourceExpense.categoryId,
+      amount: sourceExpense.amount,
+      currency: sourceExpense.currency,
+      description: sourceExpense.description,
+      subcategory: sourceExpense.subcategory,
+      date: now, // Use current date for the new transaction
+      paymentMethod: sourceExpense.paymentMethod,
+      location: sourceExpense.location,
+      tags: sourceExpense.tags,
+      isRecurring: false, // Cloned expenses are not recurring themselves
+      recurringSourceId: sourceExpense.id, // Link back to the source
+      notes: sourceExpense.notes ? `[Auto-generated] ${sourceExpense.notes}` : '[Auto-generated from recurring transaction]',
+      status: 'completed',
+      metadata: {
+        createdBy: 'recurring_job',
+        sourceExpenseId: sourceExpense.id,
+        generatedAt: now.toISOString(),
+        version: 1,
+        flags: ['auto-generated']
+      },
+    });
 
     // Calculate the next execution date for the source expense
     const nextExecDate = calculateNextExecutionDate(now, sourceExpense.recurringPattern);
 
     // Update the source expense with the new execution date and last executed timestamp
-    await db
-      .update(expenses)
-      .set({
-        lastExecutedDate: now,
-        nextExecutionDate: nextExecDate,
-        updatedAt: now,
-      })
-      .where(eq(expenses.id, sourceExpense.id));
+    await ExpenseRepository.update(sourceExpense.id, {
+      lastExecutedDate: now,
+      nextExecutionDate: nextExecDate,
+      updatedAt: now,
+    });
 
     // Log the audit event
     logAuditEventAsync({
@@ -214,13 +195,10 @@ export const initializeRecurringExpense = async (expenseId, recurringPattern, st
   const nextExecDate = calculateNextExecutionDate(startDate, recurringPattern);
 
   if (nextExecDate) {
-    await db
-      .update(expenses)
-      .set({
-        nextExecutionDate: nextExecDate,
-        updatedAt: new Date(),
-      })
-      .where(eq(expenses.id, expenseId));
+    await ExpenseRepository.update(expenseId, {
+      nextExecutionDate: nextExecDate,
+      updatedAt: new Date(),
+    });
   }
 
   return nextExecDate;
@@ -232,18 +210,149 @@ export const initializeRecurringExpense = async (expenseId, recurringPattern, st
  * @returns {Promise<void>}
  */
 export const disableRecurring = async (expenseId) => {
-  await db
-    .update(expenses)
-    .set({
-      isRecurring: false,
-      nextExecutionDate: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(expenses.id, expenseId));
+  await ExpenseRepository.update(expenseId, {
+    isRecurring: false,
+    nextExecutionDate: null,
+    updatedAt: new Date(),
+  });
 };
 
-// Side-effect functions (round-up, categorization) are now handled by event listeners
-// logic removed from here to ensure single responsibility and decoupling
+/**
+ * Process round-up savings after expense creation
+ * @param {Object} expense - The created expense object
+ * @returns {Promise<Object|null>} - Round-up record if processed, null otherwise
+ */
+export const processRoundUpAfterExpenseCreation = async (expense) => {
+  try {
+    // Process round-up using savings service
+    const roundUpRecord = await savingsService.processRoundUp(expense);
+
+    if (roundUpRecord) {
+      console.log(`[RoundUp] Processed round-up for expense ${expense.id}: ${roundUpRecord.roundUpAmount} ${expense.currency}`);
+    }
+
+    return roundUpRecord;
+  } catch (error) {
+    console.error(`[RoundUp] Error processing round-up for expense ${expense.id}:`, error);
+    // Don't throw error to avoid breaking expense creation
+    return null;
+  }
+};
+
+/**
+ * Auto-categorize a single expense using ML
+ * @param {Object} expense - The expense object
+ * @returns {Promise<Object>} - Categorization result
+ */
+export const autoCategorizeExpense = async (expense) => {
+  try {
+    const prediction = await categorizationService.predictCategory(expense);
+
+    if (prediction.categoryId && prediction.confidence > 0.5) {
+      // Update expense with predicted category
+      await ExpenseRepository.update(expense.id, {
+        categoryId: prediction.categoryId,
+        updatedAt: new Date()
+      });
+
+      // Log audit event
+      await logAuditEventAsync({
+        userId: expense.userId,
+        action: AuditActions.EXPENSE_UPDATE,
+        resourceType: ResourceTypes.EXPENSE,
+        resourceId: expense.id,
+        metadata: {
+          autoCategorized: true,
+          predictedCategory: prediction.categoryName,
+          confidence: prediction.confidence
+        },
+        status: 'success',
+        ipAddress: 'system',
+        userAgent: 'ExpenseService'
+      });
+
+      return {
+        expenseId: expense.id,
+        predictedCategory: prediction.categoryName,
+        confidence: prediction.confidence,
+        applied: true
+      };
+    }
+
+    return {
+      expenseId: expense.id,
+      predictedCategory: prediction.categoryName,
+      confidence: prediction.confidence,
+      applied: false
+    };
+
+  } catch (error) {
+    console.error(`Error auto-categorizing expense ${expense.id}:`, error);
+    return {
+      expenseId: expense.id,
+      applied: false,
+      error: error.message
+    };
+  }
+};
+
+/**
+ * Bulk categorize expenses using ML
+ * @param {string} userId - User ID
+ * @param {Array} expenseIds - Array of expense IDs to categorize
+ * @returns {Promise<Array>} - Array of categorization results
+ */
+export const bulkCategorizeExpenses = async (userId, expenseIds) => {
+  try {
+    return await categorizationService.bulkCategorize(userId, expenseIds);
+  } catch (error) {
+    console.error('Error in bulk categorization:', error);
+    throw error;
+  }
+};
+
+/**
+ * Train categorization model for a user
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Training result
+ */
+export const trainCategorizationModel = async (userId) => {
+  try {
+    await categorizationService.trainModel(userId);
+    return {
+      success: true,
+      status: categorizationService.getModelStatus()
+    };
+  } catch (error) {
+    console.error('Error training categorization model:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+/**
+ * Retrain model with user corrections
+ * @param {string} userId - User ID
+ * @param {Array} corrections - Array of correction objects {expenseId, correctCategoryId}
+ * @returns {Promise<Object>} - Retraining result
+ */
+export const retrainWithCorrections = async (userId, corrections) => {
+  try {
+    await categorizationService.retrainWithCorrections(userId, corrections);
+    return {
+      success: true,
+      status: categorizationService.getModelStatus()
+    };
+  } catch (error) {
+    console.error('Error retraining with corrections:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
 
 export default {
   calculateNextExecutionDate,
@@ -252,4 +361,9 @@ export default {
   processRecurringExpenses,
   initializeRecurringExpense,
   disableRecurring,
+  processRoundUpAfterExpenseCreation,
+  autoCategorizeExpense,
+  bulkCategorizeExpenses,
+  trainCategorizationModel,
+  retrainWithCorrections
 };

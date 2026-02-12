@@ -1,7 +1,4 @@
-import db from '../config/db.js';
-import { fixedAssets, assetValuations, marketIndices } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
-import eventBus from '../events/eventBus.js';
+import AssetRepository from '../repositories/AssetRepository.js';
 
 class AssetService {
     /**
@@ -10,7 +7,7 @@ class AssetService {
     async createAsset(userId, assetData) {
         const { name, category, purchasePrice, purchaseDate, currentValue, currency, location, description, appreciationRate, metadata } = assetData;
 
-        const [asset] = await db.insert(fixedAssets).values({
+        const asset = await AssetRepository.create({
             userId,
             name,
             category,
@@ -22,7 +19,7 @@ class AssetService {
             description,
             appreciationRate: appreciationRate ? appreciationRate.toString() : '0',
             metadata: metadata || {},
-        }).returning();
+        });
 
         // Create initial valuation entry
         await this.addValuation(asset.id, currentValue || purchasePrice, 'manual');
@@ -36,16 +33,7 @@ class AssetService {
      * Get all assets for a user
      */
     async getUserAssets(userId) {
-        const assets = await db.query.fixedAssets.findMany({
-            where: eq(fixedAssets.userId, userId),
-            with: {
-                valuations: {
-                    orderBy: [desc(assetValuations.date)],
-                    limit: 5
-                }
-            },
-            orderBy: [desc(fixedAssets.createdAt)]
-        });
+        const assets = await AssetRepository.findAll(userId);
 
         // Calculate metrics for each asset
         return assets.map(asset => {
@@ -70,40 +58,33 @@ class AssetService {
      */
     async updateAssetValue(assetId, newValue, source = 'manual') {
         // Update current value
-        await db.update(fixedAssets)
-            .set({
-                currentValue: newValue.toString(),
-                updatedAt: new Date()
-            })
-            .where(eq(fixedAssets.id, assetId));
+        await AssetRepository.update(assetId, {
+            currentValue: newValue.toString(),
+            updatedAt: new Date()
+        });
 
         // Log valuation history
         await this.addValuation(assetId, newValue, source);
 
-        return await db.query.fixedAssets.findFirst({
-            where: eq(fixedAssets.id, assetId)
-        });
+        return await AssetRepository.findFirst(assetId);
     }
 
     /**
      * Add valuation entry
      */
     async addValuation(assetId, value, source = 'manual') {
-        return await db.insert(assetValuations).values({
+        return await AssetRepository.addValuation({
             assetId,
             value: value.toString(),
-            date: new Date(),
             source
-        }).returning();
+        });
     }
 
     /**
      * Apply appreciation/depreciation based on configured rate
      */
     async applyAppreciation(assetId) {
-        const asset = await db.query.fixedAssets.findFirst({
-            where: eq(fixedAssets.id, assetId)
-        });
+        const asset = await AssetRepository.findFirst(assetId);
 
         if (!asset || !asset.appreciationRate) return null;
 
@@ -120,7 +101,7 @@ class AssetService {
      * Get total portfolio value
      */
     async getPortfolioValue(userId) {
-        const assets = await db.select().from(fixedAssets).where(eq(fixedAssets.userId, userId));
+        const assets = await AssetRepository.findSimpleAll(userId);
 
         let totalValue = 0;
         let totalPurchasePrice = 0;
@@ -143,16 +124,9 @@ class AssetService {
      * Delete an asset
      */
     async deleteAsset(assetId, userId) {
-        // Verify ownership
-        const [asset] = await db.select().from(fixedAssets).where(
-            and(eq(fixedAssets.id, assetId), eq(fixedAssets.userId, userId))
-        );
+        const asset = await AssetRepository.delete(assetId, userId);
 
         if (!asset) throw new Error('Asset not found or unauthorized');
-
-        await db.delete(fixedAssets).where(eq(fixedAssets.id, assetId));
-
-        eventBus.emit('ASSET_DELETED', { id: assetId, userId });
 
         return asset;
     }
@@ -161,15 +135,7 @@ class AssetService {
      * Get asset by ID
      */
     async getAssetById(assetId, userId) {
-        const asset = await db.query.fixedAssets.findFirst({
-            where: and(eq(fixedAssets.id, assetId), eq(fixedAssets.userId, userId)),
-            with: {
-                valuations: {
-                    orderBy: [desc(assetValuations.date)],
-                    limit: 20
-                }
-            }
-        });
+        const asset = await AssetRepository.findById(assetId, userId);
 
         if (!asset) throw new Error('Asset not found');
 
@@ -180,23 +146,14 @@ class AssetService {
      * Update asset details
      */
     async updateAsset(assetId, userId, updates) {
-        const [asset] = await db.select().from(fixedAssets).where(
-            and(eq(fixedAssets.id, assetId), eq(fixedAssets.userId, userId))
-        );
+        const asset = await AssetRepository.findFirst(assetId);
 
-        if (!asset) throw new Error('Asset not found or unauthorized');
+        if (!asset || asset.userId !== userId) throw new Error('Asset not found or unauthorized');
 
-        const [updated] = await db.update(fixedAssets)
-            .set({
-                ...updates,
-                updatedAt: new Date()
-            })
-            .where(eq(fixedAssets.id, assetId))
-            .returning();
-
-        eventBus.emit('ASSET_UPDATED', updated);
-
-        return updated;
+        return await AssetRepository.update(assetId, {
+            ...updates,
+            updatedAt: new Date()
+        });
     }
 
     /**
