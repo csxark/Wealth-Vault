@@ -2,6 +2,8 @@ import { eq, and, desc, asc, sql } from 'drizzle-orm';
 import db from '../config/db.js';
 import { investments, investmentTransactions, portfolios, priceHistory } from '../db/schema.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
+import eventBus from '../events/eventBus.js';
+// Removed notificationService import - now decoupled via events
 
 /**
  * Investment Service
@@ -41,6 +43,9 @@ export const createInvestment = async (investmentData, userId) => {
       },
       status: 'success',
     });
+
+    // Emit event
+    eventBus.emit('INVESTMENT_CREATED', investment);
 
     return investment;
   } catch (error) {
@@ -151,6 +156,9 @@ export const updateInvestment = async (investmentId, updateData, userId) => {
       status: 'success',
     });
 
+    // Emit event
+    eventBus.emit('INVESTMENT_UPDATED', investment);
+
     return investment;
   } catch (error) {
     console.error('Error updating investment:', error);
@@ -190,6 +198,9 @@ export const deleteInvestment = async (investmentId, userId) => {
       },
       status: 'success',
     });
+
+    // Emit event
+    eventBus.emit('INVESTMENT_DELETED', { id: investmentId, userId });
 
     return true;
   } catch (error) {
@@ -445,7 +456,7 @@ export const calculateInvestmentMetrics = async (investmentId, userId) => {
   }
 };
 
-import notificationService from './notificationService.js';
+// Side-effects like notifications are now handled by event listeners in ../listeners/
 
 /**
  * Batch update investment valuations based on FX rates
@@ -479,13 +490,18 @@ export const batchUpdateValuations = async (userId, getConversionRate, baseCurre
           const change = Math.abs((baseValue - oldBaseValue) / oldBaseValue);
           if (change > 0.05) {
             const direction = baseValue > oldBaseValue ? 'increased' : 'decreased';
-            // Non-blocking notification
-            notificationService.sendNotification(userId, {
-              title: `Significant Value Change: ${inv.symbol}`,
-              message: `Your investment ${inv.name} has ${direction} by ${(change * 100).toFixed(1)}% due to FX rate updates.`,
-              type: 'alert',
-              data: { investmentId: inv.id, oldVal: oldBaseValue, newVal: baseValue }
-            }).catch(e => console.error('Failed to send swing notification:', e));
+
+            // Emit event instead of direct notification
+            eventBus.emit('INVESTMENT_VALUATION_CHANGED', {
+              userId,
+              investmentId: inv.id,
+              investmentName: inv.name,
+              investmentSymbol: inv.symbol,
+              changePercent: change * 100,
+              direction,
+              newValue: baseValue,
+              oldValue: oldBaseValue
+            });
           }
         }
 
