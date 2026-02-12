@@ -5,7 +5,7 @@
 
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import db from '../config/db.js';
-import { expenses, categories, forecasts, users, exchangeRates } from '../db/schema.js';
+import { expenses, categories, forecasts, users, exchangeRates, cashFlowModels } from '../db/schema.js';
 import currencyService from './currencyService.js';
 
 // Simple Linear Regression implementation for forecasting

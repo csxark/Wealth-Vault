@@ -1125,6 +1125,30 @@ export const forecasts = pgTable('forecasts', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Cash Flow Models Table (for storing trained ML models per user)
+export const cashFlowModels = pgTable('cash_flow_models', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    modelType: text('model_type').notNull(), // 'tensorflow', 'linear_regression', 'neural_network'
+    modelData: jsonb('model_data').notNull(), // Serialized model weights/parameters
+    modelArchitecture: jsonb('model_architecture'), // Model structure (layers, neurons, etc.)
+    trainingData: jsonb('training_data'), // Reference to training dataset used
+    accuracy: doublePrecision('accuracy'), // Model accuracy score (0-1)
+    lastTrained: timestamp('last_trained').defaultNow(),
+    nextRetraining: timestamp('next_retraining'), // When to retrain the model
+    isActive: boolean('is_active').default(true),
+    currency: text('currency').default('USD'),
+    metadata: jsonb('metadata').default({
+        trainingSamples: 0,
+        features: [], // Features used in training
+        hyperparameters: {}, // Learning rate, epochs, etc.
+        performanceMetrics: {}, // MSE, MAE, R2, etc.
+        version: 1
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Forecasts Relations
 export const forecastsRelations = relations(forecasts, ({ one }) => ({
     user: one(users, {
