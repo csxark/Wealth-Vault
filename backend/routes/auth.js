@@ -14,6 +14,8 @@ import { validatePasswordStrength, isCommonPassword } from "../utils/passwordVal
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { AppError } from "../utils/AppError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import deadMansSwitch from "../services/deadMansSwitch.js";
+
 import {
   createDeviceSession,
   refreshAccessToken,
@@ -244,6 +246,7 @@ router.post(
     // Check for required fields
     if (!email || !password || !firstName || !lastName) {
       return next(new AppError(400, "Missing required fields: email, password, firstName, and lastName are required."));
+
     }
 
     const [existingUser] = await db
@@ -303,6 +306,9 @@ router.post(
     const deviceInfo = getDeviceInfo(req);
     const ipAddress = req.ip || req.connection.remoteAddress;
     const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
+
+    // Update activity for Dead Man's Switch
+    await deadMansSwitch.updateActivity(newUser.id, 'register');
 
     // Log successful registration
     logAudit(req, {
@@ -495,6 +501,9 @@ router.post(
       .set({ lastLogin: new Date() })
       .where(eq(users.id, user.id));
 
+    // Update activity for Dead Man's Switch
+    await deadMansSwitch.updateActivity(user.id, 'login');
+
     // Get IP and location
     const ipAddress = req.ip || req.connection.remoteAddress;
     const location = await securityService.getIPLocation(ipAddress);
@@ -553,6 +562,7 @@ router.post(
       user: getPublicProfile(user),
       ...tokens,
     }, "Login successful").send(res);
+
   })
 );
 
@@ -735,6 +745,7 @@ router.post("/refresh",
     const tokens = await refreshAccessToken(refreshToken, ipAddress);
 
     return new ApiResponse(200, tokens, "Token refreshed successfully").send(res);
+
   })
 );
 
@@ -759,6 +770,7 @@ router.post("/logout", protect, asyncHandler(async (req, res, next) => {
   });
 
   return new ApiResponse(200, null, "Logged out successfully").send(res);
+
 }));
 
 // @route   POST /api/auth/logout-all
@@ -778,6 +790,7 @@ router.post("/logout-all", protect, asyncHandler(async (req, res, next) => {
   });
 
   return new ApiResponse(200, null, `Logged out from ${revokedCount} devices successfully`).send(res);
+
 }));
 
 // @route   GET /api/auth/sessions
@@ -788,6 +801,7 @@ router.get("/sessions", protect, asyncHandler(async (req, res, next) => {
   const sessions = await getUserSessions(userId);
 
   return new ApiResponse(200, { sessions }, "User's active sessions retrieved successfully").send(res);
+
 }));
 
 // @route   DELETE /api/auth/sessions/:sessionId
@@ -857,6 +871,7 @@ router.post(
     });
 
     return new ApiResponse(200, {
+
       profilePicture: savedFile.url,
       fileInfo: {
         size: savedFile.size,
@@ -904,6 +919,7 @@ router.delete(
     });
 
     return new ApiResponse(200, null, 'Profile picture deleted successfully').send(res);
+
   })
 );
 
@@ -918,6 +934,7 @@ router.get(
     const usage = await fileStorageService.getUserStorageUsage(userId);
 
     return new ApiResponse(200, {
+
       usage: {
         totalSize: usage.totalSize,
         fileCount: usage.fileCount,

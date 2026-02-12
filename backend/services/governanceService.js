@@ -102,7 +102,7 @@ class GovernanceService {
     }
 
     /**
-     * Approve a request
+     * Approve a request (with Multi-Sig support)
      */
     async approveRequest(requestId, approverId, reason = '') {
         const request = await db.query.approvalRequests.findFirst({
@@ -110,12 +110,19 @@ class GovernanceService {
         });
 
         if (!request) throw new Error('Request not found');
-        if (request.status !== 'pending') throw new Error('Request already processed');
+        if (request.status !== 'pending' && request.status !== 'partially_approved') {
+            throw new Error('Request already processed or invalid status');
+        }
 
         // Verify approver has permission
         const approverRole = await this.getUserRole(request.vaultId, approverId);
         if (!approverRole?.permissions?.canApprove) {
-            throw new Error('Insufficient permissions to approve');
+            // Special case for inheritance executors who might not have a vault role
+            if (request.resourceType === 'inheritance_trigger') {
+                // Verification is handled inside DeadMansSwitch.approveInheritance
+            } else {
+                throw new Error('Insufficient permissions to approve');
+            }
         }
 
         // Cannot approve own request
@@ -123,18 +130,33 @@ class GovernanceService {
             throw new Error('Cannot approve your own request');
         }
 
+        // Check if already approved by this user
+        const metadata = request.metadata || { approvers: [] };
+        if (metadata.approvers.includes(approverId)) {
+            throw new Error('You have already approved this request');
+        }
+
+        metadata.approvers.push(approverId);
+        const newApprovalCount = (request.currentApprovals || 0) + 1;
+        const required = request.requiredApprovals || 1;
+
+        const isFullyApproved = newApprovalCount >= required;
+
         const [updated] = await db.update(approvalRequests)
             .set({
-                status: 'approved',
-                approvedBy: approverId,
-                approvalReason: reason,
-                approvedAt: new Date()
+                status: isFullyApproved ? 'approved' : 'partially_approved',
+                currentApprovals: newApprovalCount,
+                metadata,
+                approvedAt: isFullyApproved ? new Date() : null,
+                updatedAt: new Date()
             })
             .where(eq(approvalRequests.id, requestId))
             .returning();
 
-        // Execute the approved action
-        await this.executeApprovedAction(updated);
+        // If fully approved, execute the action
+        if (isFullyApproved) {
+            await this.executeApprovedAction(updated);
+        }
 
         return updated;
     }
@@ -148,11 +170,8 @@ class GovernanceService {
         });
 
         if (!request) throw new Error('Request not found');
-        if (request.status !== 'pending') throw new Error('Request already processed');
-
-        const rejecterRole = await this.getUserRole(request.vaultId, rejecterId);
-        if (!rejecterRole?.permissions?.canApprove) {
-            throw new Error('Insufficient permissions to reject');
+        if (request.status !== 'pending' && request.status !== 'partially_approved') {
+            throw new Error('Request already processed');
         }
 
         const [updated] = await db.update(approvalRequests)
@@ -169,20 +188,23 @@ class GovernanceService {
     }
 
     /**
-     * Execute approved action (simplified - extend based on resource type)
+     * Execute approved action
      */
     async executeApprovedAction(request) {
-        // This is a placeholder - in real implementation, you'd:
-        // 1. Parse the requestData
-        // 2. Execute the actual operation (create expense, transfer funds, etc.)
-        // 3. Update the resourceId field with the created resource
+        const { resourceType, resourceId, action, requestData } = request;
 
-        console.log(`[Governance] Executing approved ${request.action} on ${request.resourceType}`);
+        console.log(`[Governance] Executing approved ${action} on ${resourceType}: ${resourceId}`);
 
-        // Example: If it's an expense creation
-        if (request.resourceType === 'expense' && request.action === 'create') {
-            // const newExpense = await db.insert(expenses).values(request.requestData).returning();
-            // await db.update(approvalRequests).set({ resourceId: newExpense.id }).where(eq(approvalRequests.id, request.id));
+        if (resourceType === 'inheritance_trigger') {
+            const deadMansSwitch = (await import('./deadMansSwitch.js')).default;
+            const rule = await db.query.inheritanceRules.findFirst({
+                where: eq(inheritanceRules.id, resourceId)
+            });
+            if (rule) {
+                await deadMansSwitch.executeDistribution(rule);
+            }
+        } else if (resourceType === 'expense' && action === 'create') {
+            // Expense creation logic...
         }
 
         return true;

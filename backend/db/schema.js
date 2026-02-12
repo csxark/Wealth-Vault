@@ -962,6 +962,72 @@ export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
 }));
 
 // ============================================================================
+// GOVERNANCE & INHERITANCE (ESTATE MANAGEMENT)
+// ============================================================================
+
+// Family Roles (Hierarchical Governance)
+export const familyRoles = pgTable('family_roles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    role: text('role').notNull(), // 'owner', 'parent', 'child', 'trustee', 'beneficiary'
+    permissions: jsonb('permissions').default({
+        canApprove: false,
+        canCreateExpense: true,
+        requiresApproval: false,
+        approvalThreshold: 0,
+        canManageRoles: false,
+        canViewAll: true
+    }),
+    assignedBy: uuid('assigned_by').references(() => users.id),
+    assignedAt: timestamp('assigned_at').defaultNow(),
+    expiresAt: timestamp('expires_at'),
+    isActive: boolean('is_active').default(true),
+});
+
+// Approval Requests (Maker-Checker Workflow)
+export const approvalRequests = pgTable('approval_requests', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    requesterId: uuid('requester_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceType: text('resource_type').notNull(), // 'expense', 'goal', 'transfer', 'role_change', 'inheritance_trigger'
+    resourceId: uuid('resource_id'),
+    action: text('action').notNull(),
+    requestData: jsonb('request_data').notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }),
+    status: text('status').default('pending'), // 'pending', 'approved', 'rejected', 'partially_approved'
+    requiredApprovals: integer('required_approvals').default(1),
+    currentApprovals: integer('current_approvals').default(0),
+    approvedAt: timestamp('approved_at'),
+    expiresAt: timestamp('expires_at'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Inheritance Rules (Digital Will / Smart Estate)
+export const inheritanceRules = pgTable('inheritance_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    beneficiaryId: uuid('beneficiary_id').references(() => users.id).notNull(),
+    assetType: text('asset_type'), // 'vault', 'fixed_asset', 'portfolio', 'all'
+    assetId: uuid('asset_id'),
+    distributionPercentage: numeric('distribution_percentage', { precision: 5, scale: 2 }).default('100.00'),
+    conditions: jsonb('conditions').default({
+        inactivityThreshold: 90,
+        minPortfolioValue: '0', // Dynamic Allocation condition
+        requiresExecutorApproval: true,
+        multiSigRequirement: 2
+    }),
+    status: text('status').default('active'), // 'active', 'triggered', 'awaiting_approval', 'executed', 'revoked'
+    triggeredAt: timestamp('triggered_at'),
+    executedAt: timestamp('executed_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ============================================================================
 // PORTFOLIO REBALANCING & ASSET DRIFT MANAGER (#308)
 // ============================================================================
 
@@ -1090,9 +1156,86 @@ export const challenges = pgTable('challenges', {
         difficulty: 'medium',
         category: 'savings'
     }),
+
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+// Inheritance Executors (Multi-Sig verification)
+export const inheritanceExecutors = pgTable('inheritance_executors', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    ruleId: uuid('rule_id').references(() => inheritanceRules.id, { onDelete: 'cascade' }).notNull(),
+    executorId: uuid('executor_id').references(() => users.id).notNull(),
+    role: text('role').default('executor'), // 'executor', 'witness', 'trustee'
+    status: text('status').default('pending'), // 'pending', 'approved', 'rejected'
+    approvedAt: timestamp('approved_at'),
+    rejectionReason: text('rejection_reason'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Inactivity Triggers (Dead Man's Switch Monitoring)
+export const inactivityTriggers = pgTable('inactivity_triggers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    lastSeenAt: timestamp('last_seen_at').defaultNow(),
+    lastActivityType: text('last_activity_type'),
+    inactivityDays: integer('inactivity_days').default(0),
+    warningsSent: integer('warnings_sent').default(0),
+    status: text('status').default('active'), // 'active', 'warned', 'triggered'
+    challengeToken: text('challenge_token'),
+    challengeSentAt: timestamp('challenge_sent_at'),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Asset Step-Up Basis Logs (Tax Optimization)
+export const assetStepUpLogs = pgTable('asset_step_up_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    assetId: uuid('asset_id').notNull(), // References vaults.id or fixed_assets.id
+    assetType: text('asset_type').notNull(),
+    inheritedBy: uuid('inherited_by').references(() => users.id).notNull(),
+    inheritedFrom: uuid('inherited_from').references(() => users.id).notNull(),
+    originalBasis: numeric('original_basis', { precision: 12, scale: 2 }).notNull(),
+    steppedUpBasis: numeric('stepped_up_basis', { precision: 12, scale: 2 }).notNull(),
+    valuationDate: timestamp('valuation_date').defaultNow(),
+    taxYear: integer('tax_year').notNull(),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================================================
+// GOVERNANCE RELATIONS
+// ============================================================================
+
+export const familyRolesRelations = relations(familyRoles, ({ one }) => ({
+    vault: one(vaults, { fields: [familyRoles.vaultId], references: [vaults.id] }),
+    user: one(users, { fields: [familyRoles.userId], references: [users.id] }),
+}));
+
+export const approvalRequestsRelations = relations(approvalRequests, ({ one }) => ({
+    vault: one(vaults, { fields: [approvalRequests.vaultId], references: [vaults.id] }),
+    requester: one(users, { fields: [approvalRequests.requesterId], references: [users.id] }),
+}));
+
+export const inheritanceRulesRelations = relations(inheritanceRules, ({ one, many }) => ({
+    user: one(users, { fields: [inheritanceRules.userId], references: [users.id] }),
+    beneficiary: one(users, { fields: [inheritanceRules.beneficiaryId], references: [users.id] }),
+    executors: many(inheritanceExecutors),
+}));
+
+export const inheritanceExecutorsRelations = relations(inheritanceExecutors, ({ one }) => ({
+    rule: one(inheritanceRules, { fields: [inheritanceExecutors.ruleId], references: [inheritanceRules.id] }),
+    executor: one(users, { fields: [inheritanceExecutors.executorId], references: [users.id] }),
+}));
+
+export const inactivityTriggersRelations = relations(inactivityTriggers, ({ one }) => ({
+    user: one(users, { fields: [inactivityTriggers.userId], references: [users.id] }),
+}));
+
+export const assetStepUpLogsRelations = relations(assetStepUpLogs, ({ one }) => ({
+    heir: one(users, { fields: [assetStepUpLogs.inheritedBy], references: [users.id] }),
+    donor: one(users, { fields: [assetStepUpLogs.inheritedFrom], references: [users.id] }),
+}));
 
 // Challenge Participants Table
 export const challengeParticipants = pgTable('challenge_participants', {
