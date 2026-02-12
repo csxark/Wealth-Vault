@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Receipt, Calendar, CreditCard, MapPin, Tag, RotateCcw, Clock, Upload } from 'lucide-react';
+import { X, Receipt, Calendar, CreditCard, MapPin, Tag, RotateCcw, Clock, Upload, Mic, MicOff } from 'lucide-react';
 import type { Expense } from '../../types';
 
 interface ExpenseFormModalProps {
