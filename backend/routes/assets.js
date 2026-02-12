@@ -6,6 +6,7 @@ import assetService from '../services/assetService.js';
 import projectionEngine from '../services/projectionEngine.js';
 import marketData from '../services/marketData.js';
 import riskEngine from '../services/riskEngine.js';
+import ApiResponse from '../utils/ApiResponse.js';
 
 const router = express.Router();
 
@@ -17,10 +18,7 @@ router.get('/', protect, asyncHandler(async (req, res) => {
     const assets = await assetService.getUserAssets(req.user.id);
     const portfolio = await assetService.getPortfolioValue(req.user.id);
 
-    res.success({
-        assets,
-        portfolio
-    });
+    new ApiResponse(200, { assets, portfolio }, 'Assets fetched successfully').send(res);
 }));
 
 /**
@@ -37,7 +35,7 @@ router.post('/', protect, [
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const asset = await assetService.createAsset(req.user.id, req.body);
-    res.success(asset, 'Asset created successfully');
+    new ApiResponse(201, asset, 'Asset created successfully').send(res);
 }));
 
 /**
@@ -46,7 +44,7 @@ router.post('/', protect, [
  */
 router.get('/:id', protect, asyncHandler(async (req, res) => {
     const asset = await assetService.getAssetById(req.params.id, req.user.id);
-    res.success(asset);
+    new ApiResponse(200, asset, 'Asset fetched successfully').send(res);
 }));
 
 /**
@@ -55,7 +53,7 @@ router.get('/:id', protect, asyncHandler(async (req, res) => {
  */
 router.put('/:id', protect, asyncHandler(async (req, res) => {
     const updated = await assetService.updateAsset(req.params.id, req.user.id, req.body);
-    res.success(updated, 'Asset updated successfully');
+    new ApiResponse(200, updated, 'Asset updated successfully').send(res);
 }));
 
 /**
@@ -68,7 +66,7 @@ router.put('/:id/value', protect, [
 ], asyncHandler(async (req, res) => {
     const { value, source } = req.body;
     const updated = await assetService.updateAssetValue(req.params.id, value, source);
-    res.success(updated, 'Valuation updated');
+    new ApiResponse(200, updated, 'Valuation updated').send(res);
 }));
 
 /**
@@ -77,7 +75,7 @@ router.put('/:id/value', protect, [
  */
 router.delete('/:id', protect, asyncHandler(async (req, res) => {
     await assetService.deleteAsset(req.params.id, req.user.id);
-    res.success(null, 'Asset deleted successfully');
+    new ApiResponse(200, null, 'Asset deleted successfully').send(res);
 }));
 
 /**
@@ -91,7 +89,7 @@ router.post('/simulate', protect, [
     body('investmentReturn').optional().isFloat(),
 ], asyncHandler(async (req, res) => {
     const result = await projectionEngine.runSimulation(req.user.id, req.body);
-    res.success(result, 'Simulation completed');
+    new ApiResponse(200, result, 'Simulation completed').send(res);
 }));
 
 /**
@@ -100,7 +98,7 @@ router.post('/simulate', protect, [
  */
 router.get('/simulations/history', protect, asyncHandler(async (req, res) => {
     const history = await projectionEngine.getSimulationHistory(req.user.id);
-    res.success(history);
+    new ApiResponse(200, history, 'Simulation history fetched successfully').send(res);
 }));
 
 /**
@@ -109,7 +107,7 @@ router.get('/simulations/history', protect, asyncHandler(async (req, res) => {
  */
 router.get('/market/indices', protect, asyncHandler(async (req, res) => {
     const indices = await marketData.getAllIndices();
-    res.success(indices);
+    new ApiResponse(200, indices, 'Market indices fetched successfully').send(res);
 }));
 
 
@@ -123,11 +121,11 @@ router.get('/risk-summary', protect, asyncHandler(async (req, res) => {
         riskEngine.calculatePortfolioBeta(req.user.id)
     ]);
 
-    res.success({
+    new ApiResponse(200, {
         valueAtRisk: varMetric,
         portfolioBeta: beta,
         riskLevel: beta > 1.2 ? 'high' : beta > 0.8 ? 'moderate' : 'low'
-    });
+    }, 'Risk summary fetched successfully').send(res);
 }));
 
 export default router;
