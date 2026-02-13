@@ -62,6 +62,7 @@ import forecastRoutes from "./routes/forecasts.js";
 import liquidityOptimizerRoutes from "./routes/liquidityOptimizer.js";
 import forensicRoutes from "./routes/forensic.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
+import replayRoutes from "./routes/replay.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -278,6 +279,7 @@ app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
 app.use("/api/categorization", userLimiter, categorizationRoutes);
 app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
 app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
+app.use("/api/replay", userLimiter, replayRoutes);
 app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 app.use("/api/forensic", userLimiter, forensicRoutes);
 

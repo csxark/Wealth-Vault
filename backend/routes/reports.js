@@ -54,4 +54,16 @@ router.get("/:reportId", protect, asyncHandler(async (req, res, next) => {
   res.download(filePath, report.name + (report.format === 'pdf' ? '.pdf' : '.xlsx'));
 }));
 
+/**
+ * Generate a new forensic audit report
+ */
+router.post("/forensic", protect, asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.body;
+  const { default: reportService } = await import('../services/reportService.js');
+
+  const report = await reportService.generateForensicAuditReport(req.user.id, startDate, endDate);
+
+  return new ApiResponse(201, report, "Forensic audit report generated").send(res);
+}));
+
 export default router;

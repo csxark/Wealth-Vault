@@ -229,6 +229,47 @@ Be concise and professional.`;
             return acc;
         }, {});
     }
+    async explainScenarioOutcome(scenarioId) {
+        try {
+            const { default: simulationService } = await import('./simulationService.js');
+            const [scenario] = await db.select().from(replayScenarios).where(eq(replayScenarios.id, scenarioId));
+            const [results] = await db.select().from(backtestResults).where(eq(backtestResults.scenarioId, scenarioId));
+
+            if (!scenario || !results) throw new Error('Scenario results not found');
+
+            const prompt = `Analyze this "What-If" financial simulation outcome:
+            
+            Scenario Name: ${scenario.name}
+            Description: ${scenario.description}
+            Changes Applied: ${JSON.stringify(scenario.whatIfChanges)}
+            
+            Results:
+            - Actual Net Worth: $${results.actualNetWorth}
+            - Simulated Net Worth: $${results.simulatedNetWorth}
+            - Difference: $${results.difference} (${results.differencePercent}%)
+            
+            Timeline Variance: ${JSON.stringify(results.timelineData.slice(-5))} (last 5 days)
+
+            Explain the financial impact of these hypothetical changes. 
+            Highlight:
+            1. Long-term wealth accumulation variance.
+            2. Opportunity costs or saved interests.
+            3. Actionable advice based on this insight.
+            
+            Respond in a supportive, guiding tone as a financial coach.`;
+
+            const explanation = await getAIProvider().generateText(prompt);
+
+            await db.update(replayScenarios)
+                .set({ aiAnalysis: explanation })
+                .where(eq(replayScenarios.id, scenarioId));
+
+            return explanation;
+        } catch (error) {
+            console.error('Scenario explanation error:', error);
+            return 'Unable to analyze scenario outcome.';
+        }
+    }
 }
 
 export default new ForensicAI();

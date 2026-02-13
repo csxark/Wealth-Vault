@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { auditLogs } from '../db/schema.js';
+import { auditLogs, stateDeltas, auditSnapshots } from '../db/schema.js';
 import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
 import crypto from 'crypto';
 
@@ -65,6 +65,8 @@ export const ResourceTypes = {
   PORTFOLIO: 'portfolio',
   BUDGET: 'budget',
   FORECAST: 'forecast',
+  REPLAY: 'replay',
+  FORENSIC: 'forensic',
 };
 
 /**
@@ -104,6 +106,67 @@ export const logAuditEvent = async ({
   } catch (error) {
     // Log error but don't throw - audit logging should not break main flow
     console.error('Audit logging failed:', error);
+  }
+};
+
+/**
+ * Convenience wrapper for logging from middleware
+ * @param {Object} req - Express request
+ * @param {Object} params - Audit parameters
+ */
+export const logAudit = async (req, params) => {
+  const clientInfo = getClientInfo(req);
+  return logAuditEvent({
+    ...params,
+    userId: params.userId || req.user?.id,
+    ipAddress: clientInfo.ipAddress,
+    userAgent: clientInfo.userAgent,
+    requestId: req.id || req.headers['x-request-id']
+  });
+};
+
+/**
+ * Log a state change delta for deterministic replay
+ * @param {Object} params - State delta parameters
+ */
+export const logStateDelta = async ({
+  userId,
+  resourceType,
+  resourceId,
+  operation,
+  beforeState,
+  afterState,
+  triggeredBy = 'user_action',
+  req = null
+}) => {
+  try {
+    const changedFields = operation === 'UPDATE'
+      ? Object.keys(afterState).filter(key => JSON.stringify(beforeState[key]) !== JSON.stringify(afterState[key]))
+      : [];
+
+    const checksum = crypto.createHash('sha256')
+      .update(JSON.stringify(afterState || {}))
+      .digest('hex');
+
+    const clientInfo = req ? getClientInfo(req) : {};
+
+    await db.insert(stateDeltas).values({
+      userId,
+      resourceType,
+      resourceId,
+      operation,
+      beforeState,
+      afterState,
+      changedFields,
+      triggeredBy,
+      ipAddress: clientInfo.ipAddress,
+      userAgent: clientInfo.userAgent,
+      requestId: req?.id || req?.headers?.['x-request-id'],
+      checksum,
+      createdAt: new Date()
+    });
+  } catch (error) {
+    console.error('State delta tracking failed:', error);
   }
 };
 
@@ -661,4 +724,6 @@ export default {
   getAuditAnalytics,
   verifyDeltaIntegrity,
   getResourceAuditHistory,
+  logAudit,
+  logStateDelta,
 };
