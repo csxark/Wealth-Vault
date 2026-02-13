@@ -63,6 +63,8 @@ import liquidityOptimizerRoutes from "./routes/liquidityOptimizer.js";
 import forensicRoutes from "./routes/forensic.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
 import replayRoutes from "./routes/replay.js";
+import successionRoutes from "./routes/succession.js";
+import { presenceTracker } from "./middleware/successionMiddleware.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
@@ -255,6 +257,8 @@ app.use("/api/expenses", userLimiter, expenseRoutes);
 app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
+// Apply presence tracker to all protected routes
+app.use("/api", presenceTracker);
 app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/budgets", userLimiter, budgetRoutes);
 app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
@@ -281,6 +285,7 @@ app.use("/api/categorization", userLimiter, categorizationRoutes);
 app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
 app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
 app.use("/api/replay", userLimiter, replayRoutes);
+app.use("/api/succession", userLimiter, successionRoutes);
 app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 app.use("/api/forensic", userLimiter, forensicRoutes);
 

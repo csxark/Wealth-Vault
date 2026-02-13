@@ -3,7 +3,7 @@ import { body, param, query } from 'express-validator';
 import { protect } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import governanceService from '../services/governanceService.js';
-import deadMansSwitch from '../services/deadMansSwitch.js';
+import successionService from '../services/successionService.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import AppError from '../utils/AppError.js';
 import db from '../config/db.js';
@@ -111,7 +111,7 @@ router.post('/inheritance/rules', protect, [
     body('conditions').optional().isObject(),
     body('executors').optional().isArray(),
 ], asyncHandler(async (req, res) => {
-    const rule = await deadMansSwitch.addInheritanceRule(req.user.id, req.body);
+    const rule = await successionService.addInheritanceRule(req.user.id, req.body);
     new ApiResponse(201, rule, 'Advanced inheritance rule created').send(res);
 }));
 
@@ -120,7 +120,7 @@ router.post('/inheritance/rules', protect, [
  * @desc    Get user's inheritance rules with executor details
  */
 router.get('/inheritance/rules', protect, asyncHandler(async (req, res) => {
-    const rules = await deadMansSwitch.getUserInheritanceRules(req.user.id);
+    const rules = await successionService.getUserInheritanceRules(req.user.id);
     new ApiResponse(200, rules).send(res);
 }));
 
@@ -129,7 +129,7 @@ router.get('/inheritance/rules', protect, asyncHandler(async (req, res) => {
  * @desc    Executor approval for inheritance trigger (Multi-Sig)
  */
 router.post('/inheritance/:ruleId/approve', protect, asyncHandler(async (req, res) => {
-    const result = await deadMansSwitch.approveInheritance(req.params.ruleId, req.user.id);
+    const result = await successionService.approveInheritance(req.params.ruleId, req.user.id);
     new ApiResponse(200, result, 'Inheritance approval recorded').send(res);
 }));
 
@@ -147,7 +147,7 @@ router.get('/inheritance/step-up-logs', protect, asyncHandler(async (req, res) =
  * @desc    Revoke inheritance rule
  */
 router.delete('/inheritance/rules/:ruleId', protect, asyncHandler(async (req, res) => {
-    await deadMansSwitch.revokeRule(req.params.ruleId, req.user.id);
+    await successionService.revokeRule(req.params.ruleId, req.user.id);
     new ApiResponse(200, null, 'Inheritance rule revoked').send(res);
 }));
 
@@ -156,7 +156,7 @@ router.delete('/inheritance/rules/:ruleId', protect, asyncHandler(async (req, re
  * @desc    Get inactivity status
  */
 router.get('/inactivity/status', protect, asyncHandler(async (req, res) => {
-    const status = await deadMansSwitch.getInactivityStatus(req.user.id);
+    const status = await successionService.getInactivityStatus(req.user.id);
     new ApiResponse(200, status).send(res);
 }));
 
@@ -165,7 +165,7 @@ router.get('/inactivity/status', protect, asyncHandler(async (req, res) => {
  * @desc    Manual proof-of-life ping
  */
 router.post('/inactivity/ping', protect, asyncHandler(async (req, res) => {
-    await deadMansSwitch.updateActivity(req.user.id, 'manual_ping');
+    await successionService.updateActivity(req.user.id, 'manual_ping');
     new ApiResponse(200, null, 'Activity recorded').send(res);
 }));
 
@@ -176,7 +176,7 @@ router.post('/inactivity/ping', protect, asyncHandler(async (req, res) => {
 router.post('/inactivity/verify', protect, [
     body('token').isString(),
 ], asyncHandler(async (req, res) => {
-    await deadMansSwitch.verifyChallenge(req.user.id, req.body.token);
+    await successionService.verifyChallenge(req.user.id, req.body.token);
     new ApiResponse(200, null, 'Challenge verified - you are alive!').send(res);
 }));
 

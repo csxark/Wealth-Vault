@@ -1515,3 +1515,39 @@ export const crossVaultTransfersRelations = relations(crossVaultTransfers, ({ on
     toVault: one(vaults, { fields: [crossVaultTransfers.toVaultId], references: [vaults.id] }),
     toDebt: one(debts, { fields: [crossVaultTransfers.toDebtId], references: [debts.id] }),
 }));
+
+// Sovereign Heirship & Multi-Sig Succession (L3)
+export const successionLogs = pgTable('succession_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    status: text('status').default('searching'), // 'searching', 'triggered', 'multi_sig_pending', 'executing', 'completed', 'failed'
+    triggerType: text('trigger_type'), // 'inactivity', 'manual', 'legal_death'
+    totalAssetsValue: numeric('total_assets_value', { precision: 12, scale: 2 }),
+    requiredApprovals: integer('required_approvals').default(1),
+    currentApprovals: integer('current_approvals').default(0),
+    activatedAt: timestamp('activated_at').defaultNow(),
+    completedAt: timestamp('completed_at'),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const multiSigApprovals = pgTable('multi_sig_approvals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    successionId: uuid('succession_id').references(() => successionLogs.id, { onDelete: 'cascade' }),
+    executorId: uuid('executor_id').references(() => users.id).notNull(),
+    action: text('action').notNull(), // 'APPROVE', 'REJECT', 'WITNESS'
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    signature: text('signature'), // Digital signature hash
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations for Succession
+export const successionLogsRelations = relations(successionLogs, ({ one, many }) => ({
+    user: one(users, { fields: [successionLogs.userId], references: [users.id] }),
+    approvals: many(multiSigApprovals),
+}));
+
+export const multiSigApprovalsRelations = relations(multiSigApprovals, ({ one }) => ({
+    succession: one(successionLogs, { fields: [multiSigApprovals.successionId], references: [successionLogs.id] }),
+    executor: one(users, { fields: [multiSigApprovals.executorId], references: [users.id] }),
+}));

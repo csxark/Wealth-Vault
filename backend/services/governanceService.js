@@ -119,7 +119,7 @@ class GovernanceService {
         if (!approverRole?.permissions?.canApprove) {
             // Special case for inheritance executors who might not have a vault role
             if (request.resourceType === 'inheritance_trigger') {
-                // Verification is handled inside DeadMansSwitch.approveInheritance
+                // Verification is handled inside successionService.castApproval
             } else {
                 throw new Error('Insufficient permissions to approve');
             }
@@ -196,12 +196,12 @@ class GovernanceService {
         console.log(`[Governance] Executing approved ${action} on ${resourceType}: ${resourceId}`);
 
         if (resourceType === 'inheritance_trigger') {
-            const deadMansSwitch = (await import('./deadMansSwitch.js')).default;
-            const rule = await db.query.inheritanceRules.findFirst({
-                where: eq(inheritanceRules.id, resourceId)
-            });
-            if (rule) {
-                await deadMansSwitch.executeDistribution(rule);
+            const successionService = (await import('./successionService.js')).default;
+
+            if (request.action === 'trigger') {
+                await successionService.triggerSuccessionEvent(request.requesterId, 'manual_approval');
+            } else {
+                await successionService.executeSuccession(request.resourceId);
             }
         } else if (resourceType === 'expense' && action === 'create') {
             // Expense creation logic...
