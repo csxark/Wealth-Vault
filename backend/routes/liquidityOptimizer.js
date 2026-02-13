@@ -117,4 +117,62 @@ router.delete('/credit-lines/:id', protect, asyncHandler(async (req, res) => {
     return new ApiResponse(200, null, 'Credit line removed successfully').send(res);
 }));
 
+/**
+ * @route   GET /api/liquidity/arbitrage/strategy
+ * @desc    Get user arbitrage strategy
+ */
+router.get('/arbitrage/strategy', protect, asyncHandler(async (req, res) => {
+    const { arbitrageStrategies } = await import('../db/schema.js');
+    const [strategy] = await db.select().from(arbitrageStrategies).where(eq(arbitrageStrategies.userId, req.user.id));
+    return new ApiResponse(200, strategy, 'Arbitrage strategy retrieved').send(res);
+}));
+
+/**
+ * @route   POST /api/liquidity/arbitrage/strategy
+ * @desc    Update/Create arbitrage strategy
+ */
+router.post('/arbitrage/strategy', protect, asyncHandler(async (req, res) => {
+    const { arbitrageStrategies } = await import('../db/schema.js');
+    let [strategy] = await db.select().from(arbitrageStrategies).where(eq(arbitrageStrategies.userId, req.user.id));
+
+    if (strategy) {
+        [strategy] = await db.update(arbitrageStrategies)
+            .set({ ...req.body, updatedAt: new Date() })
+            .where(eq(arbitrageStrategies.id, strategy.id))
+            .returning();
+    } else {
+        [strategy] = await db.insert(arbitrageStrategies)
+            .values({ ...req.body, userId: req.user.id })
+            .returning();
+    }
+    return new ApiResponse(200, strategy, 'Arbitrage strategy updated').send(res);
+}));
+
+/**
+ * @route   GET /api/liquidity/arbitrage/events
+ * @desc    Get detected arbitrage events
+ */
+router.get('/arbitrage/events', protect, asyncHandler(async (req, res) => {
+    const { arbitrageEvents } = await import('../db/schema.js');
+    const events = await db.select().from(arbitrageEvents)
+        .where(eq(arbitrageEvents.userId, req.user.id))
+        .orderBy(desc(arbitrageEvents.createdAt));
+    return new ApiResponse(200, events, 'Arbitrage events retrieved').send(res);
+}));
+
+/**
+ * @route   POST /api/liquidity/arbitrage/rebalance
+ * @desc    Manual trigger for a user optimization scan
+ */
+router.post('/arbitrage/rebalance', protect, asyncHandler(async (req, res) => {
+    const { default: arbitrageEngine } = await import('../services/arbitrageEngine.js');
+    const { arbitrageStrategies } = await import('../db/schema.js');
+
+    const [strategy] = await db.select().from(arbitrageStrategies).where(eq(arbitrageStrategies.userId, req.user.id));
+    if (!strategy) throw new AppError(404, 'Strategy not found. Please create one first.');
+
+    await arbitrageEngine.optimizeForUser(req.user.id, strategy);
+    return new ApiResponse(200, null, 'Arbitrage rebalance cycle completed').send(res);
+}));
+
 export default router;

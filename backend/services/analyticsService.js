@@ -291,6 +291,37 @@ export async function updateUserDemographics(userId, demographics) {
 }
 
 /**
+ * Get analytics regarding wealth gained through arbitrage rebalancing
+ */
+export async function getArbitrageSavingsAnalytics(userId) {
+  const { arbitrageEvents } = await import('../db/schema.js');
+
+  const stats = await db.select({
+    totalAdvantage: sql`sum(${arbitrageEvents.netAdvantage}::numeric)`,
+    executedCount: sql`count(*)`,
+    avgAdvantage: sql`avg(${arbitrageEvents.netAdvantage}::numeric)`
+  })
+    .from(arbitrageEvents)
+    .where(and(eq(arbitrageEvents.userId, userId), eq(arbitrageEvents.status, 'executed')));
+
+  const timeSeries = await db.select({
+    date: sql`date_trunc('month', ${arbitrageEvents.createdAt})`,
+    savings: sql`sum(${arbitrageEvents.netAdvantage}::numeric)`
+  })
+    .from(arbitrageEvents)
+    .where(and(eq(arbitrageEvents.userId, userId), eq(arbitrageEvents.status, 'executed')))
+    .groupBy(sql`date_trunc('month', ${arbitrageEvents.createdAt})`)
+    .orderBy(asc(sql`date_trunc('month', ${arbitrageEvents.createdAt})`));
+
+  return {
+    cumulativeSavings: parseFloat(stats[0]?.totalAdvantage || 0).toFixed(2),
+    optimizationsPerformed: parseInt(stats[0]?.executedCount || 0),
+    efficiencyTrend: timeSeries,
+    lastCalculated: new Date()
+  };
+}
+
+/**
  * Get available demographic options for forms
  * @returns {Object} Demographic options
  */

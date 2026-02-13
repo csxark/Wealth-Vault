@@ -145,6 +145,38 @@ class DebtEngine {
       return payment;
     });
   }
+  /**
+   * Recalculate and update the amortization projection for a debt
+   */
+  async calculateAmortization(debtId) {
+    const debt = await db.query.debts.findFirst({
+      where: eq(debts.id, debtId)
+    });
+
+    if (!debt) return;
+
+    // Projected payoff date based on current balance and minimum payment
+    const months = this.calculateMonthsToPayoff(
+      parseFloat(debt.currentBalance),
+      parseFloat(debt.apr),
+      parseFloat(debt.minimumPayment)
+    );
+
+    const payoffDate = new Date();
+    payoffDate.setMonth(payoffDate.getMonth() + months);
+
+    await db.update(debts)
+      .set({
+        payoffDate: payoffDate,
+        updatedAt: new Date(),
+        metadata: {
+          ...debt.metadata,
+          estimatedMonthsToPayoff: months,
+          lastAmortizationUpdate: new Date()
+        }
+      })
+      .where(eq(debts.id, debtId));
+  }
 }
 
 export default new DebtEngine();
