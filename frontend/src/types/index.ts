@@ -294,6 +294,23 @@ export interface RegisterData {
   monthlyBudget?: number;
 }
 
+// Budget Alert interface
+export interface BudgetAlert {
+  id: string;
+  userId: string;
+  categoryId: string;
+  categoryName: string;
+  threshold: number;
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  currentSpending: number;
+  alertDate: string;
+  isRead: boolean;
+  message: string;
+  severity: 'low' | 'medium' | 'high';
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Transaction interface for CSV import functionality
 export interface Transaction {
   id: string;

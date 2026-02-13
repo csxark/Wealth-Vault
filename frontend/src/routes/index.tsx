@@ -4,7 +4,9 @@ import { AuthForm } from '../components/Auth/AuthForm';
 import Dashboard from '../components/Dashboard/Dashboard';
 import { Coach } from '../components/Coach/Coach';
 import { Goals } from '../components/Goals/Goals';
+import { Expenses } from '../components/Expenses/Expenses';
 import { DataImport } from '../components/Import/DataImport';
+
 import { Profile } from '../components/Profile/Profile';
 import Analytics from '../components/Analytics/Analytics';
 import Savings from '../components/Savings/Savings';
@@ -112,7 +114,16 @@ export const routes = [
     )
   },
   {
+    path: '/expenses',
+    element: (
+      <ProtectedRoute>
+        <Expenses />
+      </ProtectedRoute>
+    )
+  },
+  {
     path: '/savings',
+
     element: (
       <ProtectedRoute>
         <Savings />
