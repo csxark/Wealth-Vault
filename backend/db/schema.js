@@ -606,6 +606,19 @@ export const vaultMembersRelations = relations(vaultMembers, ({ one }) => ({
     user: one(users, { fields: [vaultMembers.userId], references: [users.id] }),
 }));
 
+// Bills Relations
+export const billsRelations = relations(bills, ({ one }) => ({
+    user: one(users, {
+        fields: [bills.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [bills.categoryId],
+        references: [categories.id],
+    }),
+}));
+
+
 export const goalsRelations = relations(goals, ({ one }) => ({
     user: one(users, { fields: [goals.userId], references: [users.id] }),
 }));
