@@ -1123,12 +1123,41 @@ export const auditLogs = pgTable('audit_logs', {
 
 export const auditSnapshots = pgTable('audit_snapshots', {
     id: uuid('id').defaultRandom().primaryKey(),
-    entityType: text('entity_type').notNull(),
-    entityId: uuid('entity_id').notNull(),
-    snapshotData: jsonb('snapshot_data').notNull(),
-    hash: text('hash').notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    snapshotDate: timestamp('snapshot_date').notNull(),
+    totalBalance: numeric('total_balance', { precision: 15, scale: 2 }),
+    accountState: text('account_state').notNull(), // Compressed/Serialized state
+    transactionCount: integer('transaction_count'),
+    checksum: text('checksum'),
+    compressionType: text('compression_type').default('gzip'),
+    metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
-});
+}, (table) => ({
+    userIdx: index('idx_audit_snapshots_user').on(table.userId),
+    dateIdx: index('idx_audit_snapshots_date').on(table.snapshotDate),
+}));
+
+export const stateDeltas = pgTable('state_deltas', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceType: text('resource_type').notNull(), // expense, goal, investment, etc.
+    resourceId: uuid('resource_id').notNull(),
+    operation: text('operation').notNull(), // CREATE, UPDATE, DELETE
+    beforeState: jsonb('before_state'),
+    afterState: jsonb('after_state'),
+    changedFields: jsonb('changed_fields').default([]),
+    triggeredBy: text('triggered_by'), // user_action, system_job, recursive_engine
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    requestId: text('request_id'),
+    checksum: text('checksum'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_state_deltas_user').on(table.userId),
+    resourceIdx: index('idx_state_deltas_resource').on(table.resourceType, table.resourceId),
+    dateIdx: index('idx_state_deltas_date').on(table.createdAt),
+}));
 
 export const forensicQueries = pgTable('forensic_queries', {
     id: uuid('id').defaultRandom().primaryKey(),
