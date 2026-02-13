@@ -1455,3 +1455,76 @@ export const challengeParticipantsRelations = relations(challengeParticipants, (
         references: [users.id],
     }),
 }));
+// Cross-Vault Arbitrage & Yield Optimization (L3)
+export const yieldPools = pgTable('yield_pools', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    provider: text('provider'),
+    assetClass: text('asset_class'), // cash, crypto, stocks
+    currentApy: numeric('current_apy', { precision: 5, scale: 2 }).notNull(),
+    riskScore: integer('risk_score'), // 1-10
+    minDeposit: numeric('min_deposit', { precision: 12, scale: 2 }),
+    liquidityType: text('liquidity_type'), // instant, daily, monthly
+    lastUpdated: timestamp('last_updated').defaultNow(),
+});
+
+export const arbitrageStrategies = pgTable('arbitrage_strategies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    isEnabled: boolean('is_enabled').default(false),
+    minSpread: numeric('min_spread', { precision: 5, scale: 2 }).default('0.5'), // Minimum % difference to trigger
+    autoExecute: boolean('auto_execute').default(false),
+    maxTransferCap: numeric('max_transfer_cap', { precision: 12, scale: 2 }),
+    restrictedVaultIds: jsonb('restricted_vault_ids').default([]),
+    priority: text('priority').default('yield'), // 'yield' or 'debt_reduction'
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const arbitrageEvents = pgTable('arbitrage_events', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    strategyId: uuid('strategy_id').references(() => arbitrageStrategies.id),
+    sourceVaultId: uuid('source_id'),
+    targetTypeId: uuid('target_id'), // Can be another vault or a debt_id
+    targetType: text('target_type'), // 'vault' or 'debt'
+    simulatedYieldGain: numeric('simulated_yield_gain', { precision: 12, scale: 2 }),
+    simulatedInterestSaved: numeric('simulated_interest_saved', { precision: 12, scale: 2 }),
+    netAdvantage: numeric('net_advantage', { precision: 12, scale: 2 }),
+    status: text('status').default('detected'), // 'detected', 'executed', 'ignored', 'failed'
+    executionLog: jsonb('execution_log').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const crossVaultTransfers = pgTable('cross_vault_transfers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    eventId: uuid('event_id').references(() => arbitrageEvents.id),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    fromVaultId: uuid('from_vault_id').references(() => vaults.id),
+    toVaultId: uuid('to_vault_id').references(() => vaults.id),
+    toDebtId: uuid('to_debt_id').references(() => debts.id),
+    fee: numeric('fee', { precision: 12, scale: 2 }).default('0'),
+    status: text('status').notNull(), // 'pending', 'completed', 'failed'
+    transactionHash: text('transaction_hash'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations for Arbitrage
+export const arbitrageStrategiesRelations = relations(arbitrageStrategies, ({ one }) => ({
+    user: one(users, { fields: [arbitrageStrategies.userId], references: [users.id] }),
+}));
+
+export const arbitrageEventsRelations = relations(arbitrageEvents, ({ one, many }) => ({
+    user: one(users, { fields: [arbitrageEvents.userId], references: [users.id] }),
+    strategy: one(arbitrageStrategies, { fields: [arbitrageEvents.strategyId], references: [arbitrageStrategies.id] }),
+    transfers: many(crossVaultTransfers),
+}));
+
+export const crossVaultTransfersRelations = relations(crossVaultTransfers, ({ one }) => ({
+    event: one(arbitrageEvents, { fields: [crossVaultTransfers.eventId], references: [arbitrageEvents.id] }),
+    fromVault: one(vaults, { fields: [crossVaultTransfers.fromVaultId], references: [vaults.id] }),
+    toVault: one(vaults, { fields: [crossVaultTransfers.toVaultId], references: [vaults.id] }),
+    toDebt: one(debts, { fields: [crossVaultTransfers.toDebtId], references: [debts.id] }),
+}));

@@ -129,6 +129,14 @@ export const cloneRecurringExpense = async (sourceExpense) => {
       sourceExpenseId: sourceExpense.id
     });
 
+    // Recursive Yield Arbitrage Hook (L3)
+    // If auto-generated expense is high-value, trigger a liquidity check
+    if (parseFloat(newExpense.amount) > 1000) {
+      import('./arbitrageEngine.js').then(({ default: arbitrageEngine }) => {
+        arbitrageEngine.optimizeForUser(sourceExpense.userId);
+      }).catch(err => console.error('Arbitrage hook failed:', err));
+    }
+
     return newExpense;
   } catch (error) {
     console.error(`Error cloning recurring expense ${sourceExpense.id}:`, error);
