@@ -1,65 +1,7 @@
-  async sendBudgetAlert(alertData) {
-    const { userId, categoryId, alertType, threshold, currentAmount, budgetAmount, message, notificationType, categoryName } = alertData;
-
-    try {
-      // Get user preferences
-      const [user] = await db.query.users.findMany({
-        where: eq(users.id, userId),
-        columns: { email: true, preferences: true, firstName: true }
-      });
-
-      if (!user) {
-        console.error('User not found for budget alert');
-        return false;
-      }
-
-      const notifications = user.preferences?.notifications || { email: true, push: true, sms: false };
-
-      // Send notifications based on user preferences and alert type
-      const results = [];
-
-      if (notificationType === 'email' && notifications.email) {
-        const emailResult = await this.sendEmailAlert(user, { ...alertData, categoryName });
-        results.push({ type: 'email', success: emailResult });
-      }
-
-      if (notificationType === 'push' && notifications.push) {
-        // For now, we'll store push notifications in the database
-        // In a real app, you'd integrate with push notification services
-        const pushResult = await this.storePushNotification(alertData);
-        results.push({ type: 'push', success: pushResult });
-      }
-
-      if (notificationType === 'in_app') {
-        const inAppResult = await this.storeInAppNotification(alertData);
-        results.push({ type: 'in_app', success: inAppResult });
-      }
-
-      // Update alert metadata only if it's a regular budget alert (not a rule-triggered one)
-      if (alertData.id && !alertData.metadata?.ruleId) {
-        await db.update(budgetAlerts)
-          .set({
-            metadata: {
-              ...alertData.metadata,
-              sentAt: new Date().toISOString()
-            },
-            updatedAt: new Date()
-          })
-          .where(eq(budgetAlerts.id, alertData.id));
-      }
-
-      return results.every(result => result.success);
-
-    } catch (error) {
-      console.error('Error sending budget alert:', error);
-      return false;
-    }
-  }
-=======
 import nodemailer from 'nodemailer';
 import db from '../config/db.js';
 import { budgetAlerts, users, securityEvents } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 
 class NotificationService {
   constructor() {
@@ -145,6 +87,84 @@ class NotificationService {
       type: alertData.threshold >= 100 ? "error" : "warning",
       data: alertData
     });
+  }
+
+  /**
+   * Schedule a notification for a future date
+   * @param {object} options - Notification options { userId, type, title, message, scheduledFor, data }
+   * Note: For production, this would use a job queue (like Bull/Redis). 
+   * For now, we'll check scheduled notifications when processing bills.
+   */
+  async scheduleNotification(options) {
+    const { userId, type, title, message, scheduledFor, data } = options;
+    
+    try {
+      // Store the scheduled notification in securityEvents with scheduled time
+      // The actual sending will be handled by a cron job
+      await db.insert(securityEvents).values({
+        userId,
+        eventType: `scheduled_notification_${type}`,
+        status: 'scheduled',
+        details: {
+          title,
+          message,
+          scheduledFor: scheduledFor.toISOString(),
+          data
+        },
+      });
+
+      console.log(`[Scheduled Notification] ${title} scheduled for ${scheduledFor.toISOString()}`);
+      return true;
+    } catch (error) {
+      console.error("Error scheduling notification:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Process scheduled notifications (called by cron job)
+   */
+  async processScheduledNotifications() {
+    try {
+      const now = new Date();
+
+      // Find scheduled notifications that are due
+      const scheduledNotifications = await db.query.securityEvents.findMany({
+        where: and(
+          sql`${securityEvents.eventType} LIKE 'scheduled_notification_%'`,
+          eq(securityEvents.status, 'scheduled')
+        )
+      });
+
+      let sentCount = 0;
+
+      for (const notification of scheduledNotifications) {
+        const scheduledFor = new Date(notification.details?.scheduledFor);
+        
+        if (scheduledFor <= now) {
+          // Send the notification
+          await this.sendNotification(notification.userId, {
+            title: notification.details?.title,
+            message: notification.details?.message,
+            type: 'info',
+            data: notification.details?.data
+          });
+
+          // Update status
+          await db
+            .update(securityEvents)
+            .set({ status: 'sent' })
+            .where(eq(securityEvents.id, notification.id));
+
+          sentCount++;
+        }
+      }
+
+      return sentCount;
+    } catch (error) {
+      console.error("Error processing scheduled notifications:", error);
+      return 0;
+    }
   }
 }
 

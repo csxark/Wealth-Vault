@@ -51,7 +51,9 @@ import savingsRoutes from "./routes/savings.js";
 import educationRoutes from "./routes/education.js";
 import financialHealthRoutes from "./routes/financialHealth.js";
 import challengesRoutes from "./routes/challenges.js";
+import billsRoutes from "./routes/bills.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
+
 
 // Load environment variables
 dotenv.config();
@@ -214,8 +216,10 @@ app.use("/api/savings", userLimiter, savingsRoutes);
 app.use("/api/education", userLimiter, educationRoutes);
 app.use("/api/financial-health", userLimiter, financialHealthRoutes);
 app.use("/api/challenges", userLimiter, challengesRoutes);
+app.use("/api/bills", userLimiter, billsRoutes);
 
 // Secur fil servr for uploddd fils
+
 app.use("/uploads", createFileServerRoute());
 
 // Health check endpoint

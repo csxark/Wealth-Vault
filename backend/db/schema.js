@@ -457,6 +457,53 @@ export const subscriptions = pgTable('subscriptions', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Bills Table (for automated bill payment reminders)
+export const bills = pgTable('bills', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
+    name: text('name').notNull(), // e.g., "Electric Bill", "Rent"
+    description: text('description'),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    frequency: text('frequency').notNull(), // 'weekly', 'monthly', 'quarterly', 'yearly', 'one_time'
+    dueDate: timestamp('due_date').notNull(),
+    status: text('status').default('pending'), // 'pending', 'paid', 'overdue', 'scheduled', 'cancelled'
+    autoPay: boolean('auto_pay').default(false),
+    paymentMethod: text('payment_method').default('other'), // 'credit_card', 'debit_card', 'bank_transfer', 'check', 'cash', 'other'
+    reminderDays: integer('reminder_days').default(3), // Days before due date to send reminder
+    smartScheduleEnabled: boolean('smart_schedule_enabled').default(false),
+    optimalPaymentDate: timestamp('optimal_payment_date'), // Suggested date based on cash flow
+    scheduledPaymentDate: timestamp('scheduled_payment_date'), // User-scheduled payment date
+    lastPaidDate: timestamp('last_paid_date'),
+    payee: text('payee'), // Who to pay (e.g., "City Power Company")
+    payeeAccount: text('payee_account'), // Account number or reference
+    isRecurring: boolean('is_recurring').default(true),
+    endDate: timestamp('end_date'), // For bills with end date (e.g., loan payments)
+    tags: jsonb('tags').default([]),
+    notes: text('notes'),
+    // Detection metadata
+    detectedFromExpense: boolean('detected_from_expense').default(false),
+    detectionConfidence: integer('detection_confidence').default(0), // 0-100
+    sourceExpenseIds: jsonb('source_expense_ids').default([]), // IDs of expenses that triggered detection
+    // Smart scheduling metadata
+    cashFlowAnalysis: jsonb('cash_flow_analysis').default({
+        suggestedDate: null,
+        confidence: 0,
+        reason: null
+    }),
+    metadata: jsonb('metadata').default({
+        lastReminderSent: null,
+        reminderCount: 0,
+        paymentHistory: [],
+        lateFeeAmount: 0,
+        gracePeriodDays: 0
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+
 // Budget Rules Table
 export const budgetRules = pgTable('budget_rules', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -674,6 +721,19 @@ export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
         references: [categories.id],
     }),
 }));
+
+// Bills Relations
+export const billsRelations = relations(bills, ({ one }) => ({
+    user: one(users, {
+        fields: [bills.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [bills.categoryId],
+        references: [categories.id],
+    }),
+}));
+
 
 export const goalsRelations = relations(goals, ({ one }) => ({
     user: one(users, {
@@ -913,7 +973,7 @@ export const bankTransactions = pgTable('bank_transactions', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// Update users relations to include portfolios, subscriptions, and family relations
+// Update users relations to include portfolios, subscriptions, bills, and family relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
     expenses: many(expenses),
@@ -926,12 +986,14 @@ export const usersRelations = relations(users, ({ many }) => ({
     budgetAlerts: many(budgetAlerts),
     portfolios: many(portfolios),
     subscriptions: many(subscriptions),
+    bills: many(bills),
     expenseShares: many(expenseShares),
     sentReimbursements: many(reimbursements, { relationName: 'reimbursements_from' }),
     receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
     bankAccounts: many(bankAccounts),
     bankTransactions: many(bankTransactions),
 }));
+
 
 // Bank Accounts Relations
 export const bankAccountsRelations = relations(bankAccounts, ({ one, many }) => ({
