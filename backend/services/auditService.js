@@ -51,6 +51,8 @@ export const AuditActions = {
   BUDGET_UPDATE: 'BUDGET_UPDATE',
   FORECAST_CREATE: 'FORECAST_CREATE',
   FORECAST_DELETE: 'FORECAST_DELETE',
+  SUCCESSION_TRIGGER: 'SUCCESSION_TRIGGER',
+  SUCCESSION_EXECUTE: 'SUCCESSION_EXECUTE',
 };
 
 // Resource Types
@@ -67,6 +69,7 @@ export const ResourceTypes = {
   FORECAST: 'forecast',
   REPLAY: 'replay',
   FORENSIC: 'forensic',
+  SUCCESSION: 'succession',
 };
 
 /**

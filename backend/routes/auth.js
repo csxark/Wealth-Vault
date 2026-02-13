@@ -14,7 +14,7 @@ import { validatePasswordStrength, isCommonPassword } from "../utils/passwordVal
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { AppError } from "../utils/AppError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import deadMansSwitch from "../services/deadMansSwitch.js";
+import successionService from "../services/successionService.js";
 
 import {
   createDeviceSession,
@@ -308,7 +308,7 @@ router.post(
     const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
 
     // Update activity for Dead Man's Switch
-    await deadMansSwitch.updateActivity(newUser.id, 'register');
+    await successionService.trackActivity(newUser.id, 'register');
 
     // Log successful registration
     logAudit(req, {
@@ -502,7 +502,7 @@ router.post(
       .where(eq(users.id, user.id));
 
     // Update activity for Dead Man's Switch
-    await deadMansSwitch.updateActivity(user.id, 'login');
+    await successionService.trackActivity(user.id, 'login');
 
     // Get IP and location
     const ipAddress = req.ip || req.connection.remoteAddress;
