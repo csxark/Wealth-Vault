@@ -5,7 +5,9 @@ import fs from "fs";
 import db from "../config/db.js";
 import { reports } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
-import { asyncHandler, NotFoundError, ForbiddenError } from "../middleware/errorHandler.js";
+import { asyncHandler } from "../middleware/errorHandler.js";
+import { AppError } from "../utils/AppError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 
 const router = express.Router();
 
@@ -16,14 +18,14 @@ const router = express.Router();
  *     summary: Get all reports for the authenticated user
  *     tags: [Reports]
  */
-router.get("/", protect, asyncHandler(async (req, res) => {
+router.get("/", protect, asyncHandler(async (req, res, next) => {
   const userReports = await db
     .select()
     .from(reports)
     .where(eq(reports.userId, req.user.id))
     .orderBy(desc(reports.createdAt));
 
-  res.success(userReports, "Reports retrieved successfully");
+  return new ApiResponse(200, userReports, "Reports retrieved successfully").send(res);
 }));
 
 /**
@@ -33,20 +35,20 @@ router.get("/", protect, asyncHandler(async (req, res) => {
  *     summary: Download a specific report
  *     tags: [Reports]
  */
-router.get("/:reportId", protect, asyncHandler(async (req, res) => {
+router.get("/:reportId", protect, asyncHandler(async (req, res, next) => {
   const [report] = await db
     .select()
     .from(reports)
     .where(and(eq(reports.id, req.params.reportId), eq(reports.userId, req.user.id)));
 
   if (!report) {
-    throw new NotFoundError("Report not found");
+    return next(new AppError(404, "Report not found"));
   }
 
   const filePath = path.join(process.cwd(), report.url.replace(/^\//, ''));
 
   if (!fs.existsSync(filePath)) {
-    throw new NotFoundError("Report file not found on server");
+    return next(new AppError(404, "Report file not found on server"));
   }
 
   res.download(filePath, report.name + (report.format === 'pdf' ? '.pdf' : '.xlsx'));
