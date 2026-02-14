@@ -1,6 +1,9 @@
 import InvestmentRepository from '../repositories/InvestmentRepository.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
 import eventBus from '../events/eventBus.js';
+import db from '../config/db.js';
+import { goals, goalRiskProfiles, rebalanceTriggers } from '../db/schema.js';
+import { eq, and } from 'drizzle-orm';
 // Removed notificationService import - now decoupled via events
 
 /**
@@ -424,6 +427,66 @@ export const batchUpdateValuations = async (userId, getConversionRate, baseCurre
   }
 };
 
+/**
+ * Rebalance Goal Risk (L3)
+ * Downgrades risk profile when success probability is low.
+ */
+export const rebalanceGoalRisk = async (goalId, oldRisk, newRisk, probability) => {
+  try {
+    const [goal] = await db.select().from(goals).where(eq(goals.id, goalId));
+
+    // 1. Update the goal risk profile
+    await db.update(goalRiskProfiles)
+      .set({ riskLevel: newRisk, updatedAt: new Date() })
+      .where(eq(goalRiskProfiles.goalId, goalId));
+
+    // 2. Log the trigger
+    await db.insert(rebalanceTriggers).values({
+      userId: goal.userId,
+      goalId,
+      previousRiskLevel: oldRisk,
+      newRiskLevel: newRisk,
+      triggerReason: 'success_probability_drop',
+      simulatedSuccessProbability: probability
+    });
+
+    // 3. Emit event for further automation (e.g. Budget adjustments)
+    eventBus.emit('GOAL_RISK_REBALANCED', { goalId, userId: goal.userId, oldRisk, newRisk });
+
+    // 4. Shift simulated weights (L3 Logic Juggling)
+    await this.adjustAssetWeightsForGoal(goalId, newRisk);
+
+    console.log(`[Investment Service] Rebalanced goal ${goalId} from ${oldRisk} to ${newRisk}`);
+    return true;
+  } catch (error) {
+    console.error('Error rebalancing goal risk:', error);
+    throw error;
+  }
+};
+
+/**
+ * Adjust Asset Weights For Goal (L3)
+ * Reallocates assets in the underlying vault linked to a goal.
+ */
+export const adjustAssetWeightsForGoal = async (goalId, riskLevel) => {
+  // Business Logic: If goal is aggressive, 80% Equity / 20% Bonds.
+  // If conservative, 20% Equity / 80% Bonds.
+  const allocations = {
+    aggressive: { equity: 0.8, fixed: 0.2 },
+    moderate: { equity: 0.6, fixed: 0.4 },
+    conservative: { equity: 0.2, fixed: 0.8 }
+  };
+
+  const target = allocations[riskLevel];
+  console.log(`[Investment Service] Reallocating goal ${goalId} assets to ${JSON.stringify(target)}`);
+
+  // In a real system, this would trigger actual trades.
+  // For Wealth-Vault, we log it and update metadata.
+  await db.update(goals)
+    .set({ metadata: sql`jsonb_set(metadata, '{target_allocation}', ${JSON.stringify(target)}::jsonb)` })
+    .where(eq(goals.id, goalId));
+};
+
 export default {
   createInvestment,
   getInvestments,
@@ -436,4 +499,6 @@ export default {
   updateInvestmentPrices,
   calculateInvestmentMetrics,
   batchUpdateValuations,
+  rebalanceGoalRisk,
+  adjustAssetWeightsForGoal,
 };

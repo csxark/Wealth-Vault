@@ -90,6 +90,7 @@ import leaseMonitor from "./jobs/leaseMonitor.js";
 import dividendProcessor from "./jobs/dividendProcessor.js";
 import liquidityOptimizerJob from "./jobs/liquidityOptimizerJob.js";
 import arbitrageJob from "./jobs/arbitrageJob.js";
+import riskMonitorJob from "./jobs/riskMonitorJob.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
@@ -353,6 +354,7 @@ if (process.env.NODE_ENV !== 'test') {
     fxRateUpdater.start();
     liquidityOptimizerJob.start();
     arbitrageJob.start();
+    riskMonitorJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;

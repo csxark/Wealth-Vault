@@ -1551,3 +1551,61 @@ export const multiSigApprovalsRelations = relations(multiSigApprovals, ({ one })
     succession: one(successionLogs, { fields: [multiSigApprovals.successionId], references: [successionLogs.id] }),
     executor: one(users, { fields: [multiSigApprovals.executorId], references: [users.id] }),
 }));
+
+// ============================================================================
+// PROBABILISTIC FORECASTING & ADAPTIVE REBALANCING (L3) (#361)
+// ============================================================================
+
+export const goalRiskProfiles = pgTable('goal_risk_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull().unique(),
+    riskLevel: text('risk_level').default('moderate'), // conservative, moderate, aggressive
+    autoRebalance: boolean('auto_rebalance').default(false),
+    minSuccessProbability: doublePrecision('min_success_probability').default(0.70), // Threshold to trigger rebalance
+    lastSimulationAt: timestamp('last_simulation_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const simulationResults = pgTable('simulation_results', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceId: uuid('resource_id').notNull(), // Goal ID or Portfolio ID
+    resourceType: text('resource_type').notNull(), // 'goal', 'portfolio'
+    simulatedOn: timestamp('simulated_on').defaultNow(),
+    p10Value: numeric('p10_value', { precision: 18, scale: 2 }), // Worst case (10th percentile)
+    p50Value: numeric('p50_value', { precision: 18, scale: 2 }), // Median (50th percentile)
+    p90Value: numeric('p90_value', { precision: 18, scale: 2 }), // Best case (90th percentile)
+    successProbability: doublePrecision('success_probability'),
+    expectedShortfall: numeric('expected_shortfall', { precision: 18, scale: 2 }),
+    simulationData: jsonb('simulation_data'), // Array of projected paths [timestamp, value]
+    iterations: integer('iterations').default(10000),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const rebalanceTriggers = pgTable('rebalance_triggers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    previousRiskLevel: text('previous_risk_level'),
+    newRiskLevel: text('new_risk_level'),
+    triggerReason: text('trigger_reason'), // e.g., 'success_probability_drop'
+    simulatedSuccessProbability: doublePrecision('simulated_success_probability'),
+    executedAt: timestamp('executed_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
+// Relations for Probabilistic Forecasting
+export const goalRiskProfilesRelations = relations(goalRiskProfiles, ({ one }) => ({
+    goal: one(goals, { fields: [goalRiskProfiles.goalId], references: [goals.id] }),
+}));
+
+export const simulationResultsRelations = relations(simulationResults, ({ one }) => ({
+    user: one(users, { fields: [simulationResults.userId], references: [users.id] }),
+}));
+
+export const rebalanceTriggersRelations = relations(rebalanceTriggers, ({ one }) => ({
+    user: one(users, { fields: [rebalanceTriggers.userId], references: [users.id] }),
+    goal: one(goals, { fields: [rebalanceTriggers.goalId], references: [goals.id] }),
+}));

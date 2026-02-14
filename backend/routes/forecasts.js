@@ -2,8 +2,9 @@ import express from 'express';
 import { protect } from '../middleware/auth.js';
 import forecastEngine from '../services/forecastEngine.js';
 import liquidityMonitor from '../services/liquidityMonitor.js';
+import simulationService from '../services/simulationService.js';
 import { db } from '../config/db.js';
-import { liquidityAlerts, transferSuggestions } from '../db/schema.js';
+import { liquidityAlerts, transferSuggestions, goals, simulationResults, goalRiskProfiles } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 
 const router = express.Router();
@@ -169,6 +170,75 @@ router.patch('/suggestions/:id', protect, async (req, res) => {
       .returning();
 
     res.json({ success: true, data: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   POST /api/forecasts/monte-carlo/goal/:goalId
+ * @desc    Run a 10,000 iteration Monte Carlo simulation for a goal
+ */
+router.post('/monte-carlo/goal/:goalId', protect, async (req, res) => {
+  try {
+    const goal = await db.query.goals.findFirst({
+      where: and(eq(goals.id, req.params.goalId), eq(goals.userId, req.user.id))
+    });
+
+    if (!goal) return res.status(404).json({ success: false, message: 'Goal not found' });
+
+    const result = await simulationService.runGoalSimulation(req.user.id, goal);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/forecasts/monte-carlo/history/:goalId
+ * @desc    Get simulation history for a specific goal
+ */
+router.get('/monte-carlo/history/:goalId', protect, async (req, res) => {
+  try {
+    const history = await db.select().from(simulationResults)
+      .where(and(eq(simulationResults.resourceId, req.params.goalId), eq(simulationResults.userId, req.user.id)))
+      .orderBy(desc(simulationResults.simulatedOn));
+
+    res.json({ success: true, data: history });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   PATCH /api/forecasts/monte-carlo/profile/:goalId
+ * @desc    Update goal risk profile and rebalance settings
+ */
+router.patch('/monte-carlo/profile/:goalId', protect, async (req, res) => {
+  try {
+    const [updated] = await db.update(goalRiskProfiles)
+      .set({
+        ...req.body,
+        updatedAt: new Date()
+      })
+      .where(eq(goalRiskProfiles.goalId, req.params.goalId))
+      .returning();
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   POST /api/forecasts/monte-carlo/stress-test/:goalId
+ * @desc    Run a stress test simulation for a goal
+ */
+router.post('/monte-carlo/stress-test/:goalId', protect, async (req, res) => {
+  try {
+    const { regime } = req.body;
+    const result = await simulationService.runStressTest(req.user.id, req.params.goalId, regime);
+    res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

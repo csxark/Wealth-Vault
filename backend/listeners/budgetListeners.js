@@ -28,5 +28,12 @@ export const initializeBudgetListeners = () => {
         }
     });
 
+    eventBus.on('GOAL_RISK_REBALANCED', async (data) => {
+        const { userId } = data;
+        const budgetService = (await import('../services/budgetService.js')).default;
+        console.log(`[BudgetListener] Goal rebalanced for user ${userId} - Tightening spending limits`);
+        await budgetService.adjustSpendingLimitsBasedOnRisk(userId);
+    });
+
     console.log('✅ Budget Listeners initialized');
 };
