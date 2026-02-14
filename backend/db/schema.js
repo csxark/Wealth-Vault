@@ -618,6 +618,32 @@ export const billsRelations = relations(bills, ({ one }) => ({
     }),
 }));
 
+// Debts Relations
+export const debtsRelations = relations(debts, ({ one, many }) => ({
+    user: one(users, {
+        fields: [debts.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [debts.categoryId],
+        references: [categories.id],
+    }),
+    payments: many(debtPayments),
+}));
+
+// Debt Payments Relations
+export const debtPaymentsRelations = relations(debtPayments, ({ one }) => ({
+    debt: one(debts, {
+        fields: [debtPayments.debtId],
+        references: [debts.id],
+    }),
+    user: one(users, {
+        fields: [debtPayments.userId],
+        references: [users.id],
+    }),
+}));
+
+
 
 export const goalsRelations = relations(goals, ({ one }) => ({
     user: one(users, { fields: [goals.userId], references: [users.id] }),
