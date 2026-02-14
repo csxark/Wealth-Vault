@@ -1828,3 +1828,57 @@ export const approvalQuestsRelations = relations(approvalQuests, ({ one }) => ({
 export const successionRulesRelations = relations(successionRules, ({ one }) => ({
     user: one(users, { fields: [successionRules.userId], references: [users.id] }),
 }));
+
+// ============================================================================
+// AUTONOMOUS YIELD OPTIMIZER & LIQUIDITY REBALANCER (L3) (#370)
+// ============================================================================
+
+export const yieldStrategies = pgTable('yield_strategies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    targetApy: numeric('target_apy', { precision: 5, scale: 2 }),
+    minSafetyBuffer: numeric('min_safety_buffer', { precision: 18, scale: 2 }).default('1000'), // Minimum cash to keep liquid
+    riskTolerance: text('risk_tolerance').default('moderate'), // 'conservative', 'moderate', 'aggressive'
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const liquidityBuffers = pgTable('liquidity_buffers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    requiredRunwayMonths: integer('required_runway_months').default(3),
+    currentRunwayAmount: numeric('current_runway_amount', { precision: 18, scale: 2 }).default('0'),
+    lastCheckedAt: timestamp('last_checked_at').defaultNow(),
+});
+
+export const rebalanceExecutionLogs = pgTable('rebalance_execution_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    strategyId: uuid('strategy_id').references(() => yieldStrategies.id),
+    fromSource: text('from_source').notNull(), // e.g., 'Vault: Primary'
+    toDestination: text('to_destination').notNull(), // e.g., 'Investment: S&P 500'
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    yieldSpread: numeric('yield_spread', { precision: 5, scale: 2 }), // Improvement in APY
+    taxImpactEstimated: numeric('tax_impact_estimated', { precision: 18, scale: 2 }).default('0'),
+    status: text('status').default('completed'), // 'completed', 'failed', 'simulated'
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations
+export const yieldStrategiesRelations = relations(yieldStrategies, ({ one, many }) => ({
+    user: one(users, { fields: [yieldStrategies.userId], references: [users.id] }),
+    logs: many(rebalanceExecutionLogs),
+}));
+
+export const liquidityBuffersRelations = relations(liquidityBuffers, ({ one }) => ({
+    user: one(users, { fields: [liquidityBuffers.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [liquidityBuffers.vaultId], references: [vaults.id] }),
+}));
+
+export const rebalanceExecutionLogsRelations = relations(rebalanceExecutionLogs, ({ one }) => ({
+    user: one(users, { fields: [rebalanceExecutionLogs.userId], references: [users.id] }),
+    strategy: one(yieldStrategies, { fields: [rebalanceExecutionLogs.strategyId], references: [yieldStrategies.id] }),
+}));

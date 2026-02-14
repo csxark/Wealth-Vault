@@ -93,4 +93,37 @@ router.get('/:portfolioId/history', protect, asyncHandler(async (req, res) => {
     res.json({ success: true, data: history });
 }));
 
+import yieldService from '../services/yieldService.js';
+import { yieldStrategies, rebalanceExecutionLogs } from '../db/schema.js';
+
+/**
+ * @desc Get all yield strategies
+ * @route GET /api/rebalancing/yield/strategies
+ */
+router.get('/yield/strategies', protect, asyncHandler(async (req, res) => {
+    const strategies = await db.select().from(yieldStrategies).where(eq(yieldStrategies.userId, req.user.id));
+    res.json({ success: true, data: strategies });
+}));
+
+/**
+ * @desc Trigger manual yield optimization simulation
+ * @route POST /api/rebalancing/yield/optimize
+ */
+router.post('/yield/optimize', protect, asyncHandler(async (req, res) => {
+    const logs = await yieldService.optimizeYield(req.user.id);
+    res.json({ success: true, message: 'Yield optimization cycle completed', rebalances: logs });
+}));
+
+/**
+ * @desc Get execution logs for yield rebalancing
+ * @route GET /api/rebalancing/yield/logs
+ */
+router.get('/yield/logs', protect, asyncHandler(async (req, res) => {
+    const logs = await db.select()
+        .from(rebalanceExecutionLogs)
+        .where(eq(rebalanceExecutionLogs.userId, req.user.id))
+        .orderBy(desc(rebalanceExecutionLogs.createdAt));
+    res.json({ success: true, data: logs });
+}));
+
 export default router;
