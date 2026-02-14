@@ -1,70 +1,132 @@
 import db from '../config/db.js';
-import { currencyWallets, fixedAssets, marketIndices } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { userRiskProfiles, anomalyLogs, securityCircuitBreakers, expenses } from '../db/schema.js';
+import { eq, and, sql, desc, gte } from 'drizzle-orm';
+import notificationService from './notificationService.js';
 
+/**
+ * Risk Engine (L3)
+ * Statistical Anomaly Detection using Z-Score and Velocity Analysis.
+ */
 class RiskEngine {
     /**
-     * Calculate Value-at-Risk (VaR) for a user's portfolio
-     * Returns the 95% confidence max loss over 1 day
+     * Inspect a transaction for anomalies
+     * @param {string} userId 
+     * @param {Object} transactionData - { amount, type, metadata }
      */
-    async calculatePortfolioVaR(userId) {
-        const wallets = await db.query.currencyWallets.findMany({ where: eq(currencyWallets.userId, userId) });
-        const assets = await db.query.fixedAssets.findMany({ where: eq(fixedAssets.userId, userId) });
+    async inspectTransaction(userId, transactionData) {
+        const { amount, resourceType, resourceId } = transactionData;
+        const val = parseFloat(amount);
 
-        let totalValue = 0;
-        wallets.forEach(w => totalValue += parseFloat(w.balance || 0));
-        assets.forEach(a => totalValue += parseFloat(a.currentValue || 0));
-
-        if (totalValue === 0) return 0;
-
-        // Weighted Average Volatility (Mocking asset-specific vol)
-        const assetsVol = 0.18; // Fixed assets typically higher vol
-        const cashVol = 0.02;   // Cash vol typically low (FX risk only)
-
-        const weightedVol = ((totalValue * 0.2) * assetsVol + (totalValue * 0.8) * cashVol) / totalValue;
-
-        // Parametric VaR (1.65 for 95% confidence)
-        // VaR = Value * Volatility * 1.65 * sqrt(1/252) for 1 day
-        const dailyVol = weightedVol / Math.sqrt(252);
-        const var95 = totalValue * dailyVol * 1.65;
-
-        return {
-            amount: parseFloat(var95.toFixed(2)),
-            percentage: parseFloat(((var95 / totalValue) * 100).toFixed(2)),
-            confidence: 95,
-            horizon: '1 day'
-        };
-    }
-
-    /**
-     * Calculate Portfolio Beta relative to S&P500
-     */
-    async calculatePortfolioBeta(userId) {
-        const assets = await db.query.fixedAssets.findMany({ where: eq(fixedAssets.userId, userId) });
-
-        if (assets.length === 0) return 1.0; // Default to market beta if no specific assets
-
-        // Categorize assets to weigh beta
-        let totalWeight = 0;
-        let weightedBeta = 0;
-
-        assets.forEach(asset => {
-            const val = parseFloat(asset.currentValue);
-            totalWeight += val;
-
-            // Asset category betas
-            let beta = 1.0;
-            switch (asset.category) {
-                case 'real_estate': beta = 0.6; break;
-                case 'jewelry': beta = 0.3; break;
-                case 'crypto': beta = 2.5; break;
-                case 'vehicle': beta = 0.1; break;
-                default: beta = 1.0;
-            }
-            weightedBeta += (val * beta);
+        // 1. Get User Risk Profile
+        let profile = await db.query.userRiskProfiles.findFirst({
+            where: eq(userRiskProfiles.userId, userId)
         });
 
-        return parseFloat((weightedBeta / totalWeight).toFixed(2));
+        if (!profile) {
+            profile = await this.initializeRiskProfile(userId);
+        }
+
+        const avg = parseFloat(profile.avgTransactionAmount || 0);
+        const stdDev = parseFloat(profile.stdDevTransactionAmount || 0);
+
+        let riskScore = 0;
+        let reasons = [];
+
+        // 2. Z-Score Analysis (Amount Anomaly)
+        if (stdDev > 0) {
+            const zScore = Math.abs(val - avg) / stdDev;
+            if (zScore > 3) {
+                riskScore += 40;
+                reasons.push(`Z-SCORE_VIOLATION: Amount $${val} is ${zScore.toFixed(2)} std devs from mean`);
+            } else if (zScore > 2) {
+                riskScore += 20;
+            }
+        }
+
+        // 3. Velocity Analysis (Daily Spending)
+        const dailyTotal = await this.getDailySpending(userId);
+        if (dailyTotal + val > parseFloat(profile.dailyVelocityLimit)) {
+            riskScore += 50;
+            reasons.push(`VELOCITY_VIOLATION: Daily spend exceeding limit of $${profile.dailyVelocityLimit}`);
+        }
+
+        // 4. Geolocation / IP Check (Simulated)
+        if (transactionData.metadata?.ipAddress && profile.metadata?.lastKnownIp) {
+            if (transactionData.metadata.ipAddress !== profile.metadata.lastKnownIp) {
+                riskScore += 30;
+                reasons.push('GEOLOCATION_MISMATCH: Unusual IP address');
+            }
+        }
+
+        // 5. Take Action
+        if (riskScore >= 70) {
+            await this.logAnomaly(userId, resourceType, resourceId, riskScore, reasons.join('; '), 'critical');
+            await this.tripCircuitBreaker(userId, `High risk detected: ${reasons[0]}`);
+            return { action: 'block', riskScore, reasons };
+        } else if (riskScore >= 40) {
+            await this.logAnomaly(userId, resourceType, resourceId, riskScore, reasons.join('; '), 'high');
+            return { action: 'flag', riskScore, reasons };
+        }
+
+        return { action: 'allow', riskScore, reasons };
+    }
+
+    async getDailySpending(userId) {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const result = await db.select({
+            total: sql`sum(${expenses.amount})`
+        }).from(expenses)
+            .where(and(eq(expenses.userId, userId), gte(expenses.date, startOfDay)));
+
+        return parseFloat(result[0]?.total || 0);
+    }
+
+    async initializeRiskProfile(userId) {
+        const [profile] = await db.insert(userRiskProfiles).values({
+            userId,
+            avgTransactionAmount: '0',
+            stdDevTransactionAmount: '0',
+            dailyVelocityLimit: '10000',
+            riskScore: 0
+        }).returning();
+        return profile;
+    }
+
+    async logAnomaly(userId, resourceType, resourceId, riskScore, reason, severity) {
+        await db.insert(anomalyLogs).values({
+            userId,
+            resourceType,
+            resourceId,
+            riskScore,
+            reason,
+            severity
+        });
+    }
+
+    async tripCircuitBreaker(userId, reason) {
+        await db.insert(securityCircuitBreakers).values({
+            userId,
+            status: 'tripped',
+            trippedAt: new Date(),
+            reason
+        });
+
+        // Critical Notification (L3)
+        await notificationService.sendNotification(userId, {
+            title: 'CRITICAL: Account Protection Tripped',
+            message: `Your account has been restricted due to suspicious activity: ${reason}. Please verify your identity.`,
+            type: 'security_critical'
+        });
+    }
+
+    async isCircuitBreakerTripped(userId) {
+        const breaker = await db.query.securityCircuitBreakers.findFirst({
+            where: eq(securityCircuitBreakers.userId, userId),
+            orderBy: desc(securityCircuitBreakers.createdAt)
+        });
+        return breaker?.status === 'tripped';
     }
 }
 

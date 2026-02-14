@@ -1748,3 +1748,54 @@ export const washSaleLogsRelations = relations(washSaleLogs, ({ one }) => ({
     user: one(users, { fields: [washSaleLogs.userId], references: [users.id] }),
     investment: one(investments, { fields: [washSaleLogs.investmentId], references: [investments.id] }),
 }));
+
+// ============================================================================
+// INTELLIGENT ANOMALY DETECTION & RISK SCORING (L3) (#372)
+// ============================================================================
+
+export const userRiskProfiles = pgTable('user_risk_profiles', {
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).primaryKey(),
+    avgTransactionAmount: numeric('avg_transaction_amount', { precision: 18, scale: 2 }).default('0'),
+    stdDevTransactionAmount: numeric('std_dev_transaction_amount', { precision: 18, scale: 2 }).default('0'),
+    dailyVelocityLimit: numeric('daily_velocity_limit', { precision: 18, scale: 2 }).default('10000'),
+    riskScore: integer('risk_score').default(0), // 0-100 scale
+    lastCalculatedAt: timestamp('last_calculated_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const anomalyLogs = pgTable('anomaly_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceType: text('resource_type').notNull(), // 'transaction', 'inter_company'
+    resourceId: uuid('resource_id').notNull(),
+    riskScore: integer('risk_score').notNull(),
+    reason: text('reason').notNull(), // 'Z-SCORE_VIOLATION', 'GEOLOCATION_MISMATCH'
+    severity: text('severity').notNull(), // 'low', 'medium', 'high', 'critical'
+    isFalsePositive: boolean('is_false_positive').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const securityCircuitBreakers = pgTable('security_circuit_breakers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    status: text('status').default('active'), // 'active', 'tripped', 'manual_bypass'
+    trippedAt: timestamp('tripped_at'),
+    reason: text('reason'),
+    autoResetAt: timestamp('auto_reset_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations for Anomaly Detection
+export const userRiskProfilesRelations = relations(userRiskProfiles, ({ one }) => ({
+    user: one(users, { fields: [userRiskProfiles.userId], references: [users.id] }),
+}));
+
+export const anomalyLogsRelations = relations(anomalyLogs, ({ one }) => ({
+    user: one(users, { fields: [anomalyLogs.userId], references: [users.id] }),
+}));
+
+export const securityCircuitBreakersRelations = relations(securityCircuitBreakers, ({ one }) => ({
+    user: one(users, { fields: [securityCircuitBreakers.userId], references: [users.id] }),
+}));
