@@ -95,6 +95,7 @@ import riskMonitorJob from "./jobs/riskMonitorJob.js";
 import clearingJob from "./jobs/clearingJob.js";
 import taxHarvestJob from "./jobs/taxHarvestJob.js";
 import riskBaselineJob from "./jobs/riskBaselineJob.js";
+import yieldMonitorJob from "./jobs/yieldMonitorJob.js";
 import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
@@ -368,6 +369,7 @@ if (process.env.NODE_ENV !== 'test') {
     clearingJob.start();
     taxHarvestJob.start();
     riskBaselineJob.start();
+    yieldMonitorJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;

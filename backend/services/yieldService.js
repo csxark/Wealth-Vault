@@ -1,45 +1,97 @@
 import db from '../config/db.js';
-import { yieldPools } from '../db/schema.js';
-import { eq, sql, desc } from 'drizzle-orm';
+import { yieldStrategies, liquidityBuffers, rebalanceExecutionLogs, vaults, vaultBalances } from '../db/schema.js';
+import { eq, and, sql } from 'drizzle-orm';
+import forecastEngine from './forecastEngine.js';
+import vaultService from './vaultService.js';
+import investmentService from './investmentService.js';
 
 /**
- * Yield Service - Tracks and simulates external yield opportunities
+ * Yield Service (L3)
+ * Orchestrates autonomous capital rebalancing to optimize APY while maintaining liquidity.
  */
 class YieldService {
     /**
-     * Get current APY for a pool
+     * Calculate "Liquidity Runway" based on historical spending vs cash reserves
      */
-    async getPoolYield(poolId) {
-        const [pool] = await db.select().from(yieldPools).where(eq(yieldPools.id, poolId));
-        return parseFloat(pool?.currentApy || 0);
-    }
+    async calculateRequiredLiquidity(userId) {
+        // Use forecastEngine to get average monthly burn rate
+        const forecast = await forecastEngine.generateCashFlowForecast(userId, 6);
+        const avgMonthlyExpenses = forecast.summary.totalProjectedExpenses / 6;
 
-    /**
-     * Update yield rates from external providers (Mock)
-     */
-    async refreshYieldRates() {
-        const pools = await db.select().from(yieldPools);
+        // Fetch user buffers
+        const buffers = await db.query.liquidityBuffers.findMany({
+            where: eq(liquidityBuffers.userId, userId)
+        });
 
-        for (const pool of pools) {
-            // Simulate small market fluctuations (-0.1% to +0.1%)
-            const fluctuation = (Math.random() * 0.2 - 0.1);
-            const newApy = Math.max(0.1, parseFloat(pool.currentApy) + fluctuation);
+        const results = [];
+        for (const buffer of buffers) {
+            const requiredAmount = avgMonthlyExpenses * buffer.requiredRunwayMonths;
 
-            await db.update(yieldPools)
-                .set({ currentApy: newApy.toFixed(2), lastUpdated: new Date() })
-                .where(eq(yieldPools.id, pool.id));
+            // Check current vault balance
+            const balanceData = await db.select({
+                total: sql`sum(${vaultBalances.balance})`
+            }).from(vaultBalances)
+                .where(eq(vaultBalances.vaultId, buffer.vaultId));
+
+            const currentBalance = parseFloat(balanceData[0]?.total || 0);
+
+            results.push({
+                vaultId: buffer.vaultId,
+                requiredAmount,
+                currentBalance,
+                surplus: currentBalance - requiredAmount,
+                status: currentBalance >= requiredAmount ? 'safe' : 'deficit'
+            });
+
+            // Update buffer record
+            await db.update(liquidityBuffers)
+                .set({
+                    currentRunwayAmount: currentBalance.toFixed(2),
+                    lastCheckedAt: new Date()
+                })
+                .where(eq(liquidityBuffers.id, buffer.id));
         }
+
+        return results;
     }
 
     /**
-     * Find best yielding asset for a given risk score
+     * Scan and execute yield-optimizing rebalances
      */
-    async getBestPool(maxRisk = 5) {
-        const pools = await db.select().from(yieldPools)
-            .where(sql`${yieldPools.riskScore} <= ${maxRisk}`)
-            .orderBy(desc(yieldPools.currentApy))
-            .limit(1);
-        return pools[0];
+    async optimizeYield(userId) {
+        const liquidityStatus = await this.calculateRequiredLiquidity(userId);
+        const strategies = await db.query.yieldStrategies.findMany({
+            where: and(eq(yieldStrategies.userId, userId), eq(yieldStrategies.isActive, true))
+        });
+
+        const logs = [];
+
+        for (const status of liquidityStatus) {
+            if (status.surplus > 100) { // Only rebalance if surplus > $100
+                const strategy = strategies[0]; // Simplified: pick first active strategy
+                if (!strategy) continue;
+
+                console.log(`[Yield Service] Surplus of $${status.surplus.toFixed(2)} detected in vault ${status.vaultId}. Executing strategy: ${strategy.name}`);
+
+                // Execute Rebalance (Simulated fund movement)
+                // In a real system, this would move money to a high-yield investment or a different vault.
+                const amountToMove = status.surplus * 0.8; // Keep 20% of surplus for additional buffer
+
+                const log = await db.insert(rebalanceExecutionLogs).values({
+                    userId,
+                    strategyId: strategy.id,
+                    fromSource: `Vault: ${status.vaultId}`,
+                    toDestination: `Yield-Optimized Allocation (${strategy.riskTolerance})`,
+                    amount: amountToMove.toFixed(2),
+                    yieldSpread: '4.50', // Estimated yield improvement (e.g., Cash 0.5% -> Bond 5.0%)
+                    status: 'completed'
+                }).returning();
+
+                logs.push(log[0]);
+            }
+        }
+
+        return logs;
     }
 }
 

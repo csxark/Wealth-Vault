@@ -180,5 +180,32 @@ router.post('/inactivity/verify', protect, [
     new ApiResponse(200, null, 'Challenge verified - you are alive!').send(res);
 }));
 
+/**
+ * @route   POST /api/governance/multi-sig/quest
+ * @desc    Propose a new multi-sig approval quest
+ */
+router.post('/multi-sig/quest', protect, asyncHandler(async (req, res) => {
+    const quest = await governanceService.proposeQuest(req.user.id, req.body);
+    new ApiResponse(201, quest, 'Approval quest proposed').send(res);
+}));
+
+/**
+ * @route   POST /api/governance/multi-sig/sign/:questId
+ * @desc    Cast a signature on a pending quest
+ */
+router.post('/multi-sig/sign/:questId', protect, asyncHandler(async (req, res) => {
+    const updated = await governanceService.castSignature(req.user.id, req.params.questId);
+    new ApiResponse(200, updated, 'Signature recorded').send(res);
+}));
+
+/**
+ * @route   GET /api/governance/multi-sig/pending
+ * @desc    Get pending actions for the current executor
+ */
+router.get('/multi-sig/pending', protect, asyncHandler(async (req, res) => {
+    const actions = await governanceService.getPendingActions(req.user.id);
+    new ApiResponse(200, actions).send(res);
+}));
+
 export default router;
 

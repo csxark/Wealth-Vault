@@ -1,285 +1,111 @@
 import db from '../config/db.js';
-import { familyRoles, approvalRequests, vaults } from '../db/schema.js';
-import { eq, and, or } from 'drizzle-orm';
+import { multiSigWallets, executorRoles, approvalQuests } from '../db/schema.js';
+import { eq, and, sql } from 'drizzle-orm';
+import notificationService from './notificationService.js';
 
+/**
+ * Governance Service (L3)
+ * Manages M-of-N consensus for Family Office approvals.
+ */
 class GovernanceService {
     /**
-     * Assign a role to a user in a vault
+     * Propose a sensitive action for approval
      */
-    async assignRole(vaultId, userId, role, permissions, assignedBy) {
-        // Verify assigner has permission
-        const assignerRole = await this.getUserRole(vaultId, assignedBy);
-        if (!assignerRole?.permissions?.canManageRoles) {
-            throw new Error('Insufficient permissions to assign roles');
-        }
+    async proposeQuest(userId, questData) {
+        const { walletId, resourceType, resourceId, amount } = questData;
 
-        // Check if role already exists
-        const existingRole = await db.query.familyRoles.findFirst({
-            where: and(
-                eq(familyRoles.vaultId, vaultId),
-                eq(familyRoles.userId, userId),
-                eq(familyRoles.isActive, true)
-            )
-        });
+        // Verify user is an executor for this wallet
+        const [executor] = await db.select().from(executorRoles)
+            .where(and(eq(executorRoles.walletId, walletId), eq(executorRoles.executorId, userId)));
 
-        if (existingRole) {
-            // Update existing role
-            const [updated] = await db.update(familyRoles)
-                .set({ role, permissions, assignedBy, assignedAt: new Date() })
-                .where(eq(familyRoles.id, existingRole.id))
-                .returning();
-            return updated;
-        }
+        if (!executor) throw new Error('Unauthorized: You are not an executor for this wallet');
 
-        // Create new role
-        const [newRole] = await db.insert(familyRoles).values({
-            vaultId,
-            userId,
-            role,
-            permissions,
-            assignedBy,
-        }).returning();
-
-        return newRole;
-    }
-
-    /**
-     * Get user's role in a vault
-     */
-    async getUserRole(vaultId, userId) {
-        const role = await db.query.familyRoles.findFirst({
-            where: and(
-                eq(familyRoles.vaultId, vaultId),
-                eq(familyRoles.userId, userId),
-                eq(familyRoles.isActive, true)
-            )
-        });
-
-        return role;
-    }
-
-    /**
-     * Check if user requires approval for an action
-     */
-    async requiresApproval(vaultId, userId, action, amount = 0) {
-        const role = await this.getUserRole(vaultId, userId);
-
-        if (!role) return false; // No role = no governance
-
-        const { requiresApproval, approvalThreshold } = role.permissions;
-
-        // Check if always requires approval
-        if (requiresApproval) {
-            // Check threshold for expense amounts
-            if (action === 'expense' && amount > 0) {
-                return parseFloat(amount) >= parseFloat(approvalThreshold);
-            }
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Create an approval request
-     */
-    async createApprovalRequest(vaultId, requesterId, resourceType, action, requestData, amount = null) {
         const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
+        expiresAt.setDate(expiresAt.getDate() + 7); // 7-day voting window
 
-        const [request] = await db.insert(approvalRequests).values({
-            vaultId,
-            requesterId,
+        const [quest] = await db.insert(approvalQuests).values({
+            walletId,
             resourceType,
-            action,
-            requestData,
-            amount: amount ? amount.toString() : null,
-            expiresAt,
-            status: 'pending'
+            resourceId,
+            amount,
+            proposerId: userId,
+            status: 'pending',
+            signatures: [userId], // Proposer signs by default
+            expiresAt
         }).returning();
 
-        return request;
+        // Notify other executors
+        const others = await db.select().from(executorRoles)
+            .where(and(eq(executorRoles.walletId, walletId), sql`${executorRoles.executorId} != ${userId}`));
+
+        for (const o of others) {
+            await notificationService.sendNotification(o.executorId, {
+                title: 'New Approval Required',
+                message: `An action of type ${resourceType} for $${amount} requires your signature.`,
+                type: 'governance_vote'
+            });
+        }
+
+        return quest;
     }
 
     /**
-     * Approve a request (with Multi-Sig support)
+     * Cast a signature on a pending quest
      */
-    async approveRequest(requestId, approverId, reason = '') {
-        const request = await db.query.approvalRequests.findFirst({
-            where: eq(approvalRequests.id, requestId)
+    async castSignature(userId, questId) {
+        const quest = await db.query.approvalQuests.findFirst({
+            where: eq(approvalQuests.id, questId),
+            with: { wallet: true }
         });
 
-        if (!request) throw new Error('Request not found');
-        if (request.status !== 'pending' && request.status !== 'partially_approved') {
-            throw new Error('Request already processed or invalid status');
-        }
+        if (!quest || quest.status !== 'pending') throw new Error('Quest not found or already closed');
 
-        // Verify approver has permission
-        const approverRole = await this.getUserRole(request.vaultId, approverId);
-        if (!approverRole?.permissions?.canApprove) {
-            // Special case for inheritance executors who might not have a vault role
-            if (request.resourceType === 'inheritance_trigger') {
-                // Verification is handled inside successionService.castApproval
-            } else {
-                throw new Error('Insufficient permissions to approve');
-            }
-        }
+        // Check if already signed
+        if (quest.signatures.includes(userId)) throw new Error('You have already signed this quest');
 
-        // Cannot approve own request
-        if (request.requesterId === approverId) {
-            throw new Error('Cannot approve your own request');
-        }
+        // Check if user is an authorized executor
+        const [executor] = await db.select().from(executorRoles)
+            .where(and(eq(executorRoles.walletId, quest.walletId), eq(executorRoles.executorId, userId)));
 
-        // Check if already approved by this user
-        const metadata = request.metadata || { approvers: [] };
-        if (metadata.approvers.includes(approverId)) {
-            throw new Error('You have already approved this request');
-        }
+        if (!executor) throw new Error('Unauthorized');
 
-        metadata.approvers.push(approverId);
-        const newApprovalCount = (request.currentApprovals || 0) + 1;
-        const required = request.requiredApprovals || 1;
+        const updatedSignatures = [...quest.signatures, userId];
+        const status = updatedSignatures.length >= quest.wallet.requiredSignatures ? 'approved' : 'pending';
 
-        const isFullyApproved = newApprovalCount >= required;
-
-        const [updated] = await db.update(approvalRequests)
+        const [updated] = await db.update(approvalQuests)
             .set({
-                status: isFullyApproved ? 'approved' : 'partially_approved',
-                currentApprovals: newApprovalCount,
-                metadata,
-                approvedAt: isFullyApproved ? new Date() : null,
-                updatedAt: new Date()
+                signatures: updatedSignatures,
+                status
             })
-            .where(eq(approvalRequests.id, requestId))
+            .where(eq(approvalQuests.id, questId))
             .returning();
 
-        // If fully approved, execute the action
-        if (isFullyApproved) {
-            await this.executeApprovedAction(updated);
+        if (status === 'approved') {
+            console.log(`[Governance] Quest ${questId} REACHED CONSENSUS (${updatedSignatures.length}/${quest.wallet.requiredSignatures})`);
+            // Here we would trigger the actual execution logic (e.g., executing the vault withdrawal)
         }
 
         return updated;
     }
 
     /**
-     * Reject a request
+     * Get pending approvals for a user
      */
-    async rejectRequest(requestId, rejecterId, reason) {
-        const request = await db.query.approvalRequests.findFirst({
-            where: eq(approvalRequests.id, requestId)
-        });
+    async getPendingActions(userId) {
+        // Find wallets where user is an executor
+        const myWallets = await db.select({ id: executorRoles.walletId })
+            .from(executorRoles)
+            .where(eq(executorRoles.executorId, userId));
 
-        if (!request) throw new Error('Request not found');
-        if (request.status !== 'pending' && request.status !== 'partially_approved') {
-            throw new Error('Request already processed');
-        }
+        const walletIds = myWallets.map(w => w.id);
+        if (walletIds.length === 0) return [];
 
-        const [updated] = await db.update(approvalRequests)
-            .set({
-                status: 'rejected',
-                rejectedBy: rejecterId,
-                rejectionReason: reason,
-                rejectedAt: new Date()
-            })
-            .where(eq(approvalRequests.id, requestId))
-            .returning();
-
-        return updated;
-    }
-
-    /**
-     * Execute approved action
-     */
-    async executeApprovedAction(request) {
-        const { resourceType, resourceId, action, requestData } = request;
-
-        console.log(`[Governance] Executing approved ${action} on ${resourceType}: ${resourceId}`);
-
-        if (resourceType === 'inheritance_trigger') {
-            const successionService = (await import('./successionService.js')).default;
-
-            if (request.action === 'trigger') {
-                await successionService.triggerSuccessionEvent(request.requesterId, 'manual_approval');
-            } else {
-                await successionService.executeSuccession(request.resourceId);
-            }
-        } else if (resourceType === 'expense' && action === 'create') {
-            // Expense creation logic...
-        }
-
-        return true;
-    }
-
-    /**
-     * Get pending approvals for a vault
-     */
-    async getPendingApprovals(vaultId, userId = null) {
-        const conditions = [
-            eq(approvalRequests.vaultId, vaultId),
-            eq(approvalRequests.status, 'pending')
-        ];
-
-        if (userId) {
-            // Only show requests where user can approve
-            const role = await this.getUserRole(vaultId, userId);
-            if (!role?.permissions?.canApprove) {
-                return [];
-            }
-        }
-
-        const requests = await db.query.approvalRequests.findMany({
-            where: and(...conditions),
-            with: {
-                requester: {
-                    columns: { id: true, firstName: true, lastName: true, email: true }
-                }
-            },
-            orderBy: (approvalRequests, { desc }) => [desc(approvalRequests.createdAt)]
-        });
-
-        return requests;
-    }
-
-    /**
-     * Get all roles in a vault
-     */
-    async getVaultRoles(vaultId) {
-        const roles = await db.query.familyRoles.findMany({
+        return await db.query.approvalQuests.findMany({
             where: and(
-                eq(familyRoles.vaultId, vaultId),
-                eq(familyRoles.isActive, true)
-            ),
-            with: {
-                user: {
-                    columns: { id: true, firstName: true, lastName: true, email: true }
-                }
-            }
+                sql`${approvalQuests.walletId} IN ${walletIds}`,
+                eq(approvalQuests.status, 'pending')
+            )
         });
-
-        return roles;
-    }
-
-    /**
-     * Revoke a role
-     */
-    async revokeRole(roleId, revokedBy) {
-        const role = await db.query.familyRoles.findFirst({
-            where: eq(familyRoles.id, roleId)
-        });
-
-        if (!role) throw new Error('Role not found');
-
-        // Verify revoker has permission
-        const revokerRole = await this.getUserRole(role.vaultId, revokedBy);
-        if (!revokerRole?.permissions?.canManageRoles) {
-            throw new Error('Insufficient permissions to revoke roles');
-        }
-
-        await db.update(familyRoles)
-            .set({ isActive: false })
-            .where(eq(familyRoles.id, roleId));
-
-        return role;
     }
 }
 
