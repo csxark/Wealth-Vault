@@ -52,7 +52,9 @@ import educationRoutes from "./routes/education.js";
 import financialHealthRoutes from "./routes/financialHealth.js";
 import challengesRoutes from "./routes/challenges.js";
 import billsRoutes from "./routes/bills.js";
+import debtRoutes from "./routes/debts.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
+
 
 
 // Load environment variables
@@ -217,8 +219,10 @@ app.use("/api/education", userLimiter, educationRoutes);
 app.use("/api/financial-health", userLimiter, financialHealthRoutes);
 app.use("/api/challenges", userLimiter, challengesRoutes);
 app.use("/api/bills", userLimiter, billsRoutes);
+app.use("/api/debts", userLimiter, debtRoutes);
 
 // Secur fil servr for uploddd fils
+
 
 app.use("/uploads", createFileServerRoute());
 

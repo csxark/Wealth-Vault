@@ -503,6 +503,62 @@ export const bills = pgTable('bills', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Debts Table (for debt payoff tracking)
+export const debts = pgTable('debts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
+    name: text('name').notNull(), // e.g., "Credit Card", "Car Loan"
+    description: text('description'),
+    type: text('type').notNull(), // 'credit_card', 'student_loan', 'car_loan', 'mortgage', 'personal_loan', 'medical', 'other'
+    lender: text('lender'), // Bank or creditor name
+    originalBalance: numeric('original_balance', { precision: 12, scale: 2 }).notNull(),
+    currentBalance: numeric('current_balance', { precision: 12, scale: 2 }).notNull(),
+    interestRate: doublePrecision('interest_rate').notNull(), // Annual interest rate (e.g., 18.99 for 18.99%)
+    minimumPayment: numeric('minimum_payment', { precision: 12, scale: 2 }).notNull(),
+    dueDate: timestamp('due_date'), // Monthly due date
+    startDate: timestamp('start_date').defaultNow(), // When the debt was added/started
+    estimatedPayoffDate: timestamp('estimated_payoff_date'), // Calculated payoff date
+    isPriority: boolean('is_priority').default(false), // Mark as high priority
+    status: text('status').default('active'), // 'active', 'paid_off', 'defaulted', 'in_collection'
+    currency: text('currency').default('USD'),
+    accountNumber: text('account_number'), // Masked account number
+    notes: text('notes'),
+    tags: jsonb('tags').default([]),
+    metadata: jsonb('metadata').default({
+        totalPaid: 0,
+        totalInterestPaid: 0,
+        paymentCount: 0,
+        lastPaymentDate: null,
+        interestCompounding: 'monthly', // 'daily', 'monthly', 'yearly'
+        autopayEnabled: false
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Debt Payments Table (for tracking individual payments)
+export const debtPayments = pgTable('debt_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    principalAmount: numeric('principal_amount', { precision: 12, scale: 2 }), // Portion applied to principal
+    interestAmount: numeric('interest_amount', { precision: 12, scale: 2 }), // Portion applied to interest
+    paymentDate: timestamp('payment_date').defaultNow().notNull(),
+    paymentMethod: text('payment_method').default('other'), // 'credit_card', 'debit_card', 'bank_transfer', 'check', 'cash', 'other'
+    isExtraPayment: boolean('is_extra_payment').default(false), // Above minimum payment
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({
+        balanceBefore: 0,
+        balanceAfter: 0,
+        confirmationNumber: null
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+
 
 // Budget Rules Table
 export const budgetRules = pgTable('budget_rules', {
@@ -733,6 +789,32 @@ export const billsRelations = relations(bills, ({ one }) => ({
         references: [categories.id],
     }),
 }));
+
+// Debts Relations
+export const debtsRelations = relations(debts, ({ one, many }) => ({
+    user: one(users, {
+        fields: [debts.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [debts.categoryId],
+        references: [categories.id],
+    }),
+    payments: many(debtPayments),
+}));
+
+// Debt Payments Relations
+export const debtPaymentsRelations = relations(debtPayments, ({ one }) => ({
+    debt: one(debts, {
+        fields: [debtPayments.debtId],
+        references: [debts.id],
+    }),
+    user: one(users, {
+        fields: [debtPayments.userId],
+        references: [users.id],
+    }),
+}));
+
 
 
 export const goalsRelations = relations(goals, ({ one }) => ({
@@ -973,7 +1055,7 @@ export const bankTransactions = pgTable('bank_transactions', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// Update users relations to include portfolios, subscriptions, bills, and family relations
+// Update users relations to include portfolios, subscriptions, bills, debts, and family relations
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
     expenses: many(expenses),
@@ -987,12 +1069,15 @@ export const usersRelations = relations(users, ({ many }) => ({
     portfolios: many(portfolios),
     subscriptions: many(subscriptions),
     bills: many(bills),
+    debts: many(debts),
+    debtPayments: many(debtPayments),
     expenseShares: many(expenseShares),
     sentReimbursements: many(reimbursements, { relationName: 'reimbursements_from' }),
     receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
     bankAccounts: many(bankAccounts),
     bankTransactions: many(bankTransactions),
 }));
+
 
 
 // Bank Accounts Relations
