@@ -1,7 +1,7 @@
-import { eq, and, desc, asc, sql } from 'drizzle-orm';
-import db from '../config/db.js';
-import { investments, investmentTransactions, portfolios, priceHistory } from '../db/schema.js';
+import InvestmentRepository from '../repositories/InvestmentRepository.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
+import eventBus from '../events/eventBus.js';
+// Removed notificationService import - now decoupled via events
 
 /**
  * Investment Service
@@ -16,15 +16,10 @@ import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.
  */
 export const createInvestment = async (investmentData, userId) => {
   try {
-    const [investment] = await db
-      .insert(investments)
-      .values({
-        ...investmentData,
-        userId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .returning();
+    const investment = await InvestmentRepository.create({
+      ...investmentData,
+      userId,
+    });
 
     // Log audit event
     await logAuditEventAsync({
@@ -42,6 +37,9 @@ export const createInvestment = async (investmentData, userId) => {
       status: 'success',
     });
 
+    // Emit event
+    eventBus.emit('INVESTMENT_CREATED', investment);
+
     return investment;
   } catch (error) {
     console.error('Error creating investment:', error);
@@ -57,29 +55,7 @@ export const createInvestment = async (investmentData, userId) => {
  */
 export const getInvestments = async (userId, filters = {}) => {
   try {
-    let query = db
-      .select()
-      .from(investments)
-      .where(eq(investments.userId, userId));
-
-    // Apply filters
-    if (filters.portfolioId) {
-      query = query.where(eq(investments.portfolioId, filters.portfolioId));
-    }
-
-    if (filters.type) {
-      query = query.where(eq(investments.type, filters.type));
-    }
-
-    if (filters.isActive !== undefined) {
-      query = query.where(eq(investments.isActive, filters.isActive));
-    }
-
-    // Order by creation date descending
-    query = query.orderBy(desc(investments.createdAt));
-
-    const result = await query;
-    return result;
+    return await InvestmentRepository.findAll(userId, filters);
   } catch (error) {
     console.error('Error fetching investments:', error);
     throw error;
@@ -94,17 +70,7 @@ export const getInvestments = async (userId, filters = {}) => {
  */
 export const getInvestmentById = async (investmentId, userId) => {
   try {
-    const [investment] = await db
-      .select()
-      .from(investments)
-      .where(
-        and(
-          eq(investments.id, investmentId),
-          eq(investments.userId, userId)
-        )
-      );
-
-    return investment || null;
+    return await InvestmentRepository.findById(investmentId, userId);
   } catch (error) {
     console.error('Error fetching investment by ID:', error);
     throw error;
@@ -120,19 +86,7 @@ export const getInvestmentById = async (investmentId, userId) => {
  */
 export const updateInvestment = async (investmentId, updateData, userId) => {
   try {
-    const [investment] = await db
-      .update(investments)
-      .set({
-        ...updateData,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(investments.id, investmentId),
-          eq(investments.userId, userId)
-        )
-      )
-      .returning();
+    const investment = await InvestmentRepository.update(investmentId, userId, updateData);
 
     if (!investment) {
       throw new Error('Investment not found or access denied');
@@ -151,6 +105,9 @@ export const updateInvestment = async (investmentId, updateData, userId) => {
       status: 'success',
     });
 
+    // Emit event
+    eventBus.emit('INVESTMENT_UPDATED', investment);
+
     return investment;
   } catch (error) {
     console.error('Error updating investment:', error);
@@ -166,16 +123,9 @@ export const updateInvestment = async (investmentId, updateData, userId) => {
  */
 export const deleteInvestment = async (investmentId, userId) => {
   try {
-    const result = await db
-      .delete(investments)
-      .where(
-        and(
-          eq(investments.id, investmentId),
-          eq(investments.userId, userId)
-        )
-      );
+    const success = await InvestmentRepository.delete(investmentId, userId);
 
-    if (result.rowCount === 0) {
+    if (!success) {
       throw new Error('Investment not found or access denied');
     }
 
@@ -190,6 +140,9 @@ export const deleteInvestment = async (investmentId, userId) => {
       },
       status: 'success',
     });
+
+    // Emit event
+    eventBus.emit('INVESTMENT_DELETED', { id: investmentId, userId });
 
     return true;
   } catch (error) {
@@ -213,16 +166,12 @@ export const addInvestmentTransaction = async (investmentId, transactionData, us
       throw new Error('Investment not found or access denied');
     }
 
-    const [transaction] = await db
-      .insert(investmentTransactions)
-      .values({
-        ...transactionData,
-        investmentId,
-        portfolioId: investment.portfolioId,
-        userId,
-        createdAt: new Date(),
-      })
-      .returning();
+    const transaction = await InvestmentRepository.createTransaction({
+      ...transactionData,
+      investmentId,
+      portfolioId: investment.portfolioId,
+      userId,
+    });
 
     // Update investment's average cost and quantity based on transaction
     await updateInvestmentMetrics(investmentId, userId);
@@ -264,18 +213,7 @@ export const getInvestmentTransactions = async (investmentId, userId) => {
       throw new Error('Investment not found or access denied');
     }
 
-    const transactions = await db
-      .select()
-      .from(investmentTransactions)
-      .where(
-        and(
-          eq(investmentTransactions.investmentId, investmentId),
-          eq(investmentTransactions.userId, userId)
-        )
-      )
-      .orderBy(desc(investmentTransactions.date));
-
-    return transactions;
+    return await InvestmentRepository.findTransactions(investmentId, userId);
   } catch (error) {
     console.error('Error fetching investment transactions:', error);
     throw error;
@@ -291,16 +229,7 @@ export const getInvestmentTransactions = async (investmentId, userId) => {
 export const updateInvestmentMetrics = async (investmentId, userId) => {
   try {
     // Get all transactions for this investment
-    const transactions = await db
-      .select()
-      .from(investmentTransactions)
-      .where(
-        and(
-          eq(investmentTransactions.investmentId, investmentId),
-          eq(investmentTransactions.userId, userId)
-        )
-      )
-      .orderBy(asc(investmentTransactions.date));
+    const transactions = await InvestmentRepository.findTransactionsByInvestmentId(investmentId, userId);
 
     let totalQuantity = 0;
     let totalCost = 0;
@@ -308,37 +237,28 @@ export const updateInvestmentMetrics = async (investmentId, userId) => {
     // Calculate current quantity and total cost
     for (const transaction of transactions) {
       const { type, quantity, price, fees } = transaction;
-      const effectivePrice = price + (fees / quantity);
+      const q = parseFloat(quantity);
+      const p = parseFloat(price);
+      const f = parseFloat(fees || 0);
+      const effectivePrice = p + (f / q);
 
       if (type === 'buy') {
-        totalQuantity += parseFloat(quantity);
-        totalCost += parseFloat(quantity) * effectivePrice;
+        totalQuantity += q;
+        totalCost += q * effectivePrice;
       } else if (type === 'sell') {
-        totalQuantity -= parseFloat(quantity);
-        totalCost -= parseFloat(quantity) * effectivePrice;
+        totalQuantity -= q;
+        totalCost -= q * effectivePrice;
       }
     }
 
     const averageCost = totalQuantity > 0 ? totalCost / totalQuantity : 0;
 
     // Update the investment
-    const [updatedInvestment] = await db
-      .update(investments)
-      .set({
-        quantity: totalQuantity.toString(),
-        averageCost: averageCost.toString(),
-        totalCost: totalCost.toString(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(investments.id, investmentId),
-          eq(investments.userId, userId)
-        )
-      )
-      .returning();
-
-    return updatedInvestment;
+    return await InvestmentRepository.update(investmentId, userId, {
+      quantity: totalQuantity.toString(),
+      averageCost: averageCost.toString(),
+      totalCost: totalCost.toString(),
+    });
   } catch (error) {
     console.error('Error updating investment metrics:', error);
     throw error;
@@ -358,23 +278,13 @@ export const updateInvestmentPrices = async (priceUpdates, userId) => {
     for (const update of priceUpdates) {
       const { investmentId, currentPrice, marketValue, unrealizedGainLoss, unrealizedGainLossPercent } = update;
 
-      const [investment] = await db
-        .update(investments)
-        .set({
-          currentPrice: currentPrice?.toString(),
-          marketValue: marketValue?.toString(),
-          unrealizedGainLoss: unrealizedGainLoss?.toString(),
-          unrealizedGainLossPercent: unrealizedGainLossPercent?.toString(),
-          lastPriceUpdate: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(investments.id, investmentId),
-            eq(investments.userId, userId)
-          )
-        )
-        .returning();
+      const investment = await InvestmentRepository.update(investmentId, userId, {
+        currentPrice: currentPrice?.toString(),
+        marketValue: marketValue?.toString(),
+        unrealizedGainLoss: unrealizedGainLoss?.toString(),
+        unrealizedGainLossPercent: unrealizedGainLossPercent?.toString(),
+        lastPriceUpdate: new Date(),
+      });
 
       if (investment) {
         updatedInvestments.push(investment);
@@ -397,6 +307,8 @@ export const updateInvestmentPrices = async (priceUpdates, userId) => {
 export const calculateInvestmentMetrics = async (investmentId, userId) => {
   try {
     // Get price history for the investment
+    // Note: Assuming there's a priceService imported somewhere else or available
+    // For this refactor, we keep original logic but wrap DB calls if any
     const priceHistory = await priceService.getPriceHistory(investmentId, 365); // 1 year
 
     if (priceHistory.length < 30) {
@@ -445,6 +357,73 @@ export const calculateInvestmentMetrics = async (investmentId, userId) => {
   }
 };
 
+// Side-effects like notifications are now handled by event listeners in ../listeners/
+
+/**
+ * Batch update investment valuations based on FX rates
+ * @param {string} userId - User ID
+ * @param {Function} getConversionRate - Function(currency) => rate
+ * @param {string} baseCurrencyCode - User's base currency code
+ */
+export const batchUpdateValuations = async (userId, getConversionRate, baseCurrencyCode) => {
+  try {
+    const userInvestments = await db
+      .select()
+      .from(investments)
+      .where(
+        and(
+          eq(investments.userId, userId),
+          eq(investments.isActive, true)
+        )
+      );
+
+    const updates = userInvestments.map(async (inv) => {
+      const currency = inv.currency || 'USD';
+      const rate = getConversionRate(currency);
+
+      if (rate !== null) {
+        const marketValue = parseFloat(inv.marketValue || '0');
+        const baseValue = marketValue * rate;
+        const oldBaseValue = parseFloat(inv.baseCurrencyValue || '0');
+
+        // Check for significant value swing (> 5%) and notify user
+        if (oldBaseValue > 0) {
+          const change = Math.abs((baseValue - oldBaseValue) / oldBaseValue);
+          if (change > 0.05) {
+            const direction = baseValue > oldBaseValue ? 'increased' : 'decreased';
+
+            // Emit event instead of direct notification
+            eventBus.emit('INVESTMENT_VALUATION_CHANGED', {
+              userId,
+              investmentId: inv.id,
+              investmentName: inv.name,
+              investmentSymbol: inv.symbol,
+              changePercent: change * 100,
+              direction,
+              newValue: baseValue,
+              oldValue: oldBaseValue
+            });
+          }
+        }
+
+        await db
+          .update(investments)
+          .set({
+            baseCurrencyValue: baseValue.toFixed(2),
+            baseCurrencyCode: baseCurrencyCode,
+            valuationDate: new Date(),
+          })
+          .where(eq(investments.id, inv.id));
+      }
+    });
+
+    await Promise.all(updates);
+  } catch (error) {
+    console.error('Error batch updating investment valuations:', error);
+    throw error;
+  }
+};
+
 export default {
   createInvestment,
   getInvestments,
@@ -456,4 +435,5 @@ export default {
   updateInvestmentMetrics,
   updateInvestmentPrices,
   calculateInvestmentMetrics,
+  batchUpdateValuations,
 };
