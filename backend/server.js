@@ -94,6 +94,8 @@ import arbitrageJob from "./jobs/arbitrageJob.js";
 import riskMonitorJob from "./jobs/riskMonitorJob.js";
 import clearingJob from "./jobs/clearingJob.js";
 import taxHarvestJob from "./jobs/taxHarvestJob.js";
+import riskBaselineJob from "./jobs/riskBaselineJob.js";
+import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
@@ -257,7 +259,7 @@ app.use(
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userLimiter, userRoutes);
-app.use("/api/expenses", userLimiter, expenseRoutes);
+app.use("/api/expenses", userLimiter, securityGuard, expenseRoutes);
 app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
@@ -290,7 +292,7 @@ app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
 app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
 app.use("/api/replay", userLimiter, replayRoutes);
 app.use("/api/succession", userLimiter, successionRoutes);
-app.use("/api/entities", userLimiter, entityRoutes);
+app.use("/api/entities", userLimiter, securityGuard, entityRoutes);
 app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 app.use("/api/forensic", userLimiter, forensicRoutes);
 
@@ -360,7 +362,8 @@ if (process.env.NODE_ENV !== 'test') {
     arbitrageJob.start();
     riskMonitorJob.start();
     clearingJob.start();
-  taxHarvestJob.start();
+    taxHarvestJob.start();
+    riskBaselineJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
