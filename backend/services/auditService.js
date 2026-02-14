@@ -55,6 +55,8 @@ export const AuditActions = {
   SUCCESSION_EXECUTE: 'SUCCESSION_EXECUTE',
   MONTE_CARLO_SIMULATION: 'MONTE_CARLO_SIMULATION',
   RISK_REBALANCED: 'RISK_REBALANCED',
+  ENTITY_CREATE: 'ENTITY_CREATE',
+  INTER_COMPANY_TRANSFER: 'INTER_COMPANY_TRANSFER'
 };
 
 // Resource Types
@@ -72,6 +74,7 @@ export const ResourceTypes = {
   REPLAY: 'replay',
   FORENSIC: 'forensic',
   SUCCESSION: 'succession',
+  ENTITY: 'entity'
 };
 
 /**

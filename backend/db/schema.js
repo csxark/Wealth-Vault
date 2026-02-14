@@ -1609,3 +1609,46 @@ export const rebalanceTriggersRelations = relations(rebalanceTriggers, ({ one })
     user: one(users, { fields: [rebalanceTriggers.userId], references: [users.id] }),
     goal: one(goals, { fields: [rebalanceTriggers.goalId], references: [goals.id] }),
 }));
+
+// ============================================================================
+// MULTI-ENTITY INTER-COMPANY CLEARING (L3) (#360)
+// ============================================================================
+
+export const entities = pgTable('entities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // 'personal', 'llc', 'trust', 'corp'
+    functionalCurrency: text('functional_currency').default('USD'),
+    taxId: text('tax_id'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const interCompanyLedger = pgTable('inter_company_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    fromEntityId: uuid('from_entity_id').references(() => entities.id).notNull(),
+    toEntityId: uuid('to_entity_id').references(() => entities.id).notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').notNull(),
+    description: text('description'),
+    transactionType: text('transaction_type').notNull(), // 'loan', 'clearing', 'expense_reimbursement'
+    status: text('status').default('pending'), // 'pending', 'cleared', 'disputed'
+    clearedAt: timestamp('cleared_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations for Multi-Entity
+export const entitiesRelations = relations(entities, ({ one, many }) => ({
+    user: one(users, { fields: [entities.userId], references: [users.id] }),
+    outboundTransactions: many(interCompanyLedger, { relationName: 'fromEntity' }),
+    inboundTransactions: many(interCompanyLedger, { relationName: 'toEntity' }),
+}));
+
+export const interCompanyLedgerRelations = relations(interCompanyLedger, ({ one }) => ({
+    fromEntity: one(entities, { fields: [interCompanyLedger.fromEntityId], references: [entities.id], relationName: 'fromEntity' }),
+    toEntity: one(entities, { fields: [interCompanyLedger.toEntityId], references: [entities.id], relationName: 'toEntity' }),
+    user: one(users, { fields: [interCompanyLedger.userId], references: [users.id] }),
+}));

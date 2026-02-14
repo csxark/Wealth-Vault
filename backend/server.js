@@ -64,6 +64,7 @@ import forensicRoutes from "./routes/forensic.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
 import replayRoutes from "./routes/replay.js";
 import successionRoutes from "./routes/succession.js";
+import entityRoutes from "./routes/entities.js";
 import { presenceTracker } from "./middleware/successionMiddleware.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
@@ -91,6 +92,7 @@ import dividendProcessor from "./jobs/dividendProcessor.js";
 import liquidityOptimizerJob from "./jobs/liquidityOptimizerJob.js";
 import arbitrageJob from "./jobs/arbitrageJob.js";
 import riskMonitorJob from "./jobs/riskMonitorJob.js";
+import clearingJob from "./jobs/clearingJob.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
@@ -287,6 +289,7 @@ app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
 app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
 app.use("/api/replay", userLimiter, replayRoutes);
 app.use("/api/succession", userLimiter, successionRoutes);
+app.use("/api/entities", userLimiter, entityRoutes);
 app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 app.use("/api/forensic", userLimiter, forensicRoutes);
 
@@ -355,6 +358,7 @@ if (process.env.NODE_ENV !== 'test') {
     liquidityOptimizerJob.start();
     arbitrageJob.start();
     riskMonitorJob.start();
+    clearingJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
