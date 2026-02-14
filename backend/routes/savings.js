@@ -170,4 +170,100 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/savings/challenges
+ * Get user's challenges
+ */
+router.get('/challenges', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { type = 'all', status = 'active' } = req.query;
+
+    const challenges = await savingsService.getUserChallenges(userId, { type, status });
+    res.json({ data: challenges });
+  } catch (error) {
+    console.error('Error fetching challenges:', error);
+    res.status(500).json({ error: 'Failed to fetch challenges' });
+  }
+});
+
+/**
+ * POST /api/savings/challenges
+ * Create a new challenge
+ */
+router.post('/challenges', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const challengeData = {
+      ...req.body,
+      creatorId: userId,
+    };
+
+    const challenge = await savingsService.createChallenge(challengeData);
+    res.status(201).json({ data: challenge });
+  } catch (error) {
+    console.error('Error creating challenge:', error);
+    res.status(500).json({ error: 'Failed to create challenge' });
+  }
+});
+
+/**
+ * POST /api/savings/challenges/:id/join
+ * Join a challenge
+ */
+router.post('/challenges/:id/join', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const challengeId = req.params.id;
+
+    const participant = await savingsService.joinChallenge(challengeId, userId);
+    res.status(201).json({ data: participant });
+  } catch (error) {
+    console.error('Error joining challenge:', error);
+    if (error.message.includes('already participating')) {
+      res.status(400).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'Failed to join challenge' });
+    }
+  }
+});
+
+/**
+ * PUT /api/savings/challenges/:id/progress
+ * Update challenge progress
+ */
+router.put('/challenges/:id/progress', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const challengeId = req.params.id;
+    const { progressAmount } = req.body;
+
+    if (!progressAmount || progressAmount <= 0) {
+      return res.status(400).json({ error: 'Valid progress amount is required' });
+    }
+
+    const participant = await savingsService.updateChallengeProgress(challengeId, userId, progressAmount);
+    res.json({ data: participant });
+  } catch (error) {
+    console.error('Error updating challenge progress:', error);
+    res.status(500).json({ error: 'Failed to update challenge progress' });
+  }
+});
+
+/**
+ * GET /api/savings/challenges/:id/leaderboard
+ * Get challenge leaderboard
+ */
+router.get('/challenges/:id/leaderboard', async (req, res) => {
+  try {
+    const challengeId = req.params.id;
+
+    const leaderboard = await savingsService.getChallengeLeaderboard(challengeId);
+    res.json({ data: leaderboard });
+  } catch (error) {
+    console.error('Error fetching leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
 export default router;
