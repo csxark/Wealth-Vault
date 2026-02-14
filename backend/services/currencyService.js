@@ -200,9 +200,25 @@ export async function getAllRates(baseCurrency = 'USD') {
 }
 
 /**
+ * Convert amount to base currency (USD)
+ */
+export async function convertToBase(amount, fromCurrency) {
+    return await convertAmount(amount, fromCurrency, 'USD');
+}
+
+/**
  * Clear exchange rates cache
  */
 export function clearRatesCache() {
     ratesCache.clear();
     console.log('Exchange rates cache cleared');
 }
+
+export default {
+    fetchExchangeRates,
+    convertAmount,
+    convertToBase,
+    getExchangeRate,
+    getAllRates,
+    clearRatesCache
+};

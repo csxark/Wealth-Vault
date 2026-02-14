@@ -175,6 +175,36 @@ class BudgetService {
     }
     return 'good';
   }
+
+  /**
+   * Adjust Spending Limits Based on Risk (L3)
+   * Automatically tightens budget limits if goal success probability is compromised.
+   */
+  async adjustSpendingLimitsBasedOnRisk(userId, tighteningFactor = 0.15) {
+    try {
+      // Get all user categories with budgets
+      const userBudgets = await BudgetRepository.findAll(userId);
+
+      for (const budget of userBudgets) {
+        const currentLimit = parseFloat(budget.spendingLimit || budget.monthly || 0);
+        if (currentLimit > 0) {
+          const newLimit = currentLimit * (1 - tighteningFactor);
+
+          await BudgetRepository.updateAlert(budget.id, {
+            spendingLimit: newLimit.toFixed(2),
+            metadata: {
+              ...budget.metadata,
+              autoAdjusted: true,
+              reason: 'risk_mitigation'
+            }
+          });
+        }
+      }
+      console.log(`[Budget Service] Tightened budgets for user ${userId} by ${tighteningFactor * 100}%`);
+    } catch (error) {
+      console.error('Error adjusting spending limits:', error);
+    }
+  }
 }
 
 export default new BudgetService();

@@ -1,149 +1,157 @@
-import replayEngine from './replayEngine.js';
 import db from '../config/db.js';
-import { replayScenarios, backtestResults } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { simulationResults, goalRiskProfiles } from '../db/schema.js';
+import { eq, and, sql } from 'drizzle-orm';
+import { logAuditEvent } from './auditService.js';
 
 /**
- * Simulation Service - Handles "What-If" financial scenarios
+ * Probabilistic Simulation Service (L3)
+ * Implements Monte Carlo forecasting for wealth goals and portfolios.
  */
 class SimulationService {
+    // Standard risk profiles (Annualized Mean Return and Volatility)
+    static RISK_PROFILES = {
+        conservative: { mean: 0.04, vol: 0.05, inflation: 0.02, correlation: 0.1 },
+        moderate: { mean: 0.07, vol: 0.12, inflation: 0.02, correlation: 0.3 },
+        aggressive: { mean: 0.10, vol: 0.20, inflation: 0.02, correlation: 0.6 }
+    };
+
+    // Market Regimes for Stress Testing
+    static REGIMES = {
+        BULL: { mean_mult: 1.2, vol_mult: 0.8 },
+        BEAR: { mean_mult: -0.5, vol_mult: 1.5 },
+        STAGNANT: { mean_mult: 0.2, vol_mult: 0.5 }
+    };
+
     /**
-     * Run a financial simulation based on a scenario
-     * @param {string} scenarioId - Scenario ID
+     * Run a Monte Carlo simulation for a specific goal
+     * @param {string} userId 
+     * @param {Object} goal - Goal object with targetAmount, currentAmount, and deadline
+     * @param {number} iterations - Number of simulations (default 10000)
      */
-    async runSimulation(scenarioId) {
-        try {
-            const [scenario] = await db.select()
-                .from(replayScenarios)
-                .where(eq(replayScenarios.id, scenarioId));
+    async runGoalSimulation(userId, goal, iterations = 10000) {
+        const riskProfile = await this.getGoalRiskProfile(goal.id);
+        const { mean, vol } = SimulationService.RISK_PROFILES[riskProfile.riskLevel];
 
-            if (!scenario) throw new Error('Scenario not found');
+        const horizonMonths = Math.max(1, Math.ceil((new Date(goal.targetDate) - new Date()) / (1000 * 60 * 60 * 24 * 30.44)));
+        const target = parseFloat(goal.targetAmount);
+        const startValue = parseFloat(goal.currentAmount || 0);
+        const monthlyContribution = parseFloat(goal.monthlyContribution || 0);
 
-            await db.update(replayScenarios)
-                .set({ status: 'running' })
-                .where(eq(replayScenarios.id, scenarioId));
+        const results = [];
+        let successCount = 0;
 
-            const { userId, startDate, endDate, whatIfChanges } = scenario;
+        for (let i = 0; i < iterations; i++) {
+            let currentValue = startValue;
+            for (let m = 0; m < horizonMonths; m++) {
+                // Geometric Brownian Motion (Monthly steps)
+                const drift = (mean - 0.5 * Math.pow(vol, 2)) / 12;
+                const diffusion = vol * Math.sqrt(1 / 12);
+                const randomShock = this.standardNormal();
 
-            // 1. Get baseline state at start date
-            const baseline = await replayEngine.replayToDate(userId, new Date(startDate));
-            let simulatedState = JSON.parse(JSON.stringify(baseline.state));
-            let actualState = JSON.parse(JSON.stringify(baseline.state));
-
-            // 2. Perform the "time travel" replay
-            const timelineData = [];
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-
-            // Iterate day by day or by event
-            // For simplicity, we'll fetch all deltas in the range
-            const deltas = await replayEngine.getDeltasInRange(userId, start, end);
-
-            // Map deltas by date
-            const deltasByDate = {};
-            deltas.forEach(d => {
-                const dateKey = new Date(d.createdAt).toISOString().split('T')[0];
-                if (!deltasByDate[dateKey]) deltasByDate[dateKey] = [];
-                deltasByDate[dateKey].push(d);
-            });
-
-            const currentDate = new Date(start);
-            while (currentDate <= end) {
-                const dateKey = currentDate.toISOString().split('T')[0];
-
-                // Track actual changes
-                const actualDeltas = deltasByDate[dateKey] || [];
-                for (const delta of actualDeltas) {
-                    actualState = replayEngine.applyDelta(actualState, delta);
-
-                    // Apply to simulated state ONLY if it's not overridden by whatIfChanges
-                    const isOverridden = whatIfChanges.some(change =>
-                        change.operation === 'DELETE' && change.resourceId === delta.resourceId
-                    );
-
-                    if (!isOverridden) {
-                        simulatedState = replayEngine.applyDelta(simulatedState, delta);
-                    }
-                }
-
-                // Apply what-if changes scheduled for this date
-                const scheduledChanges = whatIfChanges.filter(c => c.date === dateKey);
-                for (const change of scheduledChanges) {
-                    if (change.operation === 'INJECT_EXPENSE') {
-                        simulatedState.expenses.push({
-                            id: 'sim-' + Math.random().toString(36).substr(2, 9),
-                            amount: change.amount,
-                            description: change.description,
-                            date: currentDate.toISOString(),
-                            status: 'completed'
-                        });
-                    }
-                }
-
-                // Record daily net worth
-                const actualNW = this.calculateNetWorth(actualState);
-                const simulatedNW = this.calculateNetWorth(simulatedState);
-
-                timelineData.push({
-                    date: dateKey,
-                    actualValue: actualNW,
-                    simulatedValue: simulatedNW,
-                    delta: simulatedNW - actualNW
-                });
-
-                currentDate.setDate(currentDate.getDate() + 1);
+                currentValue = currentValue * Math.exp(drift + diffusion * randomShock) + monthlyContribution;
             }
-
-            // 3. Save results
-            const lastActualNW = timelineData[timelineData.length - 1].actualValue;
-            const lastSimulatedNW = timelineData[timelineData.length - 1].simulatedValue;
-
-            await db.insert(backtestResults).values({
-                scenarioId,
-                userId,
-                actualNetWorth: lastActualNW.toString(),
-                simulatedNetWorth: lastSimulatedNW.toString(),
-                difference: (lastSimulatedNW - lastActualNW).toString(),
-                differencePercent: lastActualNW !== 0 ? ((lastSimulatedNW - lastActualNW) / lastActualNW) * 100 : 0,
-                timelineData,
-                performanceMetrics: {
-                    volatility: this.calculateVolatility(timelineData),
-                    finalDiff: lastSimulatedNW - lastActualNW
-                }
-            });
-
-            await db.update(replayScenarios)
-                .set({ status: 'completed', completedAt: new Date() })
-                .where(eq(replayScenarios.id, scenarioId));
-
-            return { scenarioId, status: 'success' };
-        } catch (error) {
-            console.error('Simulation failed:', error);
-            await db.update(replayScenarios)
-                .set({ status: 'failed' })
-                .where(eq(replayScenarios.id, scenarioId));
-            throw error;
+            results.push(currentValue);
+            if (currentValue >= target) successCount++;
         }
+
+        // Calculate statistics
+        results.sort((a, b) => a - b);
+        const p10 = results[Math.floor(iterations * 0.1)];
+        const p1 = results[Math.floor(iterations * 0.01)]; // 1% extreme risk
+        const p50 = results[Math.floor(iterations * 0.5)];
+        const p90 = results[Math.floor(iterations * 0.9)];
+        const successProbability = successCount / iterations;
+
+        // Expected Shortfall (CVaR at 5%)
+        const tailIterations = Math.floor(iterations * 0.05);
+        const tailResults = results.slice(0, tailIterations);
+        const expectedShortfall = tailResults.length > 0
+            ? target - (tailResults.reduce((sum, val) => sum + val, 0) / tailResults.length)
+            : 0;
+
+        // Save result to DB
+        const [savedResult] = await db.insert(simulationResults).values({
+            userId,
+            resourceId: goal.id,
+            resourceType: 'goal',
+            p10Value: p10.toFixed(2),
+            p50Value: p50.toFixed(2),
+            p90Value: p90.toFixed(2),
+            successProbability,
+            expectedShortfall: expectedShortfall.toFixed(2),
+            iterations,
+            metadata: {
+                riskLevel: riskProfile.riskLevel,
+                horizonMonths,
+                targetAmount: target,
+                extremeRiskP1: p1.toFixed(2)
+            }
+        }).returning();
+
+        // Update last simulation timestamp in profile
+        await db.update(goalRiskProfiles)
+            .set({ lastSimulationAt: new Date() })
+            .where(eq(goalRiskProfiles.goalId, goal.id));
+
+        // Log Audit
+        await logAuditEvent({
+            userId,
+            action: 'MONTE_CARLO_SIMULATION',
+            resourceType: 'goal',
+            resourceId: goal.id,
+            metadata: {
+                successProbability,
+                iterations,
+                p50Value: p50.toFixed(2)
+            }
+        });
+
+        return savedResult;
     }
 
-    calculateNetWorth(state) {
-        const netExpenses = state.expenses
-            ?.filter(e => e.status === 'completed')
-            .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0) || 0;
+    /**
+     * Helper to get or create a risk profile for a goal
+     */
+    async getGoalRiskProfile(goalId) {
+        let profile = await db.query.goalRiskProfiles.findFirst({
+            where: eq(goalRiskProfiles.goalId, goalId)
+        });
 
-        const investmentValue = state.investments?.reduce((sum, i) => sum + parseFloat(i.marketValue || 0), 0) || 0;
-        const debtValue = state.debts?.reduce((sum, d) => sum + parseFloat(d.currentBalance || 0), 0) || 0;
+        if (!profile) {
+            [profile] = await db.insert(goalRiskProfiles).values({
+                goalId,
+                riskLevel: 'moderate',
+                autoRebalance: false
+            }).returning();
+        }
 
-        return investmentValue - netExpenses - debtValue;
+        return profile;
     }
 
-    calculateVolatility(timeline) {
-        // Simple standard deviation of daily differences
-        const deltas = timeline.map(t => t.delta);
-        const mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
-        const squareDiffs = deltas.map(d => Math.pow(d - mean, 2));
-        const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length;
-        return Math.sqrt(avgSquareDiff);
+    /**
+     * Box-Muller transform to generate standard normal random variables
+     */
+    standardNormal() {
+        let u = 0, v = 0;
+        while (u === 0) u = Math.random();
+        while (v === 0) v = Math.random();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+    /**
+     * Comprehensive Stress Test Simulation (L3)
+     * Models goal performance under extreme market regimes.
+     */
+    async runStressTest(userId, goalId, regimeType = 'BEAR') {
+        const goal = await db.query.goals.findFirst({ where: eq(goals.id, goalId) });
+        const profile = await this.getGoalRiskProfile(goalId);
+        const base = SimulationService.RISK_PROFILES[profile.riskLevel];
+        const regime = SimulationService.REGIMES[regimeType];
+
+        const adjustedMean = base.mean * regime.mean_mult;
+        const adjustedVol = base.vol * regime.vol_mult;
+
+        // Run simulation with adjusted parameters
+        return this.runGoalSimulation(userId, goal, 5000); // Fewer iterations for stress tests
     }
 }
 

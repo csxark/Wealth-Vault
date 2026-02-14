@@ -1564,3 +1564,161 @@ export const multiSigApprovalsRelations = relations(multiSigApprovals, ({ one })
     succession: one(successionLogs, { fields: [multiSigApprovals.successionId], references: [successionLogs.id] }),
     executor: one(users, { fields: [multiSigApprovals.executorId], references: [users.id] }),
 }));
+
+// ============================================================================
+// PROBABILISTIC FORECASTING & ADAPTIVE REBALANCING (L3) (#361)
+// ============================================================================
+
+export const goalRiskProfiles = pgTable('goal_risk_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull().unique(),
+    riskLevel: text('risk_level').default('moderate'), // conservative, moderate, aggressive
+    autoRebalance: boolean('auto_rebalance').default(false),
+    minSuccessProbability: doublePrecision('min_success_probability').default(0.70), // Threshold to trigger rebalance
+    lastSimulationAt: timestamp('last_simulation_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const simulationResults = pgTable('simulation_results', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resourceId: uuid('resource_id').notNull(), // Goal ID or Portfolio ID
+    resourceType: text('resource_type').notNull(), // 'goal', 'portfolio'
+    simulatedOn: timestamp('simulated_on').defaultNow(),
+    p10Value: numeric('p10_value', { precision: 18, scale: 2 }), // Worst case (10th percentile)
+    p50Value: numeric('p50_value', { precision: 18, scale: 2 }), // Median (50th percentile)
+    p90Value: numeric('p90_value', { precision: 18, scale: 2 }), // Best case (90th percentile)
+    successProbability: doublePrecision('success_probability'),
+    expectedShortfall: numeric('expected_shortfall', { precision: 18, scale: 2 }),
+    simulationData: jsonb('simulation_data'), // Array of projected paths [timestamp, value]
+    iterations: integer('iterations').default(10000),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const rebalanceTriggers = pgTable('rebalance_triggers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    previousRiskLevel: text('previous_risk_level'),
+    newRiskLevel: text('new_risk_level'),
+    triggerReason: text('trigger_reason'), // e.g., 'success_probability_drop'
+    simulatedSuccessProbability: doublePrecision('simulated_success_probability'),
+    executedAt: timestamp('executed_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
+// Relations for Probabilistic Forecasting
+export const goalRiskProfilesRelations = relations(goalRiskProfiles, ({ one }) => ({
+    goal: one(goals, { fields: [goalRiskProfiles.goalId], references: [goals.id] }),
+}));
+
+export const simulationResultsRelations = relations(simulationResults, ({ one }) => ({
+    user: one(users, { fields: [simulationResults.userId], references: [users.id] }),
+}));
+
+export const rebalanceTriggersRelations = relations(rebalanceTriggers, ({ one }) => ({
+    user: one(users, { fields: [rebalanceTriggers.userId], references: [users.id] }),
+    goal: one(goals, { fields: [rebalanceTriggers.goalId], references: [goals.id] }),
+}));
+
+// ============================================================================
+// MULTI-ENTITY INTER-COMPANY CLEARING (L3) (#360)
+// ============================================================================
+
+export const entities = pgTable('entities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // 'personal', 'llc', 'trust', 'corp'
+    functionalCurrency: text('functional_currency').default('USD'),
+    taxId: text('tax_id'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const interCompanyLedger = pgTable('inter_company_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    fromEntityId: uuid('from_entity_id').references(() => entities.id).notNull(),
+    toEntityId: uuid('to_entity_id').references(() => entities.id).notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').notNull(),
+    description: text('description'),
+    transactionType: text('transaction_type').notNull(), // 'loan', 'clearing', 'expense_reimbursement'
+    status: text('status').default('pending'), // 'pending', 'cleared', 'disputed'
+    clearedAt: timestamp('cleared_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations for Multi-Entity
+export const entitiesRelations = relations(entities, ({ one, many }) => ({
+    user: one(users, { fields: [entities.userId], references: [users.id] }),
+    outboundTransactions: many(interCompanyLedger, { relationName: 'fromEntity' }),
+    inboundTransactions: many(interCompanyLedger, { relationName: 'toEntity' }),
+}));
+
+
+export const interCompanyLedgerRelations = relations(interCompanyLedger, ({ one }) => ({
+    fromEntity: one(entities, { fields: [interCompanyLedger.fromEntityId], references: [entities.id], relationName: 'fromEntity' }),
+    toEntity: one(entities, { fields: [interCompanyLedger.toEntityId], references: [entities.id], relationName: 'toEntity' }),
+    user: one(users, { fields: [interCompanyLedger.userId], references: [users.id] }),
+}));
+
+// ============================================================================
+// AI-DRIVEN TAX-LOSS HARVESTING & WASH-SALE PREVENTION (L3) (#359)
+// ============================================================================
+
+export const taxLots = pgTable('tax_lots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
+    costBasisPerUnit: numeric('cost_basis_per_unit', { precision: 18, scale: 2 }).notNull(),
+    acquiredAt: timestamp('acquired_at').notNull(),
+    soldAt: timestamp('sold_at'),
+    isSold: boolean('is_sold').default(false),
+    washSaleDisallowed: numeric('wash_sale_disallowed', { precision: 18, scale: 2 }).default('0'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const harvestOpportunities = pgTable('harvest_opportunities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    estimatedSavings: numeric('estimated_savings', { precision: 18, scale: 2 }).notNull(),
+    unrealizedLoss: numeric('unrealized_loss', { precision: 18, scale: 2 }).notNull(),
+    status: text('status').default('detected'), // 'detected', 'ignored', 'harvested'
+    detectedAt: timestamp('detected_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const washSaleLogs = pgTable('wash_sale_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    transactionDate: timestamp('transaction_date').notNull(),
+    disallowedLoss: numeric('disallowed_loss', { precision: 18, scale: 2 }).notNull(),
+    replacementLotId: uuid('replacement_lot_id').references(() => taxLots.id),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations for Tax Optimization
+export const taxLotsRelations = relations(taxLots, ({ one }) => ({
+    user: one(users, { fields: [taxLots.userId], references: [users.id] }),
+    investment: one(investments, { fields: [taxLots.investmentId], references: [investments.id] }),
+}));
+
+export const harvestOpportunitiesRelations = relations(harvestOpportunities, ({ one }) => ({
+    user: one(users, { fields: [harvestOpportunities.userId], references: [users.id] }),
+    investment: one(investments, { fields: [harvestOpportunities.investmentId], references: [investments.id] }),
+}));
+
+export const washSaleLogsRelations = relations(washSaleLogs, ({ one }) => ({
+    user: one(users, { fields: [washSaleLogs.userId], references: [users.id] }),
+    investment: one(investments, { fields: [washSaleLogs.investmentId], references: [investments.id] }),
+}));

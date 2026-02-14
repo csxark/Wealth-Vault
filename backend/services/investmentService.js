@@ -1,6 +1,11 @@
 import InvestmentRepository from '../repositories/InvestmentRepository.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
 import eventBus from '../events/eventBus.js';
+import db from '../config/db.js';
+import { goals, goalRiskProfiles, rebalanceTriggers } from '../db/schema.js';
+import { eq, and, sql } from 'drizzle-orm';
+import taxService from './taxService.js';
+import portfolioService from './portfolioService.js';
 // Removed notificationService import - now decoupled via events
 
 /**
@@ -172,6 +177,34 @@ export const addInvestmentTransaction = async (investmentId, transactionData, us
       portfolioId: investment.portfolioId,
       userId,
     });
+
+    // 1. (L3) Cost-Basis Lot Tracking
+    if (transaction.type === 'buy') {
+      await portfolioService.addTaxLot(
+        userId,
+        investmentId,
+        transaction.quantity,
+        transaction.price,
+        transaction.date || new Date()
+      );
+    } else if (transaction.type === 'sell') {
+      // Check for Wash-Sale if selling at a loss
+      const matchingLots = await taxService.getMatchingLots(investmentId, userId, 'FIFO');
+      const avgCost = matchingLots.reduce((acc, lot) => acc + parseFloat(lot.costBasisPerUnit), 0) / (matchingLots.length || 1);
+
+      if (parseFloat(transaction.price) < avgCost) {
+        const loss = (avgCost - parseFloat(transaction.price)) * parseFloat(transaction.quantity);
+        const washRisk = await taxService.checkWashSaleRisk(userId, investmentId, new Date(), loss);
+
+        if (washRisk.isWashSale) {
+          console.warn(`[Investment Service] WASH-SALE DETECTED for user ${userId} on ${investmentId}. Loss of $${loss.toFixed(2)} will be disallowed.`);
+          // In a production system, we'd block the transaction or log it for adjustment
+        }
+      }
+
+      // 2. (L3) Actual Lot Liquidation
+      await taxService.liquidateLots(userId, investmentId, transaction.quantity, 'FIFO');
+    }
 
     // Update investment's average cost and quantity based on transaction
     await updateInvestmentMetrics(investmentId, userId);
@@ -424,6 +457,66 @@ export const batchUpdateValuations = async (userId, getConversionRate, baseCurre
   }
 };
 
+/**
+ * Rebalance Goal Risk (L3)
+ * Downgrades risk profile when success probability is low.
+ */
+export const rebalanceGoalRisk = async (goalId, oldRisk, newRisk, probability) => {
+  try {
+    const [goal] = await db.select().from(goals).where(eq(goals.id, goalId));
+
+    // 1. Update the goal risk profile
+    await db.update(goalRiskProfiles)
+      .set({ riskLevel: newRisk, updatedAt: new Date() })
+      .where(eq(goalRiskProfiles.goalId, goalId));
+
+    // 2. Log the trigger
+    await db.insert(rebalanceTriggers).values({
+      userId: goal.userId,
+      goalId,
+      previousRiskLevel: oldRisk,
+      newRiskLevel: newRisk,
+      triggerReason: 'success_probability_drop',
+      simulatedSuccessProbability: probability
+    });
+
+    // 3. Emit event for further automation (e.g. Budget adjustments)
+    eventBus.emit('GOAL_RISK_REBALANCED', { goalId, userId: goal.userId, oldRisk, newRisk });
+
+    // 4. Shift simulated weights (L3 Logic Juggling)
+    await this.adjustAssetWeightsForGoal(goalId, newRisk);
+
+    console.log(`[Investment Service] Rebalanced goal ${goalId} from ${oldRisk} to ${newRisk}`);
+    return true;
+  } catch (error) {
+    console.error('Error rebalancing goal risk:', error);
+    throw error;
+  }
+};
+
+/**
+ * Adjust Asset Weights For Goal (L3)
+ * Reallocates assets in the underlying vault linked to a goal.
+ */
+export const adjustAssetWeightsForGoal = async (goalId, riskLevel) => {
+  // Business Logic: If goal is aggressive, 80% Equity / 20% Bonds.
+  // If conservative, 20% Equity / 80% Bonds.
+  const allocations = {
+    aggressive: { equity: 0.8, fixed: 0.2 },
+    moderate: { equity: 0.6, fixed: 0.4 },
+    conservative: { equity: 0.2, fixed: 0.8 }
+  };
+
+  const target = allocations[riskLevel];
+  console.log(`[Investment Service] Reallocating goal ${goalId} assets to ${JSON.stringify(target)}`);
+
+  // In a real system, this would trigger actual trades.
+  // For Wealth-Vault, we log it and update metadata.
+  await db.update(goals)
+    .set({ metadata: sql`jsonb_set(metadata, '{target_allocation}', ${JSON.stringify(target)}::jsonb)` })
+    .where(eq(goals.id, goalId));
+};
+
 export default {
   createInvestment,
   getInvestments,
@@ -436,4 +529,6 @@ export default {
   updateInvestmentPrices,
   calculateInvestmentMetrics,
   batchUpdateValuations,
+  rebalanceGoalRisk,
+  adjustAssetWeightsForGoal,
 };

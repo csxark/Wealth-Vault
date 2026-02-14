@@ -1,81 +1,61 @@
-
 import db from '../config/db.js';
-import { corporateEntities, businessLedgers } from '../db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { entities, interCompanyLedger } from '../db/schema.js';
+import { eq, and, sql, or } from 'drizzle-orm';
+import { logAuditEvent } from './auditService.js';
 
+/**
+ * Entity Service (L3)
+ * Manages legal entities (LLCs, Trusts, etc.) for high-net-worth individuals.
+ */
 class EntityService {
     /**
-     * Create a new corporate entity
+     * Create a new legal entity
      */
     async createEntity(userId, entityData) {
-        const [newEntity] = await db.insert(corporateEntities).values({
+        const [newEntity] = await db.insert(entities).values({
             userId,
             ...entityData
         }).returning();
 
-        // Initial equity record in ledger
-        await db.insert(businessLedgers).values({
-            entityId: newEntity.id,
-            description: `Initial capitalization - ${newEntity.name}`,
-            amount: '0',
-            type: 'equity',
-            category: 'capitalization'
+        await logAuditEvent({
+            userId,
+            action: 'ENTITY_CREATE',
+            resourceType: 'entity',
+            resourceId: newEntity.id,
+            metadata: { name: newEntity.name, type: newEntity.type }
         });
 
         return newEntity;
     }
 
     /**
-     * Get user's entire corporate structure
+     * Get all entities for a user
      */
-    async getCorporateStructure(userId) {
-        const entities = await db.select().from(corporateEntities).where(eq(corporateEntities.userId, userId));
+    async getUserEntities(userId) {
+        return await db.query.entities.findMany({
+            where: eq(entities.userId, userId)
+        });
+    }
 
-        // Build hierarchy tree
-        const entityMap = {};
-        entities.forEach(e => entityMap[e.id] = { ...e, subsidiaries: [] });
-
-        const roots = [];
-        entities.forEach(e => {
-            if (e.parentEntityId && entityMap[e.parentEntityId]) {
-                entityMap[e.parentEntityId].subsidiaries.push(entityMap[e.id]);
-            } else {
-                roots.push(entityMap[e.id]);
-            }
+    /**
+     * Get entity by ID with its balance sheet summary
+     */
+    async getEntityDetails(entityId, userId) {
+        const entity = await db.query.entities.findFirst({
+            where: and(eq(entities.id, entityId), eq(entities.userId, userId))
         });
 
-        return roots;
-    }
+        if (!entity) throw new Error('Entity not found');
 
-    /**
-     * Get consolidated ledger for an entity and its subsidiaries
-     */
-    async getConsolidatedLedger(entityId) {
-        // Recursive CTE for subsidiaries
-        const subsidiariesQuery = sql`
-            WITH RECURSIVE sub_entities AS (
-                SELECT id FROM corporate_entities WHERE id = ${entityId}
-                UNION ALL
-                SELECT ce.id FROM corporate_entities ce
-                INNER JOIN sub_entities se ON ce.parent_entity_id = se.id
-            )
-            SELECT l.* FROM business_ledgers l
-            WHERE l.entity_id IN (SELECT id FROM sub_entities)
-            ORDER BY l.transaction_date DESC
-        `;
+        // Calculate "Due To" and "Due From" balances
+        const balances = await db.select({
+            type: interCompanyLedger.transactionType,
+            total: sql`sum(${interCompanyLedger.amount})`
+        }).from(interCompanyLedger)
+            .where(or(eq(interCompanyLedger.fromEntityId, entityId), eq(interCompanyLedger.toEntityId, entityId)))
+            .groupBy(interCompanyLedger.transactionType);
 
-        const result = await db.execute(subsidiariesQuery);
-        return result.rows;
-    }
-
-    /**
-     * Update entity status
-     */
-    async updateStatus(entityId, status) {
-        return await db.update(corporateEntities)
-            .set({ status, updatedAt: new Date() })
-            .where(eq(corporateEntities.id, entityId))
-            .returning();
+        return { ...entity, balances };
     }
 }
 
