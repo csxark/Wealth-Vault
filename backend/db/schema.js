@@ -1647,8 +1647,65 @@ export const entitiesRelations = relations(entities, ({ one, many }) => ({
     inboundTransactions: many(interCompanyLedger, { relationName: 'toEntity' }),
 }));
 
+
 export const interCompanyLedgerRelations = relations(interCompanyLedger, ({ one }) => ({
     fromEntity: one(entities, { fields: [interCompanyLedger.fromEntityId], references: [entities.id], relationName: 'fromEntity' }),
     toEntity: one(entities, { fields: [interCompanyLedger.toEntityId], references: [entities.id], relationName: 'toEntity' }),
     user: one(users, { fields: [interCompanyLedger.userId], references: [users.id] }),
+}));
+
+// ============================================================================
+// AI-DRIVEN TAX-LOSS HARVESTING & WASH-SALE PREVENTION (L3) (#359)
+// ============================================================================
+
+export const taxLots = pgTable('tax_lots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
+    costBasisPerUnit: numeric('cost_basis_per_unit', { precision: 18, scale: 2 }).notNull(),
+    acquiredAt: timestamp('acquired_at').notNull(),
+    soldAt: timestamp('sold_at'),
+    isSold: boolean('is_sold').default(false),
+    washSaleDisallowed: numeric('wash_sale_disallowed', { precision: 18, scale: 2 }).default('0'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const harvestOpportunities = pgTable('harvest_opportunities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    estimatedSavings: numeric('estimated_savings', { precision: 18, scale: 2 }).notNull(),
+    unrealizedLoss: numeric('unrealized_loss', { precision: 18, scale: 2 }).notNull(),
+    status: text('status').default('detected'), // 'detected', 'ignored', 'harvested'
+    detectedAt: timestamp('detected_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const washSaleLogs = pgTable('wash_sale_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    transactionDate: timestamp('transaction_date').notNull(),
+    disallowedLoss: numeric('disallowed_loss', { precision: 18, scale: 2 }).notNull(),
+    replacementLotId: uuid('replacement_lot_id').references(() => taxLots.id),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations for Tax Optimization
+export const taxLotsRelations = relations(taxLots, ({ one }) => ({
+    user: one(users, { fields: [taxLots.userId], references: [users.id] }),
+    investment: one(investments, { fields: [taxLots.investmentId], references: [investments.id] }),
+}));
+
+export const harvestOpportunitiesRelations = relations(harvestOpportunities, ({ one }) => ({
+    user: one(users, { fields: [harvestOpportunities.userId], references: [users.id] }),
+    investment: one(investments, { fields: [harvestOpportunities.investmentId], references: [investments.id] }),
+}));
+
+export const washSaleLogsRelations = relations(washSaleLogs, ({ one }) => ({
+    user: one(users, { fields: [washSaleLogs.userId], references: [users.id] }),
+    investment: one(investments, { fields: [washSaleLogs.investmentId], references: [investments.id] }),
 }));

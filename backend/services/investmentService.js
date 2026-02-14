@@ -3,7 +3,9 @@ import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.
 import eventBus from '../events/eventBus.js';
 import db from '../config/db.js';
 import { goals, goalRiskProfiles, rebalanceTriggers } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
+import taxService from './taxService.js';
+import portfolioService from './portfolioService.js';
 // Removed notificationService import - now decoupled via events
 
 /**
@@ -175,6 +177,34 @@ export const addInvestmentTransaction = async (investmentId, transactionData, us
       portfolioId: investment.portfolioId,
       userId,
     });
+
+    // 1. (L3) Cost-Basis Lot Tracking
+    if (transaction.type === 'buy') {
+      await portfolioService.addTaxLot(
+        userId,
+        investmentId,
+        transaction.quantity,
+        transaction.price,
+        transaction.date || new Date()
+      );
+    } else if (transaction.type === 'sell') {
+      // Check for Wash-Sale if selling at a loss
+      const matchingLots = await taxService.getMatchingLots(investmentId, userId, 'FIFO');
+      const avgCost = matchingLots.reduce((acc, lot) => acc + parseFloat(lot.costBasisPerUnit), 0) / (matchingLots.length || 1);
+
+      if (parseFloat(transaction.price) < avgCost) {
+        const loss = (avgCost - parseFloat(transaction.price)) * parseFloat(transaction.quantity);
+        const washRisk = await taxService.checkWashSaleRisk(userId, investmentId, new Date(), loss);
+
+        if (washRisk.isWashSale) {
+          console.warn(`[Investment Service] WASH-SALE DETECTED for user ${userId} on ${investmentId}. Loss of $${loss.toFixed(2)} will be disallowed.`);
+          // In a production system, we'd block the transaction or log it for adjustment
+        }
+      }
+
+      // 2. (L3) Actual Lot Liquidation
+      await taxService.liquidateLots(userId, investmentId, transaction.quantity, 'FIFO');
+    }
 
     // Update investment's average cost and quantity based on transaction
     await updateInvestmentMetrics(investmentId, userId);

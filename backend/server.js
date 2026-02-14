@@ -93,6 +93,7 @@ import liquidityOptimizerJob from "./jobs/liquidityOptimizerJob.js";
 import arbitrageJob from "./jobs/arbitrageJob.js";
 import riskMonitorJob from "./jobs/riskMonitorJob.js";
 import clearingJob from "./jobs/clearingJob.js";
+import taxHarvestJob from "./jobs/taxHarvestJob.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
 import marketData from "./services/marketData.js";
@@ -359,6 +360,7 @@ if (process.env.NODE_ENV !== 'test') {
     arbitrageJob.start();
     riskMonitorJob.start();
     clearingJob.start();
+  taxHarvestJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
