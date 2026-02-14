@@ -101,6 +101,7 @@ export const vaults = pgTable('vaults', {
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     currency: text('currency').default('USD'),
     isActive: boolean('is_active').default(true),
+    status: text('status').default('active'), // 'active', 'frozen'
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -1759,4 +1760,71 @@ export const anomalyLogsRelations = relations(anomalyLogs, ({ one }) => ({
 
 export const securityCircuitBreakersRelations = relations(securityCircuitBreakers, ({ one }) => ({
     user: one(users, { fields: [securityCircuitBreakers.userId], references: [users.id] }),
+}));
+
+// ============================================================================
+// MULTI-SIG GOVERNANCE & SUCCESSION PROTOCOL (L3) (#371)
+// ============================================================================
+
+export const multiSigWallets = pgTable('multi_sig_wallets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    requiredSignatures: integer('required_signatures').default(2),
+    totalExecutors: integer('total_executors').default(3),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const executorRoles = pgTable('executor_roles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    walletId: uuid('wallet_id').references(() => multiSigWallets.id, { onDelete: 'cascade' }).notNull(),
+    executorId: uuid('executor_id').references(() => users.id).notNull(), // User assigned as executor
+    role: text('role').default('standard'), // 'standard', 'admin', 'successor'
+    weight: integer('weight').default(1),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const approvalQuests = pgTable('approval_quests', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    walletId: uuid('wallet_id').references(() => multiSigWallets.id, { onDelete: 'cascade' }).notNull(),
+    resourceType: text('resource_type').notNull(), // 'vault_withdrawal', 'entity_transfer'
+    resourceId: uuid('resource_id').notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }),
+    status: text('status').default('pending'), // 'pending', 'approved', 'rejected', 'executed'
+    proposerId: uuid('proposer_id').references(() => users.id).notNull(),
+    signatures: jsonb('signatures').default([]), // List of executor IDs who signed
+    expiresAt: timestamp('expires_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const successionRules = pgTable('succession_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    triggerType: text('trigger_type').default('inactivity'), // 'inactivity', 'manual_notarized'
+    inactivityDays: integer('inactivity_days').default(90),
+    status: text('status').default('active'), // 'active', 'triggered', 'distributed'
+    distributionPlan: jsonb('distribution_plan').notNull(), // Array of { entityId, percentage, recipientId }
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations
+export const multiSigWalletsRelations = relations(multiSigWallets, ({ one, many }) => ({
+    user: one(users, { fields: [multiSigWallets.userId], references: [users.id] }),
+    executors: many(executorRoles),
+    quests: many(approvalQuests),
+}));
+
+export const executorRolesRelations = relations(executorRoles, ({ one }) => ({
+    wallet: one(multiSigWallets, { fields: [executorRoles.walletId], references: [multiSigWallets.id] }),
+    executor: one(users, { fields: [executorRoles.executorId], references: [users.id] }),
+}));
+
+export const approvalQuestsRelations = relations(approvalQuests, ({ one }) => ({
+    wallet: one(multiSigWallets, { fields: [approvalQuests.walletId], references: [multiSigWallets.id] }),
+    proposer: one(users, { fields: [approvalQuests.proposerId], references: [users.id] }),
+}));
+
+export const successionRulesRelations = relations(successionRules, ({ one }) => ({
+    user: one(users, { fields: [successionRules.userId], references: [users.id] }),
 }));
