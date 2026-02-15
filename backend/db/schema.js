@@ -1882,3 +1882,56 @@ export const rebalanceExecutionLogsRelations = relations(rebalanceExecutionLogs,
     user: one(users, { fields: [rebalanceExecutionLogs.userId], references: [users.id] }),
     strategy: one(yieldStrategies, { fields: [rebalanceExecutionLogs.strategyId], references: [yieldStrategies.id] }),
 }));
+
+// ============================================================================
+// AI-DRIVEN MONTE CARLO RETIREMENT SIMULATOR (L3) (#378)
+// ============================================================================
+
+export const retirementParameters = pgTable('retirement_parameters', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    targetRetirementAge: integer('target_retirement_age').default(65),
+    monthlyRetirementSpending: numeric('monthly_retirement_spending', { precision: 18, scale: 2 }).default('5000'),
+    expectedInflationRate: numeric('expected_inflation_rate', { precision: 5, scale: 2 }).default('2.50'),
+    expectedSocialSecurity: numeric('expected_social_security', { precision: 18, scale: 2 }).default('0'),
+    dynamicWithdrawalEnabled: boolean('dynamic_withdrawal_enabled').default(true), // Guardrails
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const stochasticSimulations = pgTable('stochastic_simulations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    numPaths: integer('num_paths').default(10000),
+    horizonYears: integer('horizon_years').default(50),
+    successProbability: numeric('success_probability', { precision: 5, scale: 2 }), // 0-100%
+    medianNetWorthAtHorizon: numeric('median_net_worth_at_horizon', { precision: 18, scale: 2 }),
+    status: text('status').default('completed'), // 'pending', 'processing', 'completed', 'failed'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const probabilityOutcomes = pgTable('probability_outcomes', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    simulationId: uuid('simulation_id').references(() => stochasticSimulations.id, { onDelete: 'cascade' }).notNull(),
+    percentile: integer('percentile').notNull(), // 10, 25, 50, 75, 90
+    year: integer('year').notNull(),
+    projectedValue: numeric('projected_value', { precision: 18, scale: 2 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations
+export const retirementParametersRelations = relations(retirementParameters, ({ one }) => ({
+    user: one(users, { fields: [retirementParameters.userId], references: [users.id] }),
+}));
+
+export const stochasticSimulationsRelations = relations(stochasticSimulations, ({ one, many }) => ({
+    user: one(users, { fields: [stochasticSimulations.userId], references: [users.id] }),
+    outcomes: many(probabilityOutcomes),
+}));
+
+export const probabilityOutcomesRelations = relations(probabilityOutcomes, ({ one }) => ({
+    simulation: one(stochasticSimulations, { fields: [probabilityOutcomes.simulationId], references: [stochasticSimulations.id] }),
+}));

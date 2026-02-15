@@ -1,7 +1,8 @@
 import db from '../config/db.js';
 import { simulationResults, expenses, fixedAssets } from '../db/schema.js';
-import { eq, gte, sql } from 'drizzle-orm';
+import { eq, gte, and, desc, sql } from 'drizzle-orm';
 import assetService from './assetService.js';
+import taxEstimator from './taxEstimator.js';
 
 class ProjectionEngine {
     /**
@@ -190,14 +191,20 @@ class ProjectionEngine {
     }
 
     /**
-     * Get user's simulation history
+     * Get seeding data for stochastic simulations (L3)
      */
-    async getSimulationHistory(userId) {
-        return await db.query.simulationResults.findMany({
-            where: eq(simulationResults.userId, userId),
-            orderBy: [desc(simulationResults.createdAt)],
-            limit: 10
-        });
+    async getCashFlowSeedingData(userId) {
+        const state = await this.getCurrentFinancialState(userId);
+
+        // Fetch future tax rates (L3 requirement)
+        const taxRate = await taxEstimator.estimateFutureTaxRate(state.monthlyIncome * 12);
+
+        return {
+            ...state,
+            taxMetadata: taxRate,
+            volatilityIndex: 0.18, // Default VIX-adjusted
+            historicalSavingsConsistency: 0.85 // 85% of months user saves
+        };
     }
 }
 

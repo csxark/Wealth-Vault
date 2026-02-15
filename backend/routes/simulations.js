@@ -1,109 +1,95 @@
 import express from 'express';
 import { protect } from '../middleware/auth.js';
-import { simulationGuard } from '../middleware/simulationGuard.js';
-import simulationEngine from '../services/simulationEngine.js';
-import riskEngine from '../services/riskEngine.js';
-import rebalancer from '../services/rebalancer.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
+import monteCarloService from '../services/monteCarloService.js';
 import db from '../config/db.js';
-import { riskProfiles, simulationResults } from '../db/schema.js';
-import { eq, desc } from 'drizzle-orm';
+import { stochasticSimulations, probabilityOutcomes, retirementParameters } from '../db/schema.js';
+import { eq, desc, and } from 'drizzle-orm';
+import { aiLimiter } from '../middleware/aiLimiter.js';
+import auditService from '../services/auditService.js';
 
 const router = express.Router();
 
 /**
  * @route   POST /api/simulations/run
- * @desc    Run a new Monte Carlo simulation
+ * @desc    Execute a new Monte Carlo retirement simulation
  */
-router.post('/run', protect, simulationGuard, async (req, res) => {
-    try {
-        const result = await simulationEngine.runMonteCarlo(req.user.id, req.body);
-        res.json({ success: true, data: result });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
+router.post('/run', protect, aiLimiter, asyncHandler(async (req, res) => {
+    const { name, numPaths, horizonYears } = req.body;
+
+    const result = await monteCarloService.runSimulation(req.user.id, {
+        name,
+        numPaths: parseInt(numPaths) || 10000,
+        horizonYears: parseInt(horizonYears) || 50
+    });
+
+    return new ApiResponse(201, result, 'Simulation completed successfully').send(res);
+}));
 
 /**
- * @route   GET /api/simulations/history
- * @desc    Get previous simulation results
+ * @route   GET /api/simulations/latest
+ * @desc    Get the latest simulation results with percentile outcomes
  */
-router.get('/history', protect, async (req, res) => {
-    try {
-        const history = await db.query.simulationResults.findMany({
-            where: eq(simulationResults.userId, req.user.id),
-            orderBy: [desc(simulationResults.createdAt)],
-            limit: 10
-        });
-        res.json({ success: true, data: history });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+router.get('/latest', protect, asyncHandler(async (req, res) => {
+    const simulation = await db.query.stochasticSimulations.findFirst({
+        where: eq(stochasticSimulations.userId, req.user.id),
+        orderBy: [desc(stochasticSimulations.createdAt)],
+        with: {
+            outcomes: true
+        }
+    });
+
+    if (!simulation) {
+        return new ApiResponse(404, null, 'No simulations found').send(res);
     }
-});
+
+    // Group outcomes by year for chart visualization (L3 requirement)
+    const groupedOutcomes = simulation.outcomes.reduce((acc, curr) => {
+        if (!acc[curr.year]) acc[curr.year] = {};
+        acc[curr.year][`p${curr.percentile}`] = curr.projectedValue;
+        return acc;
+    }, {});
+
+    return new ApiResponse(200, {
+        ...simulation,
+        outcomes: Object.entries(groupedOutcomes).map(([year, data]) => ({ year: parseInt(year), ...data }))
+    }, 'Latest simulation retrieved').send(res);
+}));
 
 /**
- * @route   GET /api/simulations/risk-metrics
- * @desc    Get aggregate portfolio risk (VaR & Beta)
+ * @route   PATCH /api/simulations/parameters
+ * @desc    Update retirement parameters
  */
-router.get('/risk-metrics', protect, async (req, res) => {
-    try {
-        const [varResult, beta] = await Promise.all([
-            riskEngine.calculatePortfolioVaR(req.user.id),
-            riskEngine.calculatePortfolioBeta(req.user.id)
-        ]);
+router.patch('/parameters', protect, asyncHandler(async (req, res) => {
+    const { targetRetirementAge, monthlyRetirementSpending, expectedInflationRate, dynamicWithdrawalEnabled } = req.body;
 
-        res.json({
-            success: true,
-            data: {
-                valueAtRisk: varResult,
-                portfolioBeta: beta,
-                riskLabel: beta > 1.2 ? 'High' : beta < 0.8 ? 'Low' : 'Market'
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
+    const [updated] = await db.insert(retirementParameters).values({
+        userId: req.user.id,
+        targetRetirementAge,
+        monthlyRetirementSpending,
+        expectedInflationRate,
+        dynamicWithdrawalEnabled
+    }).onConflictDoUpdate({
+        target: retirementParameters.userId,
+        set: {
+            targetRetirementAge,
+            monthlyRetirementSpending,
+            expectedInflationRate,
+            dynamicWithdrawalEnabled,
+            updatedAt: new Date()
+        }
+    }).returning();
 
-/**
- * @route   GET /api/simulations/rebalance-advice
- * @desc    Get AI portfolio rebalancing suggestions
- */
-router.get('/rebalance-advice', protect, async (req, res) => {
-    try {
-        const advice = await rebalancer.suggestRebalance(req.user.id);
-        res.json({ success: true, data: advice });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
+    await auditService.logAuditEvent({
+        userId: req.user.id,
+        action: 'RETIREMENT_PARAM_UPDATE',
+        resourceType: 'user',
+        resourceId: req.user.id,
+        metadata: req.body
+    });
 
-/**
- * @route   POST /api/simulations/risk-profile
- * @desc    Set or update user risk profile
- */
-router.post('/risk-profile', protect, async (req, res) => {
-    try {
-        const { riskTolerance, targetReturn, maxDrawdown, preferredAssetMix } = req.body;
-
-        const [profile] = await db.insert(riskProfiles)
-            .values({
-                userId: req.user.id,
-                riskTolerance,
-                targetReturn,
-                maxDrawdown,
-                preferredAssetMix,
-                updatedAt: new Date()
-            })
-            .onConflictDoUpdate({
-                target: riskProfiles.userId,
-                set: { riskTolerance, targetReturn, maxDrawdown, preferredAssetMix, updatedAt: new Date() }
-            })
-            .returning();
-
-        res.json({ success: true, data: profile });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
+    return new ApiResponse(200, updated, 'Retirement parameters updated').send(res);
+}));
 
 export default router;
