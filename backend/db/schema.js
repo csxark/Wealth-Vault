@@ -154,6 +154,7 @@ export const investments = pgTable('investments', {
     id: uuid('id').defaultRandom().primaryKey(),
     portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
     symbol: text('symbol').notNull(),
     name: text('name').notNull(),
     type: text('type').notNull(), // stock, crypto, etf, mutual_fund
@@ -619,6 +620,7 @@ export const portfoliosRelations = relations(portfolios, ({ one, many }) => ({
 export const investmentsRelations = relations(investments, ({ one }) => ({
     portfolio: one(portfolios, { fields: [investments.portfolioId], references: [portfolios.id] }),
     user: one(users, { fields: [investments.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [investments.vaultId], references: [vaults.id] }),
 }));
 
 export const fixedAssetsRelations = relations(fixedAssets, ({ one }) => ({
@@ -2037,4 +2039,71 @@ export const refinanceProposalsRelations = relations(refinanceProposals, ({ one 
 export const equityCollateralMapsRelations = relations(equityCollateralMaps, ({ one }) => ({
     debt: one(debts, { fields: [equityCollateralMaps.debtId], references: [debts.id] }),
     asset: one(assets, { fields: [equityCollateralMaps.assetId], references: [assets.id] }),
+}));
+
+// ============================================================================
+// INTELLIGENT DIVIDEND-GROWTH REBALANCING & CASH-DRAG ELIMINATION (L3) (#387)
+// ============================================================================
+
+export const dividendSchedules = pgTable('dividend_schedules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    symbol: text('symbol'),
+    exDividendDate: timestamp('ex_dividend_date'),
+    paymentDate: timestamp('payment_date'),
+    dividendPerShare: numeric('dividend_per_share', { precision: 18, scale: 6 }),
+    expectedAmount: numeric('expected_amount', { precision: 18, scale: 2 }),
+    actualAmount: numeric('actual_amount', { precision: 18, scale: 2 }),
+    status: text('status').default('scheduled'), // 'scheduled', 'received', 'reinvested'
+    reinvestedAt: timestamp('reinvested_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const cashDragMetrics = pgTable('cash_drag_metrics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    calculationDate: timestamp('calculation_date').defaultNow(),
+    idleCashBalance: numeric('idle_cash_balance', { precision: 18, scale: 2 }).notNull(),
+    targetCashReserve: numeric('target_cash_reserve', { precision: 18, scale: 2 }),
+    excessCash: numeric('excess_cash', { precision: 18, scale: 2 }),
+    opportunityCostDaily: numeric('opportunity_cost_daily', { precision: 18, scale: 4 }), // Lost yield per day
+    daysIdle: integer('days_idle').default(0),
+    totalDragCost: numeric('total_drag_cost', { precision: 18, scale: 2 }),
+    metadata: jsonb('metadata'),
+});
+
+export const autoReinvestConfigs = pgTable('auto_reinvest_configs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    isEnabled: boolean('is_enabled').default(true),
+    reinvestmentStrategy: text('reinvestment_strategy').default('drift_correction'), // 'drift_correction', 'high_yield_parking', 'sector_rotation'
+    minimumCashThreshold: numeric('minimum_cash_threshold', { precision: 18, scale: 2 }).default('1000'),
+    rebalanceThreshold: numeric('rebalance_threshold', { precision: 5, scale: 2 }).default('0.05'), // 5% drift triggers rebalance
+    targetAllocation: jsonb('target_allocation'), // { 'equity': 0.6, 'bonds': 0.3, 'cash': 0.1 }
+    parkingVaultId: uuid('parking_vault_id').references(() => vaults.id),
+    lastRebalanceAt: timestamp('last_rebalance_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations
+export const dividendSchedulesRelations = relations(dividendSchedules, ({ one }) => ({
+    user: one(users, { fields: [dividendSchedules.userId], references: [users.id] }),
+    investment: one(investments, { fields: [dividendSchedules.investmentId], references: [investments.id] }),
+    vault: one(vaults, { fields: [dividendSchedules.vaultId], references: [vaults.id] }),
+}));
+
+export const cashDragMetricsRelations = relations(cashDragMetrics, ({ one }) => ({
+    user: one(users, { fields: [cashDragMetrics.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [cashDragMetrics.vaultId], references: [vaults.id] }),
+}));
+
+export const autoReinvestConfigsRelations = relations(autoReinvestConfigs, ({ one }) => ({
+    user: one(users, { fields: [autoReinvestConfigs.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [autoReinvestConfigs.vaultId], references: [vaults.id] }),
+    parkingVault: one(vaults, { fields: [autoReinvestConfigs.parkingVaultId], references: [vaults.id] }),
 }));

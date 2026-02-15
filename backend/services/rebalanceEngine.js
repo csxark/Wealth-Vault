@@ -1,123 +1,238 @@
-import { db } from '../db/index.js';
-import { targetAllocations, driftLogs, portfolios } from '../db/schema.js';
+import db from '../config/db.js';
+import { autoReinvestConfigs, vaults, investments, vaultBalances } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
-import tradeOptimizer from './tradeOptimizer.js';
 import { logInfo, logError } from '../utils/logger.js';
 
+/**
+ * Rebalance Engine (L3)
+ * Advanced portfolio-drift calculation to determine the most "Alpha-positive" destination for new cash
+ */
 class RebalanceEngine {
     /**
-     * Calculates the "drift" for a portfolio compared to its targets
+     * Calculate current portfolio drift from target allocation
      */
-    async calculatePortfolioDrift(userId, portfolioId) {
-        logInfo(`Calculating drift for portfolio: ${portfolioId}`);
+    async calculatePortfolioDrift(userId, vaultId) {
+        const config = await db.query.autoReinvestConfigs.findFirst({
+            where: and(
+                eq(autoReinvestConfigs.userId, userId),
+                eq(autoReinvestConfigs.vaultId, vaultId)
+            )
+        });
 
-        try {
-            // 1. Get targets
-            const targets = await db.select()
-                .from(targetAllocations)
-                .where(and(
-                    eq(targetAllocations.userId, userId),
-                    eq(targetAllocations.portfolioId, portfolioId)
-                ));
+        if (!config || !config.targetAllocation) {
+            return { drift: {}, maxDrift: 0, needsRebalance: false };
+        }
 
-            if (targets.length === 0) return { drift: [], isBreached: false };
+        // Get current vault holdings
+        const holdings = await this.getVaultHoldings(vaultId);
+        const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
 
-            // 2. Get current actual values (mocking asset value retrieval)
-            const currentAssets = await this.getCurrentAssetValues(userId, portfolioId);
-            const totalValue = currentAssets.reduce((sum, a) => sum + a.value, 0);
+        if (totalValue === 0) {
+            return { drift: {}, maxDrift: 0, needsRebalance: false };
+        }
 
-            if (totalValue === 0) return { drift: [], isBreached: false };
+        // Calculate drift for each asset class
+        const targetAllocation = config.targetAllocation;
+        const drift = {};
+        let maxDrift = 0;
 
-            const driftResults = [];
-            let maxDrift = 0;
-            let breachDetected = false;
+        for (const [assetClass, targetWeight] of Object.entries(targetAllocation)) {
+            const currentValue = holdings
+                .filter(h => h.assetClass === assetClass)
+                .reduce((sum, h) => sum + h.value, 0);
 
-            for (const target of targets) {
-                const asset = currentAssets.find(a => a.symbol === target.symbol) || { value: 0 };
-                const actualPercentage = (asset.value / totalValue) * 100;
-                const targetPercentage = parseFloat(target.targetPercentage);
-                const drift = actualPercentage - targetPercentage;
-                const tolerance = parseFloat(target.toleranceBand || 5);
+            const currentWeight = currentValue / totalValue;
+            const driftAmount = currentWeight - targetWeight;
 
-                if (Math.abs(drift) > tolerance) {
-                    breachDetected = true;
-                }
+            drift[assetClass] = {
+                target: targetWeight,
+                current: currentWeight,
+                drift: driftAmount,
+                driftPercent: (driftAmount / targetWeight) * 100
+            };
 
-                if (Math.abs(drift) > maxDrift) {
-                    maxDrift = Math.abs(drift);
-                }
+            maxDrift = Math.max(maxDrift, Math.abs(driftAmount));
+        }
 
-                driftResults.push({
-                    symbol: target.symbol,
-                    target: targetPercentage,
-                    actual: actualPercentage,
-                    drift: drift,
-                    tolerance: tolerance,
-                    requiresTrade: Math.abs(drift) > tolerance
+        const rebalanceThreshold = parseFloat(config.rebalanceThreshold);
+        const needsRebalance = maxDrift > rebalanceThreshold;
+
+        return {
+            drift,
+            maxDrift,
+            needsRebalance,
+            totalValue,
+            config
+        };
+    }
+
+    /**
+     * Determine optimal destination for new cash based on drift
+     */
+    async determineOptimalDestination(userId, vaultId, cashAmount) {
+        const driftAnalysis = await this.calculatePortfolioDrift(userId, vaultId);
+
+        if (!driftAnalysis.needsRebalance) {
+            return {
+                action: 'HOLD',
+                reason: 'Portfolio within rebalance threshold',
+                recommendations: []
+            };
+        }
+
+        // Find most underweight asset class
+        const recommendations = [];
+        for (const [assetClass, metrics] of Object.entries(driftAnalysis.drift)) {
+            if (metrics.drift < 0) { // Underweight
+                const targetValue = driftAnalysis.totalValue * metrics.target;
+                const currentValue = driftAnalysis.totalValue * metrics.current;
+                const shortfall = targetValue - currentValue;
+
+                recommendations.push({
+                    assetClass,
+                    currentWeight: metrics.current,
+                    targetWeight: metrics.target,
+                    shortfall,
+                    suggestedAllocation: Math.min(cashAmount, shortfall),
+                    priority: Math.abs(metrics.drift)
                 });
             }
+        }
 
-            // 3. Log the drift check
-            await db.insert(driftLogs).values({
-                userId,
-                portfolioId,
-                currentAllocations: driftResults,
-                maxDriftDetected: maxDrift.toString(),
-                isBreachDetected: breachDetected
-            });
+        // Sort by priority (most underweight first)
+        recommendations.sort((a, b) => b.priority - a.priority);
+
+        return {
+            action: 'REBALANCE',
+            reason: `Max drift: ${(driftAnalysis.maxDrift * 100).toFixed(2)}%`,
+            recommendations,
+            totalCash: cashAmount
+        };
+    }
+
+    /**
+     * Execute automatic rebalance
+     */
+    async executeRebalance(userId, vaultId, cashAmount) {
+        try {
+            const destination = await this.determineOptimalDestination(userId, vaultId, cashAmount);
+
+            if (destination.action === 'HOLD') {
+                return { success: false, reason: destination.reason };
+            }
+
+            const trades = [];
+            let remainingCash = cashAmount;
+
+            for (const rec of destination.recommendations) {
+                if (remainingCash <= 0) break;
+
+                const allocationAmount = Math.min(rec.suggestedAllocation, remainingCash);
+
+                // In production, this would execute actual trades
+                trades.push({
+                    assetClass: rec.assetClass,
+                    amount: allocationAmount,
+                    action: 'BUY'
+                });
+
+                remainingCash -= allocationAmount;
+            }
+
+            // Update last rebalance timestamp
+            await db.update(autoReinvestConfigs)
+                .set({ lastRebalanceAt: new Date() })
+                .where(and(
+                    eq(autoReinvestConfigs.userId, userId),
+                    eq(autoReinvestConfigs.vaultId, vaultId)
+                ));
+
+            logInfo(`[Rebalance Engine] Executed rebalance for vault ${vaultId}: ${trades.length} trades`);
 
             return {
-                portfolioId,
-                totalValue,
-                drift: driftResults,
-                isBreached: breachDetected,
-                maxDrift
+                success: true,
+                trades,
+                cashDeployed: cashAmount - remainingCash,
+                cashRemaining: remainingCash
             };
         } catch (error) {
-            logError(`Drift calculation failed for portfolio ${portfolioId}:`, error);
+            logError('[Rebalance Engine] Rebalance execution failed:', error);
             throw error;
         }
     }
 
     /**
-     * Proposes a series of trades to bring the portfolio back into balance
+     * Get vault holdings grouped by asset class
      */
-    async generateRebalancePlan(userId, portfolioId) {
-        const driftData = await this.calculatePortfolioDrift(userId, portfolioId);
-        if (!driftData.isBreached) {
-            return { message: "Portfolio is within tolerance bands. No rebalance needed.", plan: [] };
-        }
+    async getVaultHoldings(vaultId) {
+        // Mock implementation - in production, aggregate from investments table
+        const vaultInvestments = await db.query.investments.findMany({
+            where: eq(investments.vaultId, vaultId)
+        });
 
-        const trades = [];
-        for (const d of driftData.drift) {
-            if (Math.abs(d.drift) > 0.1) { // Only trade if drift is > 0.1%
-                const tradeAmount = (d.drift / 100) * driftData.totalValue;
-                trades.push({
-                    symbol: d.symbol,
-                    action: tradeAmount > 0 ? 'sell' : 'buy',
-                    amount: Math.abs(tradeAmount),
-                    currentDrift: d.drift
-                });
-            }
-        }
-
-        // Optimize trades for tax and fees
-        const optimizedPlan = await tradeOptimizer.optimizeTrades(userId, trades);
-        return optimizedPlan;
+        return vaultInvestments.map(inv => ({
+            symbol: inv.symbol,
+            assetClass: this.classifyAsset(inv.type),
+            value: parseFloat(inv.marketValue || '0'),
+            quantity: parseFloat(inv.quantity || '0')
+        }));
     }
 
     /**
-     * Mock function to simulate fetching real-time asset values
+     * Classify investment type to asset class
      */
-    async getCurrentAssetValues(userId, portfolioId) {
-        // In a real implementation, this would query the portfolio_investments table
-        // and fetch current prices from a market data service.
-        return [
-            { symbol: 'BTC', value: 12000 },
-            { symbol: 'ETH', value: 8000 },
-            { symbol: 'AAPL', value: 5000 },
-            { symbol: 'USD', value: 1000 }
-        ];
+    classifyAsset(type) {
+        const mapping = {
+            'stock': 'equity',
+            'etf': 'equity',
+            'bond': 'bonds',
+            'mutual_fund': 'equity',
+            'crypto': 'alternative',
+            'commodity': 'alternative',
+            'real_estate': 'real_estate',
+            'cash': 'cash'
+        };
+
+        return mapping[type] || 'other';
+    }
+
+    /**
+     * Calculate expected alpha from rebalancing
+     */
+    async calculateRebalanceAlpha(userId, vaultId, cashAmount) {
+        const destination = await this.determineOptimalDestination(userId, vaultId, cashAmount);
+
+        if (destination.action === 'HOLD') {
+            return { alpha: 0, reason: 'No rebalance needed' };
+        }
+
+        // Simplified alpha calculation
+        // In production, use historical returns and covariance matrices
+        const expectedReturns = {
+            'equity': 0.08,
+            'bonds': 0.04,
+            'cash': 0.02,
+            'alternative': 0.10,
+            'real_estate': 0.06
+        };
+
+        let weightedAlpha = 0;
+        for (const rec of destination.recommendations) {
+            const expectedReturn = expectedReturns[rec.assetClass] || 0.05;
+            const weight = rec.suggestedAllocation / cashAmount;
+            weightedAlpha += expectedReturn * weight;
+        }
+
+        // Alpha is the excess return vs just holding cash
+        const cashReturn = expectedReturns['cash'];
+        const alpha = weightedAlpha - cashReturn;
+
+        return {
+            alpha: parseFloat((alpha * 100).toFixed(2)),
+            expectedReturn: parseFloat((weightedAlpha * 100).toFixed(2)),
+            cashDragCost: parseFloat((cashReturn * 100).toFixed(2)),
+            recommendations: destination.recommendations
+        };
     }
 }
 
