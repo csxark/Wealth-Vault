@@ -65,6 +65,7 @@ import rebalancingRoutes from "./routes/rebalancing.js";
 import replayRoutes from "./routes/replay.js";
 import successionRoutes from "./routes/succession.js";
 import entityRoutes from "./routes/entities.js";
+import yieldsRoutes from "./routes/yields.js";
 import { presenceTracker } from "./middleware/successionMiddleware.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
@@ -97,6 +98,8 @@ import taxHarvestJob from "./jobs/taxHarvestJob.js";
 import riskBaselineJob from "./jobs/riskBaselineJob.js";
 import yieldMonitorJob from "./jobs/yieldMonitorJob.js";
 import simulationJob from "./jobs/simulationJob.js";
+import payoutMonitor from "./jobs/payoutMonitor.js";
+import taxAuditJob from "./jobs/taxAuditJob.js";
 import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
@@ -299,6 +302,7 @@ app.use("/api/succession", userLimiter, successionRoutes);
 app.use("/api/entities", userLimiter, securityGuard, entityRoutes);
 app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 app.use("/api/forensic", userLimiter, forensicRoutes);
+app.use("/api/yields", userLimiter, yieldsRoutes);
 
 
 
@@ -373,6 +377,8 @@ if (process.env.NODE_ENV !== 'test') {
     riskBaselineJob.start();
     yieldMonitorJob.start();
     simulationJob.start();
+    payoutMonitor.start();
+    taxAuditJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
