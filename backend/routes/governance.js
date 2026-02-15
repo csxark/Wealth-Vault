@@ -8,7 +8,9 @@ import ApiResponse from '../utils/ApiResponse.js';
 import AppError from '../utils/AppError.js';
 import db from '../config/db.js';
 import { assetStepUpLogs } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
+import shieldService from '../services/shieldService.js';
+import riskEngine from '../services/riskEngine.js';
 
 const router = express.Router();
 
@@ -205,6 +207,60 @@ router.post('/multi-sig/sign/:questId', protect, asyncHandler(async (req, res) =
 router.get('/multi-sig/pending', protect, asyncHandler(async (req, res) => {
     const actions = await governanceService.getPendingActions(req.user.id);
     new ApiResponse(200, actions).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/shield/trigger
+ * @desc    Add a legal shield trigger rule
+ */
+router.post('/shield/trigger', protect, asyncHandler(async (req, res) => {
+    const { entityId, triggerType, threshold } = req.body;
+    const rule = await shieldService.addTriggerRule(req.user.id, entityId, triggerType, threshold);
+    new ApiResponse(201, rule).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/shield/activate/:triggerId
+ * @desc    Manual activation of emergency shield
+ */
+router.post('/shield/activate/:triggerId', protect, asyncHandler(async (req, res) => {
+    const result = await shieldService.activateShield(req.user.id, req.params.triggerId);
+    new ApiResponse(200, result, 'Emergency shield activated').send(res);
+}));
+
+/**
+ * @route   POST /api/governance/shield/deactivate/:lockId
+ * @desc    Consensus-based deactivation of liquidity lock
+ */
+router.post('/shield/deactivate/:lockId', protect, asyncHandler(async (req, res) => {
+    const { approverIds } = req.body;
+    const result = await shieldService.deactivateShield(req.user.id, req.params.lockId, approverIds);
+    if (!result.success) return res.status(403).json(result);
+    new ApiResponse(200, result).send(res);
+}));
+
+/**
+ * @route   GET /api/governance/shield/status
+ * @desc    Get current shielding status for user entities
+ */
+router.get('/shield/status', protect, asyncHandler(async (req, res) => {
+    const triggers = await db.query.shieldTriggers.findMany({
+        where: eq(shieldTriggers.userId, req.user.id)
+    });
+    const locks = await db.query.liquidityLocks.findMany({
+        where: and(eq(liquidityLocks.userId, req.user.id), eq(liquidityLocks.isUnlocked, false))
+    });
+    new ApiResponse(200, { triggers, activeLocks: locks }).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/shield/sensitivity
+ * @desc    Calibrate risk sensitivity levels
+ */
+router.post('/shield/sensitivity', protect, asyncHandler(async (req, res) => {
+    const { level } = req.body;
+    const result = await riskEngine.calibrateSensitivity(req.user.id, level);
+    new ApiResponse(200, result).send(res);
 }));
 
 export default router;

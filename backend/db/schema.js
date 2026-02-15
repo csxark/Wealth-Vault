@@ -2166,3 +2166,66 @@ export const harvestExecutionLogsRelations = relations(harvestExecutionLogs, ({ 
     investment: one(investments, { fields: [harvestExecutionLogs.investmentId], references: [investments.id] }),
     reinvestedInto: one(investments, { fields: [harvestExecutionLogs.reinvestedIntoId], references: [investments.id] }),
 }));
+
+// ============================================================================
+// PROACTIVE MULTI-ENTITY BANKRUPTCY SHIELDING & LIQUIDITY LOCK (L3) (#385)
+// ============================================================================
+
+export const shieldTriggers = pgTable('shield_triggers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }),
+    triggerType: text('trigger_type').notNull(), // 'credit_drop', 'legal_action', 'liquidity_crunch'
+    thresholdValue: numeric('threshold_value', { precision: 18, scale: 2 }),
+    currentValue: numeric('current_value', { precision: 18, scale: 2 }),
+    isActive: boolean('is_active').default(true),
+    sensitivityLevel: text('sensitivity_level').default('medium'), // low, medium, high, emergency
+    lastChecked: timestamp('last_checked').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const liquidityLocks = pgTable('liquidity_locks', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    lockType: text('lock_type').default('full_freeze'), // partial_withdraw_only, interest_only, full_freeze
+    reason: text('reason'),
+    triggerId: uuid('trigger_id').references(() => shieldTriggers.id),
+    expiresAt: timestamp('expires_at'),
+    isUnlocked: boolean('is_unlocked').default(false),
+    unlockedBy: uuid('unlocked_by').references(() => users.id),
+    multiSigRequired: boolean('multi_sig_required').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const entityTrustMaps = pgTable('entity_trust_maps', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceEntityId: uuid('source_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    targetTrustId: uuid('target_trust_id').references(() => corporateEntities.id).notNull(), // Treated as trust entity
+    transferRatio: numeric('transfer_ratio', { precision: 5, scale: 4 }).default('1.0000'),
+    legalBasis: text('legal_basis'),
+    isAutoTriggered: boolean('is_auto_triggered').default(true),
+    status: text('status').default('active'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations
+export const shieldTriggersRelations = relations(shieldTriggers, ({ one, many }) => ({
+    user: one(users, { fields: [shieldTriggers.userId], references: [users.id] }),
+    entity: one(corporateEntities, { fields: [shieldTriggers.entityId], references: [corporateEntities.id] }),
+    locks: many(liquidityLocks),
+}));
+
+export const liquidityLocksRelations = relations(liquidityLocks, ({ one }) => ({
+    user: one(users, { fields: [liquidityLocks.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [liquidityLocks.vaultId], references: [vaults.id] }),
+    trigger: one(shieldTriggers, { fields: [liquidityLocks.triggerId], references: [shieldTriggers.id] }),
+    unlocker: one(users, { fields: [liquidityLocks.unlockedBy], references: [users.id] }),
+}));
+
+export const entityTrustMapsRelations = relations(entityTrustMaps, ({ one }) => ({
+    user: one(users, { fields: [entityTrustMaps.userId], references: [users.id] }),
+    sourceEntity: one(corporateEntities, { fields: [entityTrustMaps.sourceEntityId], references: [corporateEntities.id] }),
+    targetTrust: one(corporateEntities, { fields: [entityTrustMaps.targetTrustId], references: [corporateEntities.id] }),
+}));
