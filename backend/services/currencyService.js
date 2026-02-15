@@ -1,4 +1,4 @@
-import { db } from '../config/db.js';
+import db from '../config/db.js';
 import { exchangeRates } from '../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import axios from 'axios';
@@ -14,7 +14,7 @@ const CACHE_DURATION = 3600000; // 1 hour in milliseconds
 export async function fetchExchangeRates(baseCurrency = 'USD') {
     const cacheKey = `rates_${baseCurrency}`;
     const cached = ratesCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         console.log(`Using cached rates for ${baseCurrency}`);
         return cached.data;
@@ -22,16 +22,16 @@ export async function fetchExchangeRates(baseCurrency = 'USD') {
 
     try {
         const apiKey = process.env.EXCHANGE_RATE_API_KEY || 'free';
-        const url = apiKey === 'free' 
+        const url = apiKey === 'free'
             ? `https://open.er-api.com/v6/latest/${baseCurrency}`
             : `https://v6.exchangerate-api.com/v6/${apiKey}/latest/${baseCurrency}`;
 
         const response = await axios.get(url, { timeout: 10000 });
-        
+
         if (response.data.result === 'success' || response.data.rates) {
             const rates = response.data.rates;
             const validUntil = new Date(response.data.time_next_update_unix * 1000);
-            
+
             // Save rates to database
             const savedRates = [];
             for (const [targetCurrency, rate] of Object.entries(rates)) {
@@ -58,7 +58,7 @@ export async function fetchExchangeRates(baseCurrency = 'USD') {
                         apiResponse: response.data.result
                     }
                 }).returning();
-                
+
                 savedRates.push(newRate);
             }
 
@@ -75,7 +75,7 @@ export async function fetchExchangeRates(baseCurrency = 'USD') {
         }
     } catch (error) {
         console.error('Error fetching exchange rates:', error.message);
-        
+
         // Fallback to database if API fails
         const dbRates = await db.select()
             .from(exchangeRates)
@@ -108,7 +108,7 @@ export async function convertAmount(amount, fromCurrency, toCurrency) {
     // Check cache first
     const cacheKey = `rate_${fromCurrency}_${toCurrency}`;
     const cached = ratesCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         return amount * cached.rate;
     }
@@ -200,9 +200,52 @@ export async function getAllRates(baseCurrency = 'USD') {
 }
 
 /**
+ * Convert amount to base currency (USD)
+ */
+export async function convertToBase(amount, fromCurrency) {
+    return await convertAmount(amount, fromCurrency, 'USD');
+}
+
+/**
  * Clear exchange rates cache
  */
 export function clearRatesCache() {
     ratesCache.clear();
     console.log('Exchange rates cache cleared');
 }
+
+/**
+ * Calculate Currency Volatility (L3)
+ * Measures the standard deviation of exchange rate changes over a period.
+ */
+export async function getCurrencyVolatility(fromCurrency, toCurrency, days = 30) {
+    const historicalRates = await db.select({
+        rate: exchangeRates.rate,
+        createdAt: exchangeRates.createdAt
+    })
+        .from(exchangeRates)
+        .where(and(
+            eq(exchangeRates.baseCurrency, fromCurrency),
+            eq(exchangeRates.targetCurrency, toCurrency),
+            gte(exchangeRates.createdAt, new Date(Date.now() - days * 24 * 60 * 60 * 1000))
+        ))
+        .orderBy(exchangeRates.createdAt, 'desc');
+
+    if (historicalRates.length < 5) return 0.01; // Default low volatility if insufficient data
+
+    const values = historicalRates.map(r => parseFloat(r.rate));
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+
+    return Math.sqrt(variance) / mean; // Coefficient of Variation as volatility proxy
+}
+
+export default {
+    fetchExchangeRates,
+    convertAmount,
+    convertToBase,
+    getExchangeRate,
+    getAllRates,
+    getCurrencyVolatility,
+    clearRatesCache
+};
