@@ -9,6 +9,7 @@ import { checkVaultAccess, isVaultOwner } from "../middleware/vaultAuth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { AppError } from "../utils/AppError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import { shieldGuard } from "../middleware/shieldGuard.js";
 import { getSimplifiedDebts } from "../services/settlementService.js";
 
 const router = express.Router();
