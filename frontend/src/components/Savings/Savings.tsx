@@ -1,144 +1,72 @@
 import React, { useState, useEffect } from 'react';
+import { Plus, Trophy } from 'lucide-react';
 import SavingsSettings from './SavingsSettings';
 import RoundUpHistory from './RoundUpHistory';
-import ChallengeCard from './ChallengeCard';
-import CreateChallengeModal from './CreateChallengeModal';
+import SavingsChallengeCard from './SavingsChallengeCard';
 import ChallengeLeaderboard from './ChallengeLeaderboard';
-import { Plus, Trophy, Target, RefreshCw } from 'lucide-react';
-import { useToast } from '../../context/ToastContext';
+import CreateChallengeModal from './CreateChallengeModal';
 
-// Mock API functions - replace with actual API calls
-const challengesAPI = {
-  getPublic: async () => {
-    // Mock data - replace with actual API call
-    return {
-      success: true,
-      data: [
-        {
-          id: '1',
-          title: 'Save $500 this month',
-          description: 'Join us in saving $500 this month through smart spending habits',
-          targetType: 'save_amount',
-          targetAmount: '500.00',
-          currency: 'USD',
-          startDate: new Date().toISOString(),
-          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          isPublic: true,
-          maxParticipants: null,
-          metadata: {
-            tags: ['savings', 'monthly'],
-            difficulty: 'medium',
-            category: 'savings'
-          },
-          creator: {
-            id: '1',
-            firstName: 'John',
-            lastName: 'Doe'
-          },
-          participantCount: 15
-        }
-      ]
-    };
-  },
-  getMy: async () => {
-    // Mock data - replace with actual API call
-    return {
-      success: true,
-      data: []
-    };
-  },
-  create: async (data: any) => {
-    // Mock response - replace with actual API call
-    return {
-      success: true,
-      data: { ...data, id: Date.now().toString() }
-    };
-  },
-  join: async (challengeId: string, targetProgress: number) => {
-    // Mock response - replace with actual API call
-    return {
-      success: true,
-      data: {
-        id: Date.now().toString(),
-        challengeId,
-        userId: 'current-user',
-        currentProgress: '0',
-        targetProgress: targetProgress.toString(),
-        status: 'active'
-      }
-    };
-  },
-  updateProgress: async (challengeId: string, progressAmount: number) => {
-    // Mock response - replace with actual API call
-    return {
-      success: true,
-      data: {
-        id: '1',
-        challengeId,
-        currentProgress: progressAmount.toString(),
-        targetProgress: '500.00',
-        status: 'active'
-      }
-    };
-  },
-  getLeaderboard: async (challengeId: string) => {
-    // Mock data - replace with actual API call
-    return {
-      success: true,
-      data: [
-        {
-          rank: 1,
-          userId: '1',
-          currentProgress: '450.00',
-          targetProgress: '500.00',
-          status: 'active',
-          progressPercentage: 90,
-          user: {
-            id: '1',
-            firstName: 'Alice',
-            lastName: 'Smith',
-            profilePicture: null
-          }
-        }
-      ]
-    };
-  }
-};
+interface Challenge {
+  id: string;
+  title: string;
+  description: string;
+  type: 'personal' | 'community';
+  targetAmount: number;
+  duration: number;
+  startDate: string;
+  endDate: string;
+  creatorId: string;
+  isActive: boolean;
+  participantCount?: number;
+  currentProgress?: number;
+  status?: 'active' | 'completed' | 'withdrawn';
+}
+
+interface LeaderboardEntry {
+  participantId: string;
+  userId: string;
+  userName: string;
+  userLastName: string;
+  currentProgress: number;
+  joinedAt: string;
+  status: 'active' | 'completed' | 'withdrawn';
+}
 
 const Savings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'roundup' | 'challenges'>('roundup');
-  const [publicChallenges, setPublicChallenges] = useState<any[]>([]);
-  const [myChallenges, setMyChallenges] = useState<any[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [userParticipatingChallenges, setUserParticipatingChallenges] = useState<Set<string>>(new Set());
+  const [userProgress, setUserProgress] = useState<Map<string, number>>(new Map());
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
-  const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
-  const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const { showToast } = useToast();
+  const [leaderboardChallenge, setLeaderboardChallenge] = useState<{
+    id: string;
+    title: string;
+    leaderboard: LeaderboardEntry[];
+    targetAmount: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (activeTab === 'challenges') {
-      loadChallenges();
-    }
-  }, [activeTab]);
+    loadChallenges();
+  }, []);
 
   const loadChallenges = async () => {
-    setLoading(true);
     try {
-      const [publicRes, myRes] = await Promise.all([
-        challengesAPI.getPublic(),
-        challengesAPI.getMy()
-      ]);
+      const response = await fetch('/api/savings/challenges');
+      if (response.ok) {
+        const data = await response.json();
+        setChallenges(data.data || []);
 
-      if (publicRes.success) {
-        setPublicChallenges(publicRes.data);
-      }
-      if (myRes.success) {
-        setMyChallenges(myRes.data);
+        // Determine which challenges user is participating in
+        const participating = new Set<string>();
+        const progress = new Map<string, number>();
+
+        // For now, we'll assume user is not participating in any challenges
+        // In a real implementation, you'd check participation status from the API
+        setUserParticipatingChallenges(participating);
+        setUserProgress(progress);
       }
     } catch (error) {
       console.error('Error loading challenges:', error);
-      showToast('Failed to load challenges', 'error');
     } finally {
       setLoading(false);
     }
@@ -146,58 +74,61 @@ const Savings: React.FC = () => {
 
   const handleCreateChallenge = async (challengeData: any) => {
     try {
-      const response = await challengesAPI.create(challengeData);
-      if (response.success) {
-        showToast('Challenge created successfully!', 'success');
-        loadChallenges();
+      const response = await fetch('/api/savings/challenges', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(challengeData),
+      });
+
+      if (response.ok) {
+        await loadChallenges(); // Reload challenges
+      } else {
+        throw new Error('Failed to create challenge');
       }
     } catch (error) {
       console.error('Error creating challenge:', error);
-      showToast('Failed to create challenge', 'error');
+      throw error;
     }
   };
 
   const handleJoinChallenge = async (challengeId: string) => {
     try {
-      // For demo, use a default target progress
-      const targetProgress = 500; // This should come from user input
-      const response = await challengesAPI.join(challengeId, targetProgress);
-      if (response.success) {
-        showToast('Successfully joined challenge!', 'success');
-        loadChallenges();
+      const response = await fetch(`/api/savings/challenges/${challengeId}/join`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        setUserParticipatingChallenges(prev => new Set([...prev, challengeId]));
+        await loadChallenges(); // Reload to get updated participant counts
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to join challenge');
       }
     } catch (error) {
       console.error('Error joining challenge:', error);
-      showToast('Failed to join challenge', 'error');
+      alert('Failed to join challenge');
     }
   };
 
-  const handleUpdateProgress = async (challengeId: string) => {
+  const handleViewLeaderboard = async (challengeId: string) => {
     try {
-      // For demo, add some progress
-      const progressAmount = 50; // This should come from user input
-      const response = await challengesAPI.updateProgress(challengeId, progressAmount);
-      if (response.success) {
-        showToast('Progress updated successfully!', 'success');
-        loadChallenges();
-      }
-    } catch (error) {
-      console.error('Error updating progress:', error);
-      showToast('Failed to update progress', 'error');
-    }
-  };
+      const challenge = challenges.find(c => c.id === challengeId);
+      if (!challenge) return;
 
-  const handleViewLeaderboard = async (challenge: any) => {
-    try {
-      const response = await challengesAPI.getLeaderboard(challenge.id);
-      if (response.success) {
-        setLeaderboardData(response.data);
-        setSelectedChallenge(challenge);
-        setIsLeaderboardOpen(true);
+      const response = await fetch(`/api/savings/challenges/${challengeId}/leaderboard`);
+      if (response.ok) {
+        const data = await response.json();
+        setLeaderboardChallenge({
+          id: challengeId,
+          title: challenge.title,
+          leaderboard: data.data || [],
+          targetAmount: challenge.targetAmount,
+        });
       }
     } catch (error) {
       console.error('Error loading leaderboard:', error);
-      showToast('Failed to load leaderboard', 'error');
     }
   };
 
@@ -206,138 +137,83 @@ const Savings: React.FC = () => {
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex flex-col gap-4 mb-10">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-cyan-700 dark:text-cyan-400">
-              Savings & Challenges
-            </h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">
-              Automatically save with round-ups and join community challenges to build better financial habits.
-            </p>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="flex gap-4 mb-8 border-b">
-          <button
-            onClick={() => setActiveTab('roundup')}
-            className={`pb-2 px-4 font-medium transition-colors ${
-              activeTab === 'roundup'
-                ? 'border-b-2 border-cyan-500 text-cyan-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Round-Up Savings
-          </button>
-          <button
-            onClick={() => setActiveTab('challenges')}
-            className={`pb-2 px-4 font-medium transition-colors flex items-center gap-2 ${
-              activeTab === 'challenges'
-                ? 'border-b-2 border-cyan-500 text-cyan-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Trophy className="h-4 w-4" />
-            Challenges
-          </button>
-        </div>
-
-        {/* Round-Up Savings Tab */}
-        {activeTab === 'roundup' && (
-          <>
-            {/* Settings Section */}
-            <div className="mb-8">
-              <SavingsSettings />
-            </div>
-
-            {/* History Section */}
-            <RoundUpHistory />
-          </>
-        )}
-
-        {/* Challenges Tab */}
-        {activeTab === 'challenges' && (
-          <div className="space-y-8">
-            {/* My Challenges Section */}
-            {myChallenges.length > 0 && (
-              <div>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                    My Challenges
-                  </h2>
-                  <button
-                    onClick={loadChallenges}
-                    className="p-2 text-gray-500 hover:text-gray-700 transition-colors"
-                    disabled={loading}
-                  >
-                    <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-                  </button>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {myChallenges.map((challenge) => (
-                    <ChallengeCard
-                      key={challenge.id}
-                      challenge={challenge}
-                      onJoin={handleJoinChallenge}
-                      onViewLeaderboard={handleViewLeaderboard}
-                      onUpdateProgress={handleUpdateProgress}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Public Challenges Section */}
+          <div className="flex items-center justify-between">
             <div>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  Public Challenges
-                </h2>
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Challenge
-                </button>
-              </div>
-
-              {loading ? (
-                <div className="text-center py-8">
-                  <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-                  <p className="text-gray-500">Loading challenges...</p>
-                </div>
-              ) : publicChallenges.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {publicChallenges.map((challenge) => (
-                    <ChallengeCard
-                      key={challenge.id}
-                      challenge={challenge}
-                      onJoin={handleJoinChallenge}
-                      onViewLeaderboard={handleViewLeaderboard}
-                      onUpdateProgress={handleUpdateProgress}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <Target className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                    No challenges available
-                  </h3>
-                  <p className="text-gray-500 mb-6">
-                    Be the first to create a financial challenge for the community!
-                  </p>
-                  <button
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-                  >
-                    Create Your First Challenge
-                  </button>
-                </div>
-              )}
+              <h1 className="text-2xl md:text-3xl font-bold text-cyan-700 dark:text-cyan-400">
+                Savings & Challenges
+              </h1>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">
+                Automatically save the difference when you spend and participate in gamified savings challenges.
+              </p>
             </div>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Create Challenge
+            </button>
           </div>
-        )}
+        </div>
+
+        {/* Savings Round-Up Section */}
+        <div className="mb-12">
+          <div className="flex items-center gap-2 mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Savings Round-Up
+            </h2>
+          </div>
+          <div className="mb-8">
+            <SavingsSettings />
+          </div>
+          <RoundUpHistory />
+        </div>
+
+        {/* Challenges Section */}
+        <div>
+          <div className="flex items-center gap-2 mb-6">
+            <Trophy className="w-5 h-5 text-yellow-500" />
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Savings Challenges
+            </h2>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-600 mx-auto"></div>
+              <p className="text-gray-500 dark:text-gray-400 mt-2">Loading challenges...</p>
+            </div>
+          ) : challenges.length === 0 ? (
+            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                No challenges yet
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400 mb-6">
+                Be the first to create a savings challenge and motivate others to save!
+              </p>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+              >
+                Create Your First Challenge
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {challenges.map((challenge) => (
+                <SavingsChallengeCard
+                  key={challenge.id}
+                  challenge={challenge}
+                  onJoin={handleJoinChallenge}
+                  onViewLeaderboard={handleViewLeaderboard}
+                  isParticipating={userParticipatingChallenges.has(challenge.id)}
+                  userProgress={userProgress.get(challenge.id) || 0}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Modals */}
         <CreateChallengeModal
@@ -346,13 +222,13 @@ const Savings: React.FC = () => {
           onCreateChallenge={handleCreateChallenge}
         />
 
-        {selectedChallenge && (
+        {leaderboardChallenge && (
           <ChallengeLeaderboard
-            isOpen={isLeaderboardOpen}
-            onClose={() => setIsLeaderboardOpen(false)}
-            challengeTitle={selectedChallenge.title}
-            leaderboard={leaderboardData}
-            currency={selectedChallenge.currency}
+            challengeId={leaderboardChallenge.id}
+            challengeTitle={leaderboardChallenge.title}
+            leaderboard={leaderboardChallenge.leaderboard}
+            targetAmount={leaderboardChallenge.targetAmount}
+            onClose={() => setLeaderboardChallenge(null)}
           />
         )}
       </div>
