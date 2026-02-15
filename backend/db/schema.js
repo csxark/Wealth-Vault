@@ -1935,3 +1935,54 @@ export const stochasticSimulationsRelations = relations(stochasticSimulations, (
 export const probabilityOutcomesRelations = relations(probabilityOutcomes, ({ one }) => ({
     simulation: one(stochasticSimulations, { fields: [probabilityOutcomes.simulationId], references: [stochasticSimulations.id] }),
 }));
+
+// ============================================================================
+// AUTONOMOUS CROSS-BORDER FX ARBITRAGE & SMART SETTLEMENT (L3) (#379)
+// ============================================================================
+
+export const fxHedgingRules = pgTable('fx_hedging_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    fromCurrency: text('from_currency').notNull(),
+    toCurrency: text('to_currency').notNull(),
+    hedgeRatio: numeric('hedge_ratio', { precision: 5, scale: 2 }).default('0.50'), // 0.0 to 1.0
+    thresholdVolatility: numeric('threshold_volatility', { precision: 5, scale: 2 }).default('0.02'), // 2% 
+    status: text('status').default('active'), // 'active', 'paused'
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const currencySwapLogs = pgTable('currency_swap_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    fromCurrency: text('from_currency').notNull(),
+    toCurrency: text('to_currency').notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    exchangeRate: numeric('exchange_rate', { precision: 18, scale: 6 }).notNull(),
+    arbitrageAlpha: numeric('arbitrage_alpha', { precision: 18, scale: 2 }).default('0'), // Estimated savings vs market
+    swapType: text('swap_type').notNull(), // 'triangular', 'direct', 'rebalancing'
+    status: text('status').default('completed'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const conversionCorridors = pgTable('conversion_corridors', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    fromEntityId: uuid('from_entity_id').references(() => entities.id, { onDelete: 'cascade' }).notNull(),
+    toEntityId: uuid('to_entity_id').references(() => entities.id, { onDelete: 'cascade' }).notNull(),
+    optimalCurrency: text('optimal_currency').notNull(),
+    lastSpreadObserved: numeric('last_spread_observed', { precision: 18, scale: 4 }),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations
+export const fxHedgingRulesRelations = relations(fxHedgingRules, ({ one }) => ({
+    user: one(users, { fields: [fxHedgingRules.userId], references: [users.id] }),
+}));
+
+export const currencySwapLogsRelations = relations(currencySwapLogs, ({ one }) => ({
+    user: one(users, { fields: [currencySwapLogs.userId], references: [users.id] }),
+}));
+
+export const conversionCorridorsRelations = relations(conversionCorridors, ({ one }) => ({
+    fromEntity: one(entities, { fields: [conversionCorridors.fromEntityId], references: [entities.id] }),
+    toEntity: one(entities, { fields: [conversionCorridors.toEntityId], references: [entities.id] }),
+}));

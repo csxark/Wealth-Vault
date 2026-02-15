@@ -1,63 +1,117 @@
 import db from '../config/db.js';
-import { fxTransactions, currencyWallets } from '../db/schema.js';
-import walletService from './walletService.js';
+import { currencySwapLogs, fxHedgingRules } from '../db/schema.js';
+import { eq, and, sql } from 'drizzle-orm';
 import currencyService from './currencyService.js';
-import { eq } from 'drizzle-orm';
+import auditService from './auditService.js';
 
+/**
+ * FX Engine (L3)
+ * Sophisticated FX math for arbitrage, hedging, and settlement routing.
+ */
 class FXEngine {
     /**
-     * Perform currency conversion
+     * Detect triangular arbitrage opportunities
+     * Example: USD -> EUR -> GBP -> USD
      */
-    async convertCurrency(userId, { sourceCurrency, targetCurrency, amount }) {
-        const sourceAmount = parseFloat(amount);
+    async detectTriangularArbitrage(baseCurrency = 'USD') {
+        const currencies = ['USD', 'EUR', 'GBP', 'JPY', 'INR']; // Core corridors
+        let opportunities = [];
 
-        // 1. Get Exchange Rate via CurrencyService (Standardized)
-        // Uses DB cache or API fetch
-        const rate = await currencyService.getExchangeRate(sourceCurrency, targetCurrency);
-        if (!rate) throw new Error(`Exchange rate for ${sourceCurrency}/${targetCurrency} not found`);
+        for (const mid1 of currencies) {
+            if (mid1 === baseCurrency) continue;
+            for (const mid2 of currencies) {
+                if (mid2 === baseCurrency || mid2 === mid1) continue;
 
-        const feePercent = 0.005; // 0.5% standard fee
-        const targetAmount = sourceAmount * rate * (1 - feePercent);
-        const fee = sourceAmount * rate * feePercent;
+                // Path: Base -> Mid1 -> Mid2 -> Base
+                const rate1 = await currencyService.getExchangeRate(baseCurrency, mid1);
+                const rate2 = await currencyService.getExchangeRate(mid1, mid2);
+                const rate3 = await currencyService.getExchangeRate(mid2, baseCurrency);
 
-        return await db.transaction(async (tx) => {
-            // 2. Load/Create wallets
-            const sourceWallet = await walletService.getOrCreateWallet(userId, sourceCurrency);
-            const targetWallet = await walletService.getOrCreateWallet(userId, targetCurrency);
+                if (rate1 && rate2 && rate3) {
+                    const finalAmount = 1 * rate1 * rate2 * rate3;
+                    const spread = (finalAmount - 1) * 100; // in percentage
 
-            if (parseFloat(sourceWallet.balance) < sourceAmount) {
-                throw new Error('Insufficient funds in source wallet');
+                    if (spread > 0.05) { // 0.05% threshold for L3 arbitrage
+                        opportunities.push({
+                            path: [baseCurrency, mid1, mid2, baseCurrency],
+                            spread,
+                            expectedYield: finalAmount
+                        });
+                    }
+                }
             }
-
-            // 3. Update balances
-            await walletService.updateBalance(sourceWallet.id, -sourceAmount, tx);
-            await walletService.updateBalance(targetWallet.id, targetAmount, tx);
-
-            // 4. Record transaction
-            const [transaction] = await tx.insert(fxTransactions).values({
-                userId,
-                sourceWalletId: sourceWallet.id,
-                targetWalletId: targetWallet.id,
-                sourceCurrency,
-                targetCurrency,
-                sourceAmount: sourceAmount.toString(),
-                targetAmount: targetAmount.toString(),
-                exchangeRate: rate.toString(),
-                fee: fee.toString(),
-                status: 'completed'
-            }).returning();
-
-            return transaction;
-        });
+        }
+        return opportunities.sort((a, b) => b.spread - a.spread);
     }
 
     /**
-     * Get transaction history
+     * Calculate Hedging Requirement
+     * Uses volatility indexing to determine if a forward hedge is needed.
      */
-    async getHistory(userId) {
-        return await db.select().from(fxTransactions)
-            .where(eq(fxTransactions.userId, userId))
-            .orderBy(fxTransactions.createdAt);
+    async calculateHedgingRequirement(userId, fromCurrency, toCurrency, amount) {
+        const [rule] = await db.select().from(fxHedgingRules)
+            .where(and(
+                eq(fxHedgingRules.userId, userId),
+                eq(fxHedgingRules.fromCurrency, fromCurrency),
+                eq(fxHedgingRules.toCurrency, toCurrency)
+            ));
+
+        if (!rule || rule.status !== 'active') return null;
+
+        // Fetch real-time volatility (L3: high-frequency variance check)
+        const volatility = await currencyService.getCurrencyVolatility(fromCurrency, toCurrency);
+
+        if (volatility >= parseFloat(rule.thresholdVolatility)) {
+            const hedgeAmount = amount * parseFloat(rule.hedgeRatio);
+            return {
+                isHedgeRequired: true,
+                hedgeAmount,
+                volatility,
+                reason: `Volatility ${volatility.toFixed(4)} exceeded threshold ${rule.thresholdVolatility}`
+            };
+        }
+
+        return { isHedgeRequired: false, volatility };
+    }
+
+    /**
+     * Record a Smart Currency Swap
+     */
+    async recordSwap(userId, swapData) {
+        const { fromCurrency, toCurrency, amount, exchangeRate, arbitrageAlpha, swapType } = swapData;
+
+        const [log] = await db.insert(currencySwapLogs).values({
+            userId,
+            fromCurrency,
+            toCurrency,
+            amount,
+            exchangeRate,
+            arbitrageAlpha,
+            swapType,
+            status: 'completed'
+        }).returning();
+
+        return log;
+    }
+
+    /**
+     * Create or Update Hedging Rule
+     */
+    async upsertHedgingRule(userId, data) {
+        const { fromCurrency, toCurrency, hedgeRatio, thresholdVolatility } = data;
+
+        const [rule] = await db.insert(fxHedgingRules).values({
+            userId,
+            fromCurrency,
+            toCurrency,
+            hedgeRatio: hedgeRatio.toString(),
+            thresholdVolatility: thresholdVolatility.toString()
+        }).onConflictDoUpdate({
+            target: [fxHedgingRules.userId, fxHedgingRules.fromCurrency, fxHedgingRules.toCurrency],
+            set: { hedgeRatio: hedgeRatio.toString(), thresholdVolatility: thresholdVolatility.toString() }
+        }).returning();
+
+        return rule;
     }
 }
 
