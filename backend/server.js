@@ -53,6 +53,7 @@ import financialHealthRoutes from "./routes/financialHealth.js";
 import challengesRoutes from "./routes/challenges.js";
 import billsRoutes from "./routes/bills.js";
 import debtRoutes from "./routes/debts.js";
+import emergencyFundRoutes from "./routes/emergencyFund.js";
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 
 

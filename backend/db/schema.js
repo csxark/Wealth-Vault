@@ -1076,7 +1076,9 @@ export const usersRelations = relations(users, ({ many }) => ({
     receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
     bankAccounts: many(bankAccounts),
     bankTransactions: many(bankTransactions),
+    emergencyFundGoals: many(emergencyFundGoals),
 }));
+
 
 
 
@@ -1373,6 +1375,34 @@ export const challengeParticipantsRelations = relations(challengeParticipants, (
     }),
     user: one(users, {
         fields: [challengeParticipants.userId],
+        references: [users.id],
+    }),
+}));
+
+// Emergency Fund Goals Table
+export const emergencyFundGoals = pgTable('emergency_fund_goals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    targetMonths: integer('target_months').notNull().default(3), // 3-6 months of expenses
+    targetAmount: numeric('target_amount', { precision: 12, scale: 2 }).notNull(),
+    currentSavings: numeric('current_savings', { precision: 12, scale: 2 }).default('0'),
+    currency: text('currency').default('USD'),
+    status: text('status').default('active'), // 'active', 'completed', 'paused'
+    monthlyExpenses: numeric('monthly_expenses', { precision: 12, scale: 2 }).default('0'), // For calculation
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({
+        lastContribution: null,
+        totalContributions: 0,
+        contributionHistory: []
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Emergency Fund Goals Relations
+export const emergencyFundGoalsRelations = relations(emergencyFundGoals, ({ one }) => ({
+    user: one(users, {
+        fields: [emergencyFundGoals.userId],
         references: [users.id],
     }),
 }));
