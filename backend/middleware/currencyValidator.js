@@ -1,45 +1,42 @@
-import { body, query } from 'express-validator';
+import { ApiResponse } from '../utils/ApiResponse.js';
+import currencyService from '../services/currencyService.js';
+import db from '../config/db.js';
+import { vaultBalances } from '../db/schema.js';
+import { eq, sql } from 'drizzle-orm';
 
 /**
- * Currency Validator
+ * Currency Validator Middleware (L3)
+ * Ensures that multi-currency settlements have sufficient liquidity and valid corridors.
  */
+export const validateSettlementLiquidity = async (req, res, next) => {
+    const { fromEntityId, amountUSD, currency = 'USD' } = req.body;
 
-export const validateCurrencyCode = [
-    body('currencyCode')
-        .isLength({ min: 3, max: 3 })
-        .withMessage('Currency code must be exactly 3 characters (e.g., USD)')
-        .isUppercase()
-        .withMessage('Currency code must be uppercase')
-];
-
-export const validateConversion = [
-    body('amount').isFloat({ min: 0 }).withMessage('Amount must be positive'),
-    body('from').isLength({ min: 3, max: 3 }).isUppercase(),
-    body('to').isLength({ min: 3, max: 3 }).isUppercase()
-];
-
-export const validateHedge = [
-    body('notionalAmount').isFloat({ min: 0.01 }).withMessage('Notional amount must be greater than zero'),
-    body('hedgeType').isIn(['forward', 'option', 'swap']).withMessage('Invalid hedge type'),
-    body('expiryDate').optional().isISO8601().withMessage('Invalid expiry date')
-];
-
-/**
- * Check if the currency is supported by the system
- */
-export const isSupportedCurrency = (req, res, next) => {
-    const supported = ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SGD', 'BTC', 'ETH'];
-    const { from, to, currencyCode } = req.body;
-
-    const codesToCheck = [from, to, currencyCode].filter(Boolean);
-
-    for (const code of codesToCheck) {
-        if (!supported.includes(code)) {
-            return res.status(400).json({
-                success: false,
-                message: `Currency ${code} is not currently supported for real-time tracking.`
-            });
-        }
+    if (!fromEntityId || !amountUSD) {
+        return new ApiResponse(400, null, 'Entity and amount are required for settlement').send(res);
     }
-    next();
+
+    try {
+        // 1. Check aggregate liquidity across all vaults for the given entity
+        const balances = await db.select({
+            totalInUSD: sql`SUM(CASE 
+                WHEN ${vaultBalances.currency} = 'USD' THEN ${vaultBalances.balance}
+                ELSE ${vaultBalances.balance} * 1.0 -- Placeholder: in real system we'd join with rates
+            END)`
+        })
+            .from(vaultBalances)
+            .where(eq(vaultBalances.vaultId, fromEntityId)); // Simplified: using vaultId as proxy for entity account
+
+        const totalAvailable = parseFloat(balances[0]?.totalInUSD || 0);
+
+        if (totalAvailable < parseFloat(amountUSD)) {
+            return new ApiResponse(403, {
+                required: amountUSD,
+                available: totalAvailable
+            }, 'Insufficient liquidity for cross-entity settlement').send(res);
+        }
+
+        next();
+    } catch (error) {
+        next(error);
+    }
 };

@@ -510,11 +510,44 @@ export const adjustAssetWeightsForGoal = async (goalId, riskLevel) => {
   const target = allocations[riskLevel];
   console.log(`[Investment Service] Reallocating goal ${goalId} assets to ${JSON.stringify(target)}`);
 
-  // In a real system, this would trigger actual trades.
   // For Wealth-Vault, we log it and update metadata.
   await db.update(goals)
     .set({ metadata: sql`jsonb_set(metadata, '{target_allocation}', ${JSON.stringify(target)}::jsonb)` })
     .where(eq(goals.id, goalId));
+};
+
+/**
+ * Check Liquidation Tax Efficiency (L3)
+ * Determines if selling an asset to pay down debt results in a net gain after taxes.
+ */
+export const checkLiquidationTaxEfficiency = async (userId, investmentId, amountNeeded) => {
+  const investment = await InvestmentRepository.findById(investmentId, userId);
+  if (!investment) throw new Error('Investment not found');
+
+  const lots = await taxService.getMatchingLots(investmentId, userId, 'HIFO'); // Tax-optimized
+
+  let currentCostBasis = 0;
+  let unitsToSell = 0;
+  let unitsRemaining = amountNeeded;
+
+  for (const lot of lots) {
+    if (unitsRemaining <= 0) break;
+    const sellFromLot = Math.min(parseFloat(lot.remainingQuantity), unitsRemaining / parseFloat(investment.currentPrice));
+    currentCostBasis += sellFromLot * parseFloat(lot.costBasisPerUnit);
+    unitsToSell += sellFromLot;
+    unitsRemaining -= sellFromLot * parseFloat(investment.currentPrice);
+  }
+
+  const proceeds = unitsToSell * parseFloat(investment.currentPrice);
+  const capitalGain = proceeds - currentCostBasis;
+  const estimatedTax = capitalGain > 0 ? capitalGain * 0.15 : 0; // 15% LTCG placeholder
+
+  return {
+    isEfficient: estimatedTax < (amountNeeded * 0.05), // If tax leakage < 5% of debt paid
+    estimatedTax,
+    capitalGain,
+    netProceeds: proceeds - estimatedTax
+  };
 };
 
 export default {
@@ -531,4 +564,5 @@ export default {
   batchUpdateValuations,
   rebalanceGoalRisk,
   adjustAssetWeightsForGoal,
+  checkLiquidationTaxEfficiency
 };

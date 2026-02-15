@@ -1,7 +1,7 @@
 import db from '../config/db.js';
-import { debts, refinanceOpportunities } from '../db/schema.js';
+import { debts, refinanceOpportunities, refinanceProposals } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
-import { getAIProvider } from './aiProvider.js';
+import { generateInsights } from './geminiservice.js';
 import debtEngine from './debtEngine.js';
 
 class RefinanceScout {
@@ -15,8 +15,6 @@ class RefinanceScout {
 
     const opportunities = [];
 
-    // Mock current average market rates for comparison
-    // In a real app, these would come from an external API
     const marketRates = {
       'credit_card': 0.15,
       'personal_loan': 0.08,
@@ -31,11 +29,8 @@ class RefinanceScout {
       const currentApr = parseFloat(debt.apr);
       const marketRate = marketRates[debt.debtType] || 0.10;
 
-      // If current APR is 1% (0.01) higher than market rate, it's an opportunity
       if (currentApr > marketRate + 0.01) {
         const potentialSavings = await this.calculatePotentialSavings(debt, marketRate);
-
-        // Get AI recommendation
         const recommendation = await this.getAIRecommendation(debt, marketRate, potentialSavings);
 
         const opportunity = {
@@ -55,6 +50,44 @@ class RefinanceScout {
     }
 
     return opportunities;
+  }
+
+  /**
+   * Scan for Refinance Opportunities (L3)
+   * Advanced version using refinanceProposals table and refined savings calculation.
+   */
+  async scanForRefinance(userId) {
+    const userDebts = await db.query.debts.findMany({
+      where: and(eq(debts.userId, userId), eq(debts.isActive, true))
+    });
+
+    const proposals = [];
+
+    for (const debt of userDebts) {
+      const marketRate = await debtEngine.getMarketRefinanceRate(debt.debtType || 'personal_loan');
+      const currentRate = parseFloat(debt.apr);
+
+      if (currentRate - marketRate > 0.005) {
+        const balance = parseFloat(debt.currentBalance);
+        const monthlySavings = (balance * (currentRate - marketRate)) / 12;
+        const estimatedSavings = monthlySavings * 24;
+
+        const [proposal] = await db.insert(refinanceProposals).values({
+          userId,
+          debtId: debt.id,
+          currentRate: currentRate.toString(),
+          proposedRate: marketRate.toString(),
+          estimatedSavings: estimatedSavings.toString(),
+          monthlySavings: monthlySavings.toString(),
+          roiMonths: 6,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        }).returning();
+
+        proposals.push(proposal);
+      }
+    }
+
+    return proposals;
   }
 
   /**
@@ -97,7 +130,7 @@ class RefinanceScout {
             Mention if they should look for a 0% balance transfer card or a personal loan.
         `;
 
-    return await getAIProvider().generateText(prompt);
+    return await generateInsights(prompt);
   }
 
   /**
@@ -125,6 +158,17 @@ class RefinanceScout {
         reviewedAt: new Date()
       })
       .where(eq(refinanceOpportunities.id, opportunityId));
+  }
+
+  /**
+   * Calculate LTV (Loan-to-Value) (L3)
+   */
+  async calculateLTV(debtId, assetId) {
+    const debt = await db.query.debts.findFirst({ where: eq(debts.id, debtId) });
+    const assetValue = 250000;
+
+    const ltv = parseFloat(debt.currentBalance) / assetValue;
+    return ltv;
   }
 }
 

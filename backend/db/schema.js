@@ -1921,3 +1921,159 @@ export const rebalanceExecutionLogsRelations = relations(rebalanceExecutionLogs,
     user: one(users, { fields: [rebalanceExecutionLogs.userId], references: [users.id] }),
     strategy: one(yieldStrategies, { fields: [rebalanceExecutionLogs.strategyId], references: [yieldStrategies.id] }),
 }));
+
+// ============================================================================
+// AI-DRIVEN MONTE CARLO RETIREMENT SIMULATOR (L3) (#378)
+// ============================================================================
+
+export const retirementParameters = pgTable('retirement_parameters', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    targetRetirementAge: integer('target_retirement_age').default(65),
+    monthlyRetirementSpending: numeric('monthly_retirement_spending', { precision: 18, scale: 2 }).default('5000'),
+    expectedInflationRate: numeric('expected_inflation_rate', { precision: 5, scale: 2 }).default('2.50'),
+    expectedSocialSecurity: numeric('expected_social_security', { precision: 18, scale: 2 }).default('0'),
+    dynamicWithdrawalEnabled: boolean('dynamic_withdrawal_enabled').default(true), // Guardrails
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const stochasticSimulations = pgTable('stochastic_simulations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    numPaths: integer('num_paths').default(10000),
+    horizonYears: integer('horizon_years').default(50),
+    successProbability: numeric('success_probability', { precision: 5, scale: 2 }), // 0-100%
+    medianNetWorthAtHorizon: numeric('median_net_worth_at_horizon', { precision: 18, scale: 2 }),
+    status: text('status').default('completed'), // 'pending', 'processing', 'completed', 'failed'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const probabilityOutcomes = pgTable('probability_outcomes', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    simulationId: uuid('simulation_id').references(() => stochasticSimulations.id, { onDelete: 'cascade' }).notNull(),
+    percentile: integer('percentile').notNull(), // 10, 25, 50, 75, 90
+    year: integer('year').notNull(),
+    projectedValue: numeric('projected_value', { precision: 18, scale: 2 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations
+export const retirementParametersRelations = relations(retirementParameters, ({ one }) => ({
+    user: one(users, { fields: [retirementParameters.userId], references: [users.id] }),
+}));
+
+export const stochasticSimulationsRelations = relations(stochasticSimulations, ({ one, many }) => ({
+    user: one(users, { fields: [stochasticSimulations.userId], references: [users.id] }),
+    outcomes: many(probabilityOutcomes),
+}));
+
+export const probabilityOutcomesRelations = relations(probabilityOutcomes, ({ one }) => ({
+    simulation: one(stochasticSimulations, { fields: [probabilityOutcomes.simulationId], references: [stochasticSimulations.id] }),
+}));
+
+// ============================================================================
+// AUTONOMOUS CROSS-BORDER FX ARBITRAGE & SMART SETTLEMENT (L3) (#379)
+// ============================================================================
+
+export const fxHedgingRules = pgTable('fx_hedging_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    fromCurrency: text('from_currency').notNull(),
+    toCurrency: text('to_currency').notNull(),
+    hedgeRatio: numeric('hedge_ratio', { precision: 5, scale: 2 }).default('0.50'), // 0.0 to 1.0
+    thresholdVolatility: numeric('threshold_volatility', { precision: 5, scale: 2 }).default('0.02'), // 2% 
+    status: text('status').default('active'), // 'active', 'paused'
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const currencySwapLogs = pgTable('currency_swap_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    fromCurrency: text('from_currency').notNull(),
+    toCurrency: text('to_currency').notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    exchangeRate: numeric('exchange_rate', { precision: 18, scale: 6 }).notNull(),
+    arbitrageAlpha: numeric('arbitrage_alpha', { precision: 18, scale: 2 }).default('0'), // Estimated savings vs market
+    swapType: text('swap_type').notNull(), // 'triangular', 'direct', 'rebalancing'
+    status: text('status').default('completed'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const conversionCorridors = pgTable('conversion_corridors', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    fromEntityId: uuid('from_entity_id').references(() => entities.id, { onDelete: 'cascade' }).notNull(),
+    toEntityId: uuid('to_entity_id').references(() => entities.id, { onDelete: 'cascade' }).notNull(),
+    optimalCurrency: text('optimal_currency').notNull(),
+    lastSpreadObserved: numeric('last_spread_observed', { precision: 18, scale: 4 }),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations
+export const fxHedgingRulesRelations = relations(fxHedgingRules, ({ one }) => ({
+    user: one(users, { fields: [fxHedgingRules.userId], references: [users.id] }),
+}));
+
+export const currencySwapLogsRelations = relations(currencySwapLogs, ({ one }) => ({
+    user: one(users, { fields: [currencySwapLogs.userId], references: [users.id] }),
+}));
+
+export const conversionCorridorsRelations = relations(conversionCorridors, ({ one }) => ({
+    fromEntity: one(entities, { fields: [conversionCorridors.fromEntityId], references: [entities.id] }),
+    toEntity: one(entities, { fields: [conversionCorridors.toEntityId], references: [entities.id] }),
+}));
+
+// ============================================================================
+// INTELLIGENT DEBT-TO-EQUITY ARBITRAGE & REFINANCE OPTIMIZATION (L3) (#380)
+// ============================================================================
+
+export const debtArbitrageRules = pgTable('debt_arbitrage_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    maxLtvRatio: numeric('max_ltv_ratio', { precision: 5, scale: 2 }).default('0.75'), // 75% max LTV for safety
+    minInterestSpread: numeric('min_interest_spread', { precision: 5, scale: 2 }).default('0.01'), // 1% minimum spread to trigger
+    autoExecute: boolean('auto_execute').default(false),
+    status: text('status').default('active'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const refinanceProposals = pgTable('refinance_proposals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    currentRate: numeric('current_rate', { precision: 8, scale: 4 }).notNull(),
+    proposedRate: numeric('proposed_rate', { precision: 8, scale: 4 }).notNull(),
+    estimatedSavings: numeric('estimated_savings', { precision: 18, scale: 2 }).notNull(),
+    monthlySavings: numeric('monthly_savings', { precision: 18, scale: 2 }).notNull(),
+    roiMonths: integer('roi_months').notNull(), // Break-even point
+    status: text('status').default('pending'), // 'pending', 'accepted', 'ignored', 'expired'
+    expiresAt: timestamp('expires_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const equityCollateralMaps = pgTable('equity_collateral_maps', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    assetId: uuid('asset_id').references(() => assets.id, { onDelete: 'cascade' }).notNull(), // Could be property or investment
+    collateralAmount: numeric('collateral_amount', { precision: 18, scale: 2 }).notNull(),
+    ltvAtLock: numeric('ltv_at_lock', { precision: 5, scale: 2 }),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations
+export const debtArbitrageRulesRelations = relations(debtArbitrageRules, ({ one }) => ({
+    user: one(users, { fields: [debtArbitrageRules.userId], references: [users.id] }),
+}));
+
+export const refinanceProposalsRelations = relations(refinanceProposals, ({ one }) => ({
+    user: one(users, { fields: [refinanceProposals.userId], references: [users.id] }),
+    debt: one(debts, { fields: [refinanceProposals.debtId], references: [debts.id] }),
+}));
+
+export const equityCollateralMapsRelations = relations(equityCollateralMaps, ({ one }) => ({
+    debt: one(debts, { fields: [equityCollateralMaps.debtId], references: [debts.id] }),
+    asset: one(assets, { fields: [equityCollateralMaps.assetId], references: [assets.id] }),
+}));

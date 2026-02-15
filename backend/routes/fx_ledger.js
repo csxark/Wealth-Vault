@@ -23,10 +23,31 @@ router.get('/history', protect, async (req, res) => {
     res.json({ success: true, data: history });
 });
 
+import ledgerService from '../services/ledgerService.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+
 // Get AI arbitrage signals
-router.get('/signals', protect, async (req, res) => {
-    const signals = await arbitrageAI.getActiveSignals();
-    res.json({ success: true, data: signals });
-});
+router.get('/signals', protect, asyncHandler(async (req, res) => {
+    const opportunities = await fxEngine.detectTriangularArbitrage();
+    new ApiResponse(200, opportunities).send(res);
+}));
+
+/**
+ * @desc Get optimal settlement path for inter-entity transfer
+ */
+router.get('/optimize-path', protect, asyncHandler(async (req, res) => {
+    const { fromEntityId, toEntityId, amountUSD } = req.query;
+    const path = await ledgerService.optimizeSettlementPath(req.user.id, fromEntityId, toEntityId, parseFloat(amountUSD));
+    new ApiResponse(200, path).send(res);
+}));
+
+/**
+ * @desc Create/Update Hedging Rule
+ */
+router.post('/hedging', protect, asyncHandler(async (req, res) => {
+    const rule = await fxEngine.upsertHedgingRule(req.user.id, req.body);
+    new ApiResponse(201, rule).send(res);
+}));
 
 export default router;

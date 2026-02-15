@@ -4,11 +4,41 @@ import { eq, and, sql, or } from 'drizzle-orm';
 import currencyService from './currencyService.js';
 import { logAuditEvent } from './auditService.js';
 
+import fxEngine from './fxEngine.js';
+
 /**
  * Inter-Company Ledger Service (L3)
  * Handles double-entry validation and inter-entity fund movement.
  */
 class LedgerService {
+    /**
+     * Optimize Settlement Path (L3)
+     * Detects if an inter-company settlement is cheaper via a triangular route or specific currency.
+     */
+    async optimizeSettlementPath(userId, fromEntityId, toEntityId, amountUSD) {
+        // 1. Detect any FX Arbitrage opportunities that can be leveraged
+        const opportunities = await fxEngine.detectTriangularArbitrage('USD');
+
+        // 2. Map entities to their primary local currencies (simplified logic)
+        // In a production app, we'd fetch this from entity metadata
+        const bestOpp = opportunities[0]; // Take top spread
+
+        if (bestOpp && bestOpp.spread > 0.1) { // If spread > 0.1%, it's worth the hop
+            return {
+                isOptimized: true,
+                cheapestPath: bestOpp.path,
+                expectedSavings: amountUSD * (bestOpp.spread / 100),
+                recommendation: `Settle via ${bestOpp.path.join(' -> ')} to capture ${bestOpp.spread.toFixed(2)}% spread.`
+            };
+        }
+
+        return {
+            isOptimized: false,
+            cheapestPath: ['USD'],
+            expectedSavings: 0,
+            recommendation: 'Direct USD settlement is currently optimal.'
+        };
+    }
     /**
      * Record an inter-company transfer with validation
      */
