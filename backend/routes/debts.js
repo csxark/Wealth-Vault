@@ -169,4 +169,29 @@ router.delete('/:id', protect, validateDebtId, async (req, res) => {
     }
 });
 
+/**
+ * @desc    Get Arbitrage Alpha (Opportunity Cost)
+ */
+router.get('/arbitrage-alpha', protect, async (req, res) => {
+    try {
+        const strategy = await payoffOptimizer.generateStrategy(req.user.id);
+        res.success(strategy);
+    } catch (error) {
+        res.error(error.message);
+    }
+});
+
+/**
+ * @desc    Get Refinance ROI (Break-even calculator)
+ */
+router.get('/refinance/roi', protect, async (req, res) => {
+    try {
+        const { debtId, monthlyExtra = 0 } = req.query;
+        const roi = await payoffOptimizer.calculateOpportunityCost(debtId, parseFloat(monthlyExtra));
+        res.success(roi);
+    } catch (error) {
+        res.error(error.message);
+    }
+});
+
 export default router;

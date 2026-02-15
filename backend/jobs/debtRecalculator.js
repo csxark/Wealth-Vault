@@ -1,66 +1,51 @@
 import cron from 'node-cron';
 import db from '../config/db.js';
-import { users } from '../db/schema.js';
-import debtEngine from '../services/debtEngine.js';
-import payoffOptimizer from '../services/payoffOptimizer.js';
+import { debts, users } from '../db/schema.js';
 import refinanceScout from '../services/refinanceScout.js';
+import debtEngine from '../services/debtEngine.js';
+import { logInfo, logError } from '../utils/logger.js';
+import auditService from '../services/auditService.js';
 
+/**
+ * Debt Recalculator Job (L3)
+ * Nightly job to update "Arbitrage Alpha" as global interest rates fluctuate.
+ */
 class DebtRecalculator {
-    /**
-     * Start the scheduled job for debt recalculation
-     * Runs on the 1st of every month at 2:00 AM
-     */
     startScheduledJob() {
-        cron.schedule('0 2 * 1 *', async () => {
-            console.log('[DebtRecalculator] Starting monthly debt recalculation...');
-            await this.processAllUsers();
+        // Run at 2 AM daily
+        cron.schedule('0 2 * * *', async () => {
+            logInfo('[Debt Recalculator] Starting nightly scan...');
+            await this.scanAllUsers();
         });
-        console.log('[DebtRecalculator] Scheduled for 1st of every month at 2:00 AM');
     }
 
-    /**
-     * Process all users in the system
-     */
-    async processAllUsers() {
+    async scanAllUsers() {
         try {
-            const allUsers = await db.query.users.findMany({
-                columns: { id: true }
-            });
+            const allUsers = await db.select().from(users);
 
             for (const user of allUsers) {
-                await this.processSingleUser(user.id);
+                // 1. Scan for refinance opportunities based on current market rates
+                const proposals = await refinanceScout.scanForRefinance(user.id);
+
+                if (proposals.length > 0) {
+                    await auditService.logAuditEvent({
+                        userId: user.id,
+                        action: 'REFINANCE_SCAN_COMPLETED',
+                        resourceType: 'debt',
+                        metadata: { proposalsFound: proposals.length }
+                    });
+                }
+
+                // 2. Perform amortization updates for all active debts
+                const userDebts = await db.select().from(debts).where(eq(debts.userId, user.id));
+                for (const debt of userDebts) {
+                    await debtEngine.calculateAmortization(debt.id);
+                }
             }
-            console.log(`[DebtRecalculator] Successfully processed ${allUsers.length} users`);
+            logInfo('[Debt Recalculator] Nightly scan completed.');
         } catch (error) {
-            console.error('[DebtRecalculator] Error processing users:', error);
+            logError('[Debt Recalculator] Job failed:', error);
         }
-    }
-
-    /**
-     * Recalculate everything for a single user
-     */
-    async processSingleUser(userId) {
-        try {
-            // 1. Scan for new refinancing opportunities
-            await refinanceScout.scanOpportunities(userId);
-
-            // 2. Refresh active payoff strategy simulation
-            const strategy = await payoffOptimizer.getActiveStrategy(userId);
-            await payoffOptimizer.simulatePayoff(userId, strategy.strategyName, parseFloat(strategy.monthlyExtraPayment));
-
-            // 3. Update amortization schedules if needed
-            // This ensures they stay in sync with actual payments made in the previous month
-        } catch (error) {
-            console.error(`[DebtRecalculator] Error for user ${userId}:`, error.message);
-        }
-    }
-
-    /**
-     * Manual trigger for testing
-     */
-    async runNow() {
-        console.log('[DebtRecalculator] Manual run triggered');
-        await this.processAllUsers();
     }
 }
 

@@ -181,6 +181,85 @@ class PayoffOptimizer {
     date.setMonth(date.getMonth() + result.totalMonths);
     return date;
   }
+
+  /**
+   * Generate Optimal Payoff Strategy (L3)
+   * Ranks debts based on interest rate and potential arbitrage alpha.
+   */
+  async generateStrategy(userId) {
+    const userDebts = await db.query.debts.findMany({
+      where: and(eq(debts.userId, userId), eq(debts.isActive, true))
+    });
+
+    if (userDebts.length === 0) return { recommendedAction: 'NONE', details: 'No active debts found.' };
+
+    const targetROI = 0.08;
+
+    const rankedDebts = await Promise.all(userDebts.map(async (d) => {
+      const arbitrage = await debtEngine.calculateArbitrageAlpha(d.id, targetROI);
+      return {
+        ...d,
+        arbitrageAlpha: arbitrage.alpha,
+        isGoodDebt: arbitrage.isGoodDebt,
+        rankingScore: parseFloat(d.apr)
+      };
+    }));
+
+    rankedDebts.sort((a, b) => b.rankingScore - a.rankingScore);
+
+    const primaryTarget = rankedDebts[0];
+    const details = rankedDebts.map(d => ({
+      name: d.name,
+      apr: d.apr,
+      balance: d.currentBalance,
+      recommendation: d.isGoodDebt ? 'HOLD (Invest excess)' : 'AGGRESSIVE PAYOFF'
+    }));
+
+    return {
+      userId,
+      strategyType: 'WACC-Optimized',
+      primaryTarget: {
+        id: primaryTarget.id,
+        name: primaryTarget.name,
+        reason: primaryTarget.isGoodDebt ? 'Highest yield but still below ROI threshold' : 'High interest expense'
+      },
+      rankedDebts: details,
+      globalAlpha: rankedDebts.reduce((sum, d) => sum + d.arbitrageAlpha, 0)
+    };
+  }
+
+  /**
+   * Calculate Opportunity Cost (L3)
+   * What is the cost of NOT paying off a high-interest debt?
+   */
+  async calculateOpportunityCost(debtId, monthlyExtra = 500) {
+    const debt = await db.query.debts.findFirst({
+      where: eq(debts.id, debtId)
+    });
+
+    if (!debt) return null;
+
+    const currentMonths = debtEngine.calculateMonthsToPayoff(
+      parseFloat(debt.currentBalance),
+      parseFloat(debt.apr),
+      parseFloat(debt.minimumPayment)
+    );
+
+    const optimizedMonths = debtEngine.calculateMonthsToPayoff(
+      parseFloat(debt.currentBalance),
+      parseFloat(debt.apr),
+      parseFloat(debt.minimumPayment) + monthlyExtra
+    );
+
+    const totalInterestSaved = (currentMonths - optimizedMonths) * parseFloat(debt.minimumPayment);
+
+    return {
+      debtId,
+      estimatedMonthsSaved: Math.max(0, currentMonths - optimizedMonths),
+      estimatedInterestSaved: Math.max(0, totalInterestSaved),
+      roiOnExtraPayment: parseFloat(debt.apr) * 100
+    };
+  }
 }
 
 export default new PayoffOptimizer();

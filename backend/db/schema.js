@@ -1986,3 +1986,55 @@ export const conversionCorridorsRelations = relations(conversionCorridors, ({ on
     fromEntity: one(entities, { fields: [conversionCorridors.fromEntityId], references: [entities.id] }),
     toEntity: one(entities, { fields: [conversionCorridors.toEntityId], references: [entities.id] }),
 }));
+
+// ============================================================================
+// INTELLIGENT DEBT-TO-EQUITY ARBITRAGE & REFINANCE OPTIMIZATION (L3) (#380)
+// ============================================================================
+
+export const debtArbitrageRules = pgTable('debt_arbitrage_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    maxLtvRatio: numeric('max_ltv_ratio', { precision: 5, scale: 2 }).default('0.75'), // 75% max LTV for safety
+    minInterestSpread: numeric('min_interest_spread', { precision: 5, scale: 2 }).default('0.01'), // 1% minimum spread to trigger
+    autoExecute: boolean('auto_execute').default(false),
+    status: text('status').default('active'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const refinanceProposals = pgTable('refinance_proposals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    currentRate: numeric('current_rate', { precision: 8, scale: 4 }).notNull(),
+    proposedRate: numeric('proposed_rate', { precision: 8, scale: 4 }).notNull(),
+    estimatedSavings: numeric('estimated_savings', { precision: 18, scale: 2 }).notNull(),
+    monthlySavings: numeric('monthly_savings', { precision: 18, scale: 2 }).notNull(),
+    roiMonths: integer('roi_months').notNull(), // Break-even point
+    status: text('status').default('pending'), // 'pending', 'accepted', 'ignored', 'expired'
+    expiresAt: timestamp('expires_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const equityCollateralMaps = pgTable('equity_collateral_maps', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+    assetId: uuid('asset_id').references(() => assets.id, { onDelete: 'cascade' }).notNull(), // Could be property or investment
+    collateralAmount: numeric('collateral_amount', { precision: 18, scale: 2 }).notNull(),
+    ltvAtLock: numeric('ltv_at_lock', { precision: 5, scale: 2 }),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations
+export const debtArbitrageRulesRelations = relations(debtArbitrageRules, ({ one }) => ({
+    user: one(users, { fields: [debtArbitrageRules.userId], references: [users.id] }),
+}));
+
+export const refinanceProposalsRelations = relations(refinanceProposals, ({ one }) => ({
+    user: one(users, { fields: [refinanceProposals.userId], references: [users.id] }),
+    debt: one(debts, { fields: [refinanceProposals.debtId], references: [debts.id] }),
+}));
+
+export const equityCollateralMapsRelations = relations(equityCollateralMaps, ({ one }) => ({
+    debt: one(debts, { fields: [equityCollateralMaps.debtId], references: [debts.id] }),
+    asset: one(assets, { fields: [equityCollateralMaps.assetId], references: [assets.id] }),
+}));

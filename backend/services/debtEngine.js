@@ -146,36 +146,44 @@ class DebtEngine {
     });
   }
   /**
-   * Recalculate and update the amortization projection for a debt
+   * Calculate Debt-to-Equity Arbitrage Opportunity (L3)
+   * Compares debt interest against potential investment ROI
    */
-  async calculateAmortization(debtId) {
+  async calculateArbitrageAlpha(debtId, targetROI = 0.08) {
     const debt = await db.query.debts.findFirst({
       where: eq(debts.id, debtId)
     });
 
-    if (!debt) return;
+    if (!debt) return 0;
 
-    // Projected payoff date based on current balance and minimum payment
-    const months = this.calculateMonthsToPayoff(
-      parseFloat(debt.currentBalance),
-      parseFloat(debt.apr),
-      parseFloat(debt.minimumPayment)
-    );
+    const apr = parseFloat(debt.apr);
+    const balance = parseFloat(debt.currentBalance);
 
-    const payoffDate = new Date();
-    payoffDate.setMonth(payoffDate.getMonth() + months);
+    // Alpha = (Potential ROI - Borrowing Cost) * Balance
+    // A positive alpha means debt is "good" (investing is better than paying off)
+    const alpha = (targetROI - apr) * balance;
 
-    await db.update(debts)
-      .set({
-        payoffDate: payoffDate,
-        updatedAt: new Date(),
-        metadata: {
-          ...debt.metadata,
-          estimatedMonthsToPayoff: months,
-          lastAmortizationUpdate: new Date()
-        }
-      })
-      .where(eq(debts.id, debtId));
+    return {
+      alpha,
+      isGoodDebt: apr < targetROI,
+      savingsPerYear: alpha
+    };
+  }
+
+  /**
+   * Sync with hypothetical external rates
+   */
+  async getMarketRefinanceRate(debtType) {
+    // Simulated external rate feed integration
+    const baselineRates = {
+      'mortgage': 0.065,
+      'auto': 0.045,
+      'personal': 0.12,
+      'credit_card': 0.18
+    };
+
+    const marketFluctuation = (Math.random() * 0.02) - 0.01; // +/- 1%
+    return baselineRates[debtType] + marketFluctuation;
   }
 }
 
