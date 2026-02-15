@@ -85,6 +85,11 @@ export const expenses = pgTable('expenses', {
     nextExecutionDate: timestamp('next_execution_date'), // When the next recurring transaction should be created
     lastExecutedDate: timestamp('last_executed_date'), // When this recurring pattern was last executed
     recurringSourceId: uuid('recurring_source_id'), // Reference to the original recurring expense (for cloned transactions)
+    // Tax-related fields
+    isTaxDeductible: boolean('is_tax_deductible').default(false),
+    taxCategoryId: uuid('tax_category_id').references(() => taxCategories.id, { onDelete: 'set null', onUpdate: 'cascade' }),
+    taxYear: integer('tax_year'), // The tax year this expense applies to
+    taxNotes: text('tax_notes'), // Additional notes for tax purposes
     notes: text('notes'),
     status: text('status').default('completed'),
     metadata: jsonb('metadata').default({
@@ -96,6 +101,7 @@ export const expenses = pgTable('expenses', {
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
+
 
 // Vaults Table (Collaborative Shared Wallets)
 export const vaults = pgTable('vaults', {
@@ -988,24 +994,8 @@ export const vaultsRelations = relations(vaults, ({ one, many }) => ({
     expenseApprovals: many(expenseApprovals),
 }));
 
-// Update expenses relations to include shares
-export const expensesRelations = relations(expenses, ({ one, many }) => ({
-    user: one(users, {
-        fields: [expenses.userId],
-        references: [users.id],
-    }),
-    category: one(categories, {
-        fields: [expenses.categoryId],
-        references: [categories.id],
-    }),
-    vault: one(vaults, {
-        fields: [expenses.vaultId],
-        references: [vaults.id],
-    }),
-    shares: many(expenseShares),
-}));
-
 // Bank Accounts Table (for Plaid integration)
+
 export const bankAccounts = pgTable('bank_accounts', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -1399,10 +1389,62 @@ export const emergencyFundGoals = pgTable('emergency_fund_goals', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Tax Categories Table (IRS category codes)
+export const taxCategories = pgTable('tax_categories', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    code: text('code').notNull().unique(), // IRS category code (e.g., 'DED_MEDICAL', 'DED_CHARITY')
+    name: text('name').notNull(), // Display name (e.g., 'Medical & Dental Expenses')
+    description: text('description'), // Detailed description
+    categoryType: text('category_type').notNull(), // 'deduction', 'credit', 'exemption'
+    irsReference: text('irs_reference'), // IRS publication or form reference
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({
+        examples: [], // Example expenses that qualify
+        documentationRequired: false,
+        limits: null // Annual limits if applicable
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Tax Reports Table (for generated tax reports)
+export const taxReports = pgTable('tax_reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    taxYear: integer('tax_year').notNull(),
+    reportType: text('report_type').notNull(), // 'summary', 'detailed', 'schedule_c', 'schedule_a'
+    format: text('format').notNull(), // 'pdf', 'excel', 'csv'
+    url: text('url').notNull(),
+    totalDeductions: numeric('total_deductions', { precision: 15, scale: 2 }).default('0'),
+    totalCredits: numeric('total_credits', { precision: 15, scale: 2 }).default('0'),
+    status: text('status').default('generated'), // 'generated', 'downloaded', 'archived'
+    metadata: jsonb('metadata').default({
+        expenseCount: 0,
+        categoriesIncluded: [],
+        generatedBy: 'system'
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+
 // Emergency Fund Goals Relations
 export const emergencyFundGoalsRelations = relations(emergencyFundGoals, ({ one }) => ({
     user: one(users, {
         fields: [emergencyFundGoals.userId],
+        references: [users.id],
+    }),
+}));
+
+// Tax Categories Relations
+export const taxCategoriesRelations = relations(taxCategories, ({ many }) => ({
+    expenses: many(expenses),
+}));
+
+// Tax Reports Relations
+export const taxReportsRelations = relations(taxReports, ({ one }) => ({
+    user: one(users, {
+        fields: [taxReports.userId],
         references: [users.id],
     }),
 }));

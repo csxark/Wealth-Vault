@@ -14,6 +14,8 @@ import { Forecasting } from '../components/Budgets/Forecasting';
 import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
+import TaxCenter from '../pages/TaxCenter';
+
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -159,6 +161,14 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <Forecasting />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/tax-center',
+    element: (
+      <ProtectedRoute>
+        <TaxCenter />
       </ProtectedRoute>
     )
   },

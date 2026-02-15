@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Expense, Category } from '../../types';
-import { X, Calendar, DollarSign, Tag, FileText, CreditCard, MapPin } from 'lucide-react';
+import { X, Calendar, DollarSign, Tag, FileText, CreditCard, MapPin, Calculator, Receipt } from 'lucide-react';
+import { taxApi, TaxCategory } from '../../services/taxApi';
+
 
 interface ExpenseFormProps {
   expense: Expense | null;
@@ -25,10 +27,20 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
     location: '',
     tags: '',
     notes: '',
-    isRecurring: false
+    isRecurring: false,
+    isTaxDeductible: false,
+    taxCategoryId: '',
+    taxNotes: ''
   });
 
+  const [taxCategories, setTaxCategories] = useState<TaxCategory[]>([]);
+
+
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetchTaxCategories();
+  }, []);
 
   useEffect(() => {
     if (expense) {
@@ -42,10 +54,25 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
         location: expense.location?.name || '',
         tags: expense.tags?.join(', ') || '',
         notes: expense.notes || '',
-        isRecurring: expense.isRecurring || false
+        isRecurring: expense.isRecurring || false,
+        isTaxDeductible: (expense as any).isTaxDeductible || false,
+        taxCategoryId: (expense as any).taxCategoryId || '',
+        taxNotes: (expense as any).taxNotes || ''
       });
     }
   }, [expense]);
+
+  const fetchTaxCategories = async () => {
+    try {
+      const result = await taxApi.getTaxCategories({ activeOnly: true });
+      if (result.success) {
+        setTaxCategories(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching tax categories:', error);
+    }
+  };
+
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -77,7 +104,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
       return;
     }
 
-    const submitData = {
+    const submitData: any = {
       description: formData.description,
       amount: parseFloat(formData.amount),
       currency: formData.currency,
@@ -89,6 +116,15 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
       notes: formData.notes,
       isRecurring: formData.isRecurring
     };
+
+    // Add tax-related fields if marked as deductible
+    if (formData.isTaxDeductible) {
+      submitData.isTaxDeductible = true;
+      submitData.taxCategoryId = formData.taxCategoryId || null;
+      submitData.taxYear = new Date(formData.date).getFullYear();
+      submitData.taxNotes = formData.taxNotes || null;
+    }
+
 
     onSubmit(submitData);
   };
@@ -331,6 +367,62 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
             This is a recurring expense
           </label>
         </div>
+
+        {/* Tax Deductible Section */}
+        <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
+          <div className="flex items-center mb-4">
+            <input
+              type="checkbox"
+              name="isTaxDeductible"
+              checked={formData.isTaxDeductible}
+              onChange={handleChange}
+              className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+            />
+            <label className="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <Receipt className="inline h-4 w-4 mr-1" />
+              This expense is tax deductible
+            </label>
+          </div>
+
+          {formData.isTaxDeductible && (
+            <div className="space-y-4 pl-6 border-l-2 border-green-200 dark:border-green-800">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <Calculator className="inline h-4 w-4 mr-2" />
+                  Tax Category
+                </label>
+                <select
+                  name="taxCategoryId"
+                  value={formData.taxCategoryId}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:ring-opacity-50 transition-colors"
+                >
+                  <option value="">Select a tax category</option>
+                  {taxCategories.map(category => (
+                    <option key={category.id} value={category.id}>
+                      {category.code} - {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Tax Notes
+                </label>
+                <textarea
+                  name="taxNotes"
+                  value={formData.taxNotes}
+                  onChange={handleChange}
+                  rows={2}
+                  placeholder="Add any tax-related notes (e.g., receipt number, business purpose)..."
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:ring-opacity-50 transition-colors resize-none"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
 
         {/* Actions */}
         <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-slate-700">
