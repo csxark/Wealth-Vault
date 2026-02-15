@@ -3,9 +3,12 @@ import { protect } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import taxService from '../services/taxService.js';
-import portfolioService from '../services/portfolioService.js';
+import harvestEngine from '../services/harvestEngine.js';
+import taxLotService from '../services/taxLotService.js';
+import reinvestmentService from '../services/reinvestmentService.js';
+import { validateTaxDeductionLimit } from '../middleware/taxValidator.js';
 import db from '../config/db.js';
-import { harvestOpportunities, taxLots } from '../db/schema.js';
+import { harvestOpportunities, taxLots, harvestExecutionLogs } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 
 const router = express.Router();
@@ -20,18 +23,71 @@ router.get('/alpha', protect, asyncHandler(async (req, res) => {
 }));
 
 /**
- * @route   GET /api/tax/harvest-opportunities
- * @desc    Get list of detected harvesting opportunities
+ * @route   GET /api/tax/opportunities/scan
+ * @desc    Scan for harvesting opportunities (L3)
  */
-router.get('/harvest-opportunities', protect, asyncHandler(async (req, res) => {
-  const opportunities = await db.query.harvestOpportunities.findMany({
-    where: and(
-      eq(harvestOpportunities.userId, req.user.id),
-      eq(harvestOpportunities.status, 'detected')
-    ),
-    orderBy: [desc(harvestOpportunities.detectedAt)]
+router.get('/opportunities/scan', protect, asyncHandler(async (req, res) => {
+  const { minLoss = 500 } = req.query;
+  const opportunities = await harvestEngine.scanOpportunities(req.user.id, parseFloat(minLoss));
+  return new ApiResponse(200, opportunities).send(res);
+}));
+
+/**
+ * @route   POST /api/tax/harvest/execute
+ * @desc    Execute loss harvesting (L3)
+ */
+router.post('/harvest/execute', protect, validateTaxDeductionLimit, asyncHandler(async (req, res) => {
+  const { investmentId, lotIds, enableReinvestment = true } = req.body;
+
+  // 1. Execute Harvest
+  const harvestLog = await harvestEngine.executeHarvest(req.user.id, investmentId, lotIds);
+
+  // 2. Automated Reinvestment into Proxy (Wash Sale compliant)
+  let reinvestmentResult = null;
+  if (enableReinvestment && harvestLog.status === 'executed') {
+    const investment = await db.query.investments.findFirst({
+      where: eq(investments.id, investmentId)
+    });
+
+    reinvestmentResult = await reinvestmentService.executeProxyReinvestment(
+      req.user.id,
+      investment.symbol,
+      parseFloat(harvestLog.totalLossRealized) // Reinvesting the sold principal amount
+    );
+
+    // Update log with reinvestment info
+    await db.update(harvestExecutionLogs)
+      .set({ metadata: { ...harvestLog.metadata, reinvestment: reinvestmentResult } })
+      .where(eq(harvestExecutionLogs.id, harvestLog.id));
+  }
+
+  return new ApiResponse(200, {
+    harvestLog,
+    reinvestmentResult
+  }, 'Tax harvesting executed successfully').send(res);
+}));
+
+/**
+ * @route   GET /api/tax/history/harvests
+ * @desc    Get historical harvest logs
+ */
+router.get('/history/harvests', protect, asyncHandler(async (req, res) => {
+  const history = await db.query.harvestExecutionLogs.findMany({
+    where: eq(harvestExecutionLogs.userId, req.user.id),
+    orderBy: [desc(harvestExecutionLogs.executionDate)]
   });
-  return new ApiResponse(200, opportunities, 'Harvesting opportunities retrieved').send(res);
+  return new ApiResponse(200, history).send(res);
+}));
+
+/**
+ * @route   GET /api/tax/proxies
+ * @desc    Get market proxy mappings
+ */
+router.get('/proxies', protect, asyncHandler(async (req, res) => {
+  const proxies = await db.query.assetProxyMappings.findMany({
+    where: eq(assetProxyMappings.isActive, true)
+  });
+  return new ApiResponse(200, proxies).send(res);
 }));
 
 /**

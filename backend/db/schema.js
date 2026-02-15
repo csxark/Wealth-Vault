@@ -2107,3 +2107,62 @@ export const autoReinvestConfigsRelations = relations(autoReinvestConfigs, ({ on
     vault: one(vaults, { fields: [autoReinvestConfigs.vaultId], references: [vaults.id] }),
     parkingVault: one(vaults, { fields: [autoReinvestConfigs.parkingVaultId], references: [vaults.id] }),
 }));
+
+// ============================================================================
+// GLOBAL TAX-OPTIMIZED ASSET LIQUIDATION & REINVESTMENT ENGINE (L3) (#386)
+// ============================================================================
+
+export const taxLotHistory = pgTable('tax_lot_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    acquisitionDate: timestamp('acquisition_date').notNull(),
+    quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
+    costBasis: numeric('cost_basis', { precision: 18, scale: 2 }).notNull(),
+    unitPrice: numeric('unit_price', { precision: 18, scale: 8 }).notNull(),
+    isSold: boolean('is_sold').default(false),
+    soldDate: timestamp('sold_date'),
+    salePrice: numeric('sale_price', { precision: 18, scale: 8 }),
+    realizedGainLoss: numeric('realized_gain_loss', { precision: 18, scale: 2 }),
+    holdingPeriodDays: integer('holding_period_days'),
+    isLongTerm: boolean('is_long_term').default(false),
+    status: text('status').default('open'), // 'open', 'closed', 'harvested'
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const harvestExecutionLogs = pgTable('harvest_execution_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    batchId: uuid('batch_id').notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }),
+    lotsHarvested: jsonb('lots_harvested').notNull(), // Array of tax lot IDs
+    totalLossRealized: numeric('total_loss_realized', { precision: 18, scale: 2 }).notNull(),
+    taxSavingsEstimated: numeric('tax_savings_estimated', { precision: 18, scale: 2 }).notNull(),
+    transactionCosts: numeric('transaction_costs', { precision: 18, scale: 2 }),
+    reinvestedIntoId: uuid('reinvested_into_id').references(() => investments.id),
+    status: text('status').default('executed'), // 'executed', 'failed', 'pending_reinvestment'
+    executionDate: timestamp('execution_date').defaultNow(),
+    metadata: jsonb('metadata'),
+});
+
+export const assetProxyMappings = pgTable('asset_proxy_mappings', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    originalSymbol: text('original_symbol').notNull(),
+    proxySymbol: text('proxy_symbol').notNull(),
+    proxyType: text('proxy_type').notNull(), // 'ETF', 'DirectIndex', 'Stablecoin'
+    correlationCoefficient: numeric('correlation_coefficient', { precision: 5, scale: 4 }),
+    isActive: boolean('is_active').default(true),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+});
+
+// Relations
+export const taxLotHistoryRelations = relations(taxLotHistory, ({ one }) => ({
+    user: one(users, { fields: [taxLotHistory.userId], references: [users.id] }),
+    investment: one(investments, { fields: [taxLotHistory.investmentId], references: [investments.id] }),
+}));
+
+export const harvestExecutionLogsRelations = relations(harvestExecutionLogs, ({ one }) => ({
+    user: one(users, { fields: [harvestExecutionLogs.userId], references: [users.id] }),
+    investment: one(investments, { fields: [harvestExecutionLogs.investmentId], references: [investments.id] }),
+    reinvestedInto: one(investments, { fields: [harvestExecutionLogs.reinvestedIntoId], references: [investments.id] }),
+}));
