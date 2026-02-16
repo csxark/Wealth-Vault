@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { taxLots, washSaleLogs, harvestOpportunities } from '../db/schema.js';
+import { taxLots, washSaleLogs, harvestOpportunities, taxCategories } from '../db/schema.js';
 import { eq, and, sql, gte, lte, asc, desc } from 'drizzle-orm';
 
 /**
@@ -118,6 +118,98 @@ class TaxService {
       }
     }
     return updatedLots;
+  }
+}
+
+/**
+ * Initialize default tax categories in the database
+ * Populates IRS-compliant tax deduction categories
+ */
+export async function initializeDefaultTaxCategories() {
+  const defaultCategories = [
+    {
+      categoryName: 'Business Expenses',
+      description: 'Ordinary and necessary expenses for operating a business',
+      deductibilityType: 'fully_deductible',
+      deductibilityRate: '1.00',
+      taxJurisdiction: 'US_Federal',
+      irsCode: 'Section 162',
+      applicableExpenseCategories: ['business', 'office'],
+      exampleExpenses: ['Office supplies', 'Software subscriptions', 'Professional services'],
+      requiredDocumentation: ['Receipts', 'Invoices', 'Business purpose notes'],
+      isActive: true,
+      priorityOrder: 1
+    },
+    {
+      categoryName: 'Home Office Deduction',
+      description: 'Deduction for business use of home',
+      deductibilityType: 'partially_deductible',
+      deductibilityRate: '0.50',
+      taxJurisdiction: 'US_Federal',
+      irsCode: 'Section 280A',
+      applicableExpenseCategories: ['home', 'utilities'],
+      exampleExpenses: ['Rent/mortgage', 'Utilities', 'Home insurance'],
+      requiredDocumentation: ['Floor plan', 'Square footage calculation', 'Expense receipts'],
+      isActive: true,
+      priorityOrder: 2
+    },
+    {
+      categoryName: 'Charitable Contributions',
+      description: 'Donations to qualified charitable organizations',
+      deductibilityType: 'fully_deductible',
+      deductibilityRate: '1.00',
+      taxJurisdiction: 'US_Federal',
+      irsCode: 'Section 170',
+      percentageAgiLimit: '60.00',
+      applicableExpenseCategories: ['charity', 'donation'],
+      exampleExpenses: ['Cash donations', 'Property donations'],
+      requiredDocumentation: ['Donation receipt', 'Appraisal for property over $5,000'],
+      isActive: true,
+      priorityOrder: 3
+    },
+    {
+      categoryName: 'Medical Expenses',
+      description: 'Unreimbursed medical and dental expenses',
+      deductibilityType: 'partially_deductible',
+      deductibilityRate: '1.00',
+      taxJurisdiction: 'US_Federal',
+      irsCode: 'Section 213',
+      percentageAgiLimit: '7.50',
+      applicableExpenseCategories: ['medical', 'health'],
+      exampleExpenses: ['Doctor visits', 'Prescriptions', 'Medical equipment'],
+      requiredDocumentation: ['Medical bills', 'Insurance statements', 'Receipts'],
+      isActive: true,
+      priorityOrder: 4
+    },
+    {
+      categoryName: 'State and Local Taxes',
+      description: 'State, local, and property taxes',
+      deductibilityType: 'fully_deductible',
+      deductibilityRate: '1.00',
+      taxJurisdiction: 'US_Federal',
+      irsCode: 'Section 164',
+      maxDeductionLimit: '10000.00',
+      applicableExpenseCategories: ['tax', 'property'],
+      exampleExpenses: ['Property tax', 'State income tax', 'Sales tax'],
+      requiredDocumentation: ['Tax bills', 'Payment receipts'],
+      isActive: true,
+      priorityOrder: 5
+    }
+  ];
+
+  try {
+    // Check if categories already exist
+    const existing = await db.select().from(taxCategories).limit(1);
+    
+    if (existing.length === 0) {
+      await db.insert(taxCategories).values(defaultCategories);
+      console.log('✅ Default tax categories initialized successfully');
+    } else {
+      console.log('ℹ️  Tax categories already exist, skipping initialization');
+    }
+  } catch (error) {
+    console.error('❌ Error initializing default tax categories:', error);
+    // Don't throw - this should not prevent server startup
   }
 }
 

@@ -40,3 +40,27 @@ export const validateSettlementLiquidity = async (req, res, next) => {
         next(error);
     }
 };
+
+/**
+ * Currency Support Validator
+ * Ensures that requested currencies are supported by the system
+ */
+export const validateCurrencySupport = (req, res, next) => {
+    const { sourceCurrency, targetCurrency, currency } = req.body;
+    
+    // List of supported currencies (can be moved to config)
+    const supportedCurrencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'INR', 'BTC', 'ETH'];
+    
+    const currenciesToCheck = [sourceCurrency, targetCurrency, currency].filter(Boolean);
+    
+    const unsupported = currenciesToCheck.filter(curr => !supportedCurrencies.includes(curr));
+    
+    if (unsupported.length > 0) {
+        return new ApiResponse(400, {
+            unsupportedCurrencies: unsupported,
+            supportedCurrencies
+        }, `Unsupported currency: ${unsupported.join(', ')}`).send(res);
+    }
+    
+    next();
+};

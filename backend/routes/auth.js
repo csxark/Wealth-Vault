@@ -4,7 +4,7 @@ import { body, validationResult } from "express-validator";
 import bcrypt from "bcryptjs";
 import { eq, and } from "drizzle-orm";
 import db from "../config/db.js";
-import { users, categories, deviceSessions, securityEvents } from "../db/schema.js";
+import { users, categories, securityEvents } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { uploadProfilePicture, saveUploadedFile } from "../middleware/fileUpload.js";
 import fileStorageService from "../services/fileStorageService.js";
