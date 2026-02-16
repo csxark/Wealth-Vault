@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import rebalanceEngine from '../services/rebalanceEngine.js';
-import { db } from '../db/index.js';
+import db from '../config/db.js';
 import { targetAllocations, users } from '../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
 import { logInfo, logError } from '../utils/logger.js';
