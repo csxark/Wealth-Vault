@@ -313,6 +313,7 @@ app.use("/api/yields", userLimiter, yieldsRoutes);
 
 
 
+
 app.use("/uploads", createFileServerRoute());
 
 // Health check endpoint

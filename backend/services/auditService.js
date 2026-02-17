@@ -78,6 +78,7 @@ export const AuditActions = {
   VAULT_LOCK_EXECUTED: 'VAULT_LOCK_EXECUTED',
 };
 
+
 // Resource Types
 export const ResourceTypes = {
   USER: 'user',
@@ -95,6 +96,7 @@ export const ResourceTypes = {
   SUCCESSION: 'succession',
   ENTITY: 'entity'
 };
+
 
 /**
  * Log an audit event asynchronously
