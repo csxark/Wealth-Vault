@@ -1067,7 +1067,10 @@ export const usersRelations = relations(users, ({ many }) => ({
     bankAccounts: many(bankAccounts),
     bankTransactions: many(bankTransactions),
     emergencyFundGoals: many(emergencyFundGoals),
+    creditScores: many(creditScores),
+    creditScoreAlerts: many(creditScoreAlerts),
 }));
+
 
 
 
@@ -1448,3 +1451,68 @@ export const taxReportsRelations = relations(taxReports, ({ one }) => ({
         references: [users.id],
     }),
 }));
+
+// Credit Scores Relations
+export const creditScoresRelations = relations(creditScores, ({ one }) => ({
+    user: one(users, {
+        fields: [creditScores.userId],
+        references: [users.id],
+    }),
+}));
+
+// Credit Score Alerts Relations
+export const creditScoreAlertsRelations = relations(creditScoreAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [creditScoreAlerts.userId],
+        references: [users.id],
+    }),
+    creditScore: one(creditScores, {
+        fields: [creditScoreAlerts.creditScoreId],
+        references: [creditScores.id],
+    }),
+}));
+
+// Credit Scores Table
+export const creditScores = pgTable('credit_scores', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    bureau: text('bureau').notNull(), // 'equifax', 'experian', 'transunion'
+    score: integer('score').notNull(), // Credit score (300-850)
+    rating: text('rating').notNull(), // 'poor', 'fair', 'good', 'very_good', 'excellent'
+    previousScore: integer('previous_score'), // Previous score for comparison
+    scoreChange: integer('score_change'), // Change from previous score
+    factors: jsonb('factors').default([]), // Factors affecting the score
+    accountNumber: text('account_number'), // Masked account number
+    reportDate: timestamp('report_date'), // Date of the credit report
+    metadata: jsonb('metadata').default({
+        inquiryCount: 0,
+        accountCount: 0,
+        latePayments: 0,
+        creditUtilization: 0
+    }),
+    isActive: boolean('is_active').default(true),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Credit Score Alerts Table
+export const creditScoreAlerts = pgTable('credit_score_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    creditScoreId: uuid('credit_score_id').references(() => creditScores.id, { onDelete: 'cascade' }).notNull(),
+    alertType: text('alert_type').notNull(), // 'score_increase', 'score_decrease', 'new_inquiry', 'new_account', 'late_payment', 'account_closed'
+    oldValue: integer('old_value'), // Previous score value
+    newValue: integer('new_value'), // New score value
+    change: integer('change'), // Change amount (positive or negative)
+    message: text('message').notNull(), // Alert message
+    description: text('description'), // Detailed description
+    isRead: boolean('is_read').default(false),
+    readAt: timestamp('read_at'),
+    metadata: jsonb('metadata').default({
+        bureau: null,
+        accountNumber: null,
+        details: {}
+    }),
+    createdAt: timestamp('created_at').defaultNow(),
+});

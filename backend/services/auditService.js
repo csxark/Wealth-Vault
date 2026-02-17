@@ -35,7 +35,14 @@ export const AuditActions = {
   CATEGORY_CREATE: 'CATEGORY_CREATE',
   CATEGORY_UPDATE: 'CATEGORY_UPDATE',
   CATEGORY_DELETE: 'CATEGORY_DELETE',
+  
+  // Credit Scores
+  CREDIT_SCORE_CREATE: 'CREDIT_SCORE_CREATE',
+  CREDIT_SCORE_UPDATE: 'CREDIT_SCORE_UPDATE',
+  CREDIT_SCORE_DELETE: 'CREDIT_SCORE_DELETE',
+  CREDIT_SCORE_VIEW: 'CREDIT_SCORE_VIEW',
 };
+
 
 // Resource Types
 export const ResourceTypes = {
@@ -44,7 +51,9 @@ export const ResourceTypes = {
   GOAL: 'goal',
   CATEGORY: 'category',
   SESSION: 'session',
+  CREDIT_SCORE: 'credit_score',
 };
+
 
 /**
  * Log an audit event asynchronously
