@@ -1,0 +1,53 @@
+name: CI Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+
+    - name: Install Root Dependencies
+      run: npm install
+
+    - name: Install Backend Dependencies
+      working-directory: ./backend
+      run: npm install
+
+    - name: Install Frontend Dependencies
+      working-directory: ./frontend
+      run: npm install
+
+    # - name: Lint Frontend
+    #   working-directory: ./frontend
+    #   run: npm run lint
+
+    - name: Run Backend Tests
+      working-directory: ./backend
+      env:
+        CI: true
+        NODE_ENV: test
+        JWT_SECRET: test-secret
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wealth_vault_test
+      run: npm test
+
+    - name: Run Frontend Tests
+      working-directory: ./frontend
+      run: npm test
