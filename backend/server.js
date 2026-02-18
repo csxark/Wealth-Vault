@@ -307,6 +307,10 @@ app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 app.use("/api/forensic", userLimiter, forensicRoutes);
 app.use("/api/yields", userLimiter, yieldsRoutes);
 app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
+app.use("/api/risk-lab", userLimiter, riskLabRoutes);
+app.use("/api/corporate", userLimiter, corporateRoutes);
+app.use("/api/succession-plan", userLimiter, successionApiRoutes);
+app.use("/api/compliance", userLimiter, complianceRoutes);
 
 
 
@@ -386,6 +390,10 @@ if (process.env.NODE_ENV !== 'test') {
     taxAuditJob.start();
     riskScanner.start();
     marketRateSyncJob.start();
+    volatilityMonitor.start();
+    payrollCycleJob.start();
+    mortalityDaemon.start();
+    residencyAuditJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
