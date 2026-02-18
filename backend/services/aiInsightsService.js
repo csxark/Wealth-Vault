@@ -1,11 +1,11 @@
 import expenseService from './expenseService.js';
 import investmentService from './investmentService.js';
 import savingsService from './savingsService.js';
-import { getGeminiResponse } from './geminiservice.js';
+import { getAIProvider } from './aiProvider.js';
 
 /**
  * AI Insights Service
- * Aggregates user financial data and generates AI-powered insights using Gemini
+ * Aggregates user financial data and generates AI-powered insights using the universal AI Provider
  */
 
 /**
@@ -101,7 +101,7 @@ export const generateInsights = async (userId) => {
     // Anonymize data
     const anonymizedData = anonymizeData(rawData);
 
-    // Prepare prompt for Gemini
+    // Prepare prompt for AI
     const prompt = `
 Analyze the following anonymized financial data and provide personalized insights and recommendations:
 
@@ -124,21 +124,31 @@ Please provide:
 Keep recommendations actionable and specific.
 `;
 
-    // Get AI response
-    const aiResponse = await getGeminiResponse([{ role: 'user', contents: [{ text: prompt }] }]);
+    // Get AI response using provider abstraction
+    const provider = getAIProvider();
+    const insightsText = await provider.generateText(prompt, {
+      temperature: 0.7,
+      model: 'pro' // Use a capable model for complex analysis
+    });
 
     return {
-      insights: aiResponse,
+      insights: insightsText,
       generatedAt: new Date().toISOString(),
       dataSummary: {
-        expenseCount: anonymizedData.expenses.length,
-        investmentCount: anonymizedData.investments.length,
-        savingsGoalCount: anonymizedData.savings.length,
+        expenseCount: anonymizedData.expenses?.length || 0,
+        investmentCount: anonymizedData.investments?.length || 0,
+        savingsGoalCount: anonymizedData.savings?.length || 0,
       },
+      provider: provider.constructor.name
     };
   } catch (error) {
     console.error('Error generating insights:', error);
-    throw error;
+    // Return graceful fallback instead of throwing if AI fails, to keep app resilient
+    return {
+      insights: "AI insights are currently unavailable. Please check back later.",
+      error: true,
+      generatedAt: new Date().toISOString()
+    };
   }
 };
 
