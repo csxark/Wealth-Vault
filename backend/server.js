@@ -68,6 +68,9 @@ import entityRoutes from "./routes/entities.js";
 import yieldsRoutes from "./routes/yields.js";
 import arbitrageRoutes from "./routes/arbitrage.js";
 import riskLabRoutes from "./routes/risk-lab.js";
+import corporateRoutes from "./routes/corporate.js";
+import successionApiRoutes from "./routes/succession-api.js";
+import complianceRoutes from "./routes/compliance.js";
 import { presenceTracker } from "./middleware/successionMiddleware.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
@@ -105,6 +108,9 @@ import taxAuditJob from "./jobs/taxAuditJob.js";
 import riskScanner from "./jobs/riskScanner.js";
 import marketRateSyncJob from "./jobs/marketRateSyncJob.js";
 import volatilityMonitor from "./jobs/volatilityMonitor.js";
+import payrollCycleJob from "./jobs/payrollCycleJob.js";
+import mortalityDaemon from "./jobs/mortalityDaemon.js";
+import residencyAuditJob from "./jobs/residencyAuditJob.js";
 import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
@@ -310,6 +316,9 @@ app.use("/api/forensic", userLimiter, forensicRoutes);
 app.use("/api/yields", userLimiter, yieldsRoutes);
 app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
 app.use("/api/risk-lab", userLimiter, riskLabRoutes);
+app.use("/api/corporate", userLimiter, corporateRoutes);
+app.use("/api/succession-plan", userLimiter, successionApiRoutes);
+app.use("/api/compliance", userLimiter, complianceRoutes);
 
 
 
@@ -390,6 +399,9 @@ if (process.env.NODE_ENV !== 'test') {
     riskScanner.start();
     marketRateSyncJob.start();
     volatilityMonitor.start();
+    payrollCycleJob.start();
+    mortalityDaemon.start();
+    residencyAuditJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
