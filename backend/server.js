@@ -57,6 +57,7 @@ import emergencyFundRoutes from "./routes/emergencyFund.js";
 import taxRoutes from "./routes/tax.js";
 import creditScoreRoutes from "./routes/creditScores.js";
 import retirementPlanningRoutes from "./routes/retirementPlanning.js";
+import netWorthRoutes from "./routes/netWorth.js";
 
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 
@@ -228,6 +229,7 @@ app.use("/api/debts", userLimiter, debtRoutes);
 app.use("/api/tax", userLimiter, taxRoutes);
 app.use("/api/credit-scores", userLimiter, creditScoreRoutes);
 app.use("/api/retirement-planning", userLimiter, retirementPlanningRoutes);
+app.use("/api/net-worth", userLimiter, netWorthRoutes);
 
 // Secur fil servr for uploddd fils
 
