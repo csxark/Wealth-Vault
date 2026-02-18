@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { fetchExchangeRates } from '../services/currencyService.js';
-import { db } from '../config/db.js';
+import db from '../config/db.js';
 import { users } from '../db/schema.js';
 import { sql } from 'drizzle-orm';
 

@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { X, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import api from '../../services/api';
 
 const sharedBudgetSchema = z.object({
   name: z.string().min(1, 'Budget name is required').max(100, 'Name too long'),
@@ -73,20 +74,10 @@ export const SharedBudgetForm: React.FC<SharedBudgetFormProps> = ({
   const onSubmit = async (data: SharedBudgetFormData) => {
     setIsSubmitting(true);
     try {
-      const response = await fetch(`/api/vaults/${vaultId}/shared-budgets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...data,
-          categories: selectedCategories,
-        }),
+      await api.vaults.sharedBudgets.create(vaultId, {
+        ...data,
+        categories: selectedCategories,
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to create shared budget');
-      }
 
       toast({
         title: 'Success',

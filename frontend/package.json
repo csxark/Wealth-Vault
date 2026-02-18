@@ -18,6 +18,13 @@
   "dependencies": {
     "@google/genai": "^1.35.0",
     "@hookform/resolvers": "^3.10.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-toast": "^1.2.15",
     "@supabase/supabase-js": "^2.56.1",
     "@types/papaparse": "^5.3.16",
     "@zxing/browser": "^0.1.5",
@@ -25,6 +32,8 @@
     "aos": "^2.3.4",
     "axios": "^1.13.2",
     "chart.js": "^4.5.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "lucide-react": "^0.344.0",
     "openai": "^6.15.0",
     "papaparse": "^5.5.3",
@@ -34,6 +43,9 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.71.1",
     "react-router-dom": "^7.8.2",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.4.0",
+    "tailwindcss-animate": "^1.0.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {

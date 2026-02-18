@@ -15,10 +15,16 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
-  Award
+  Award,
+  Sun,
+  Moon,
+  Monitor
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useTheme } from '../../hooks/useTheme';
+
 import { authAPI } from '../../services/api';
+
 import { useLoading } from '../../context/LoadingContext';
 import { useToast } from '../../context/ToastContext';
 import type { User } from '../../types';
@@ -29,7 +35,9 @@ const DEV_PROFILE: User = {
   email: 'dev@test.com',
   firstName: 'Fintech',
   lastName: 'Dev',
-  profilePicture: undefined,
+  profilePicture: '',
+
+
   dateOfBirth: '1995-06-15',
   phoneNumber: '+91 98765 43210',
   currency: 'INR',
@@ -55,6 +63,7 @@ const DEV_PROFILE: User = {
 
 export const Profile: React.FC = () => {
   const { user } = useAuth();
+  const { themeMode, setTheme, isAuto, isLight, isDarkMode } = useTheme();
   const [profile, setProfile] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedProfile, setEditedProfile] = useState<Partial<User>>({});
@@ -63,6 +72,7 @@ export const Profile: React.FC = () => {
   const { showToast } = useToast();
   const [saving, setSaving] = useState(false);
   const [isDevMode, setIsDevMode] = useState(false);
+
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
@@ -609,6 +619,131 @@ export const Profile: React.FC = () => {
                 year: 'numeric'
               })}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Theme Preferences */}
+      <div className="bg-white dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl shadow-2xl 
+        border border-slate-200 dark:border-cyan-500/20 overflow-hidden">
+
+        <div className="px-6 sm:px-8 py-6 border-b border-slate-200 dark:border-slate-700/50">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+            <Sun className="h-6 w-6 text-cyan-500 dark:text-cyan-400" />
+            Theme Preferences
+          </h2>
+        </div>
+
+        <div className="px-6 sm:px-8 py-8">
+          <p className="text-slate-600 dark:text-slate-400 mb-6">
+            Choose your preferred theme mode. Auto mode will follow your system settings.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Auto Option */}
+            <button
+              onClick={() => setTheme('auto')}
+              className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${
+                isAuto
+                  ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-500/10'
+                  : 'border-slate-200 dark:border-slate-700 hover:border-cyan-300 dark:hover:border-cyan-500/30'
+              }`}
+            >
+              <div className={`p-3 rounded-lg ${
+                isAuto ? 'bg-cyan-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}>
+                <Monitor className="h-6 w-6" />
+              </div>
+              <div className="text-center">
+                <p className={`font-semibold ${
+                  isAuto ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-900 dark:text-white'
+                }`}>
+                  Auto
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Follow system
+                </p>
+              </div>
+              {isAuto && (
+                <div className="absolute top-2 right-2">
+                  <CheckCircle className="h-5 w-5 text-cyan-500" />
+                </div>
+              )}
+            </button>
+
+            {/* Light Option */}
+            <button
+              onClick={() => setTheme('light')}
+              className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all relative ${
+                isLight
+                  ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-500/10'
+                  : 'border-slate-200 dark:border-slate-700 hover:border-cyan-300 dark:hover:border-cyan-500/30'
+              }`}
+            >
+              <div className={`p-3 rounded-lg ${
+                isLight ? 'bg-cyan-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}>
+                <Moon className="h-6 w-6" />
+              </div>
+              <div className="text-center">
+                <p className={`font-semibold ${
+                  isLight ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-900 dark:text-white'
+                }`}>
+                  Light
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Always light
+                </p>
+              </div>
+              {isLight && (
+                <div className="absolute top-2 right-2">
+                  <CheckCircle className="h-5 w-5 text-cyan-500" />
+                </div>
+              )}
+            </button>
+
+            {/* Dark Option */}
+            <button
+              onClick={() => setTheme('dark')}
+              className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all relative ${
+                isDarkMode
+                  ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-500/10'
+                  : 'border-slate-200 dark:border-slate-700 hover:border-cyan-300 dark:hover:border-cyan-500/30'
+              }`}
+            >
+              <div className={`p-3 rounded-lg ${
+                isDarkMode ? 'bg-cyan-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}>
+                <Sun className="h-6 w-6" />
+              </div>
+              <div className="text-center">
+                <p className={`font-semibold ${
+                  isDarkMode ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-900 dark:text-white'
+                }`}>
+                  Dark
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Always dark
+                </p>
+              </div>
+              {isDarkMode && (
+                <div className="absolute top-2 right-2">
+                  <CheckCircle className="h-5 w-5 text-cyan-500" />
+                </div>
+              )}
+            </button>
+          </div>
+
+          {/* Current Theme Indicator */}
+          <div className="mt-6 p-4 rounded-xl bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Current theme: <span className="font-semibold text-cyan-600 dark:text-cyan-400 capitalize">{themeMode}</span>
+              {themeMode === 'auto' && (
+                <span className="text-slate-500 dark:text-slate-500">
+                  {' '}(system preference)
+                </span>
+              )}
+            </p>
           </div>
         </div>
       </div>

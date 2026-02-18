@@ -9,8 +9,8 @@ import investmentAnalyticsService from '../services/investmentAnalyticsService.j
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../utils/AppError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
-import AppError from '../utils/AppError.js';
-import ApiResponse from '../utils/ApiResponse.js';
+import { AppError } from '../utils/AppError.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
 
 const router = express.Router();
 
