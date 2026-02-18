@@ -4,7 +4,9 @@ import { AuthForm } from '../components/Auth/AuthForm';
 import Dashboard from '../components/Dashboard/Dashboard';
 import { Coach } from '../components/Coach/Coach';
 import { Goals } from '../components/Goals/Goals';
+import { Expenses } from '../components/Expenses/Expenses';
 import { DataImport } from '../components/Import/DataImport';
+
 import { Profile } from '../components/Profile/Profile';
 import Analytics from '../components/Analytics/Analytics';
 import Savings from '../components/Savings/Savings';
@@ -12,6 +14,13 @@ import { Forecasting } from '../components/Budgets/Forecasting';
 import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
+import TaxCenter from '../pages/TaxCenter';
+import Vaults from '../pages/Vaults/Vaults';
+import CreateVault from '../pages/Vaults/CreateVault';
+import VaultDetails from '../pages/Vaults/VaultDetails';
+import VaultMembers from '../pages/Vaults/VaultMembers';
+import AcceptInvite from '../pages/Vaults/AcceptInvite';
+
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -112,7 +121,16 @@ export const routes = [
     )
   },
   {
+    path: '/expenses',
+    element: (
+      <ProtectedRoute>
+        <Expenses />
+      </ProtectedRoute>
+    )
+  },
+  {
     path: '/savings',
+
     element: (
       <ProtectedRoute>
         <Savings />
@@ -148,6 +166,54 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <Forecasting />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/tax-center',
+    element: (
+      <ProtectedRoute>
+        <TaxCenter />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults',
+    element: (
+      <ProtectedRoute>
+        <Vaults />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/create',
+    element: (
+      <ProtectedRoute>
+        <CreateVault />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/:vaultId',
+    element: (
+      <ProtectedRoute>
+        <VaultDetails />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/:vaultId/members',
+    element: (
+      <ProtectedRoute>
+        <VaultMembers />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/invite/:token',
+    element: (
+      <ProtectedRoute>
+        <AcceptInvite />
       </ProtectedRoute>
     )
   },

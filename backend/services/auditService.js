@@ -81,6 +81,7 @@ export const AuditActions = {
   WACC_RECALCULATED: 'WACC_RECALCULATED',
 };
 
+
 // Resource Types
 export const ResourceTypes = {
   USER: 'user',
@@ -98,6 +99,7 @@ export const ResourceTypes = {
   SUCCESSION: 'succession',
   ENTITY: 'entity'
 };
+
 
 /**
  * Log an audit event asynchronously

@@ -8,8 +8,6 @@ import { AppError } from "../utils/AppError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import forecastingService from "../services/forecastingService.js";
 import BudgetRepository from "../repositories/BudgetRepository.js";
-import ApiResponse from "../utils/ApiResponse.js";
-import AppError from "../utils/AppError.js";
 
 const router = express.Router();
 
@@ -53,8 +51,6 @@ router.get("/vault/:vaultId", protect, checkVaultAccess(), asyncHandler(async (r
 
   // Get vault members count for budget allocation
   const memberCount = await BudgetRepository.getVaultMemberCount(vaultId);
-
-  const memberCount = Number(membersCount[0]?.count || 1);
 
   return new ApiResponse(200, {
     vaultId,
@@ -112,17 +108,11 @@ router.put("/vault/:vaultId", protect, isVaultOwner,
 
   const updatedSettings = await BudgetRepository.updateVaultSettings(vaultId, updateData);
 
-    if (!updatedSettings) {
-      return next(new AppError(404, 'Vault settings not found'));
-    }
-
-    return new ApiResponse(200, updatedSettings, 'Vault budget updated successfully').send(res);
-  }));
   if (!updatedSettings) {
-    throw new NotFoundError('Vault settings not found');
+    return next(new AppError(404, 'Vault settings not found'));
   }
 
-  new ApiResponse(200, updatedSettings, 'Vault budget updated successfully').send(res);
+  return new ApiResponse(200, updatedSettings, 'Vault budget updated successfully').send(res);
 }));
 
 /**
@@ -168,7 +158,6 @@ router.get("/vault/:vaultId/alerts", protect, checkVaultAccess(), asyncHandler(a
   }
 
   return new ApiResponse(200, alerts, 'Vault budget alerts retrieved successfully').send(res);
-  new ApiResponse(200, alerts, 'Vault budget alerts retrieved successfully').send(res);
 }));
 
 /**
@@ -213,7 +202,6 @@ router.post("/forecast", protect, [
   );
 
   return new ApiResponse(200, forecast, 'Expense forecast generated successfully').send(res);
-  new ApiResponse(200, forecast, 'Expense forecast generated successfully').send(res);
 }));
 
 /**
@@ -242,7 +230,6 @@ router.post("/forecast/simulation", protect, [
   );
 
   return new ApiResponse(200, simulation, 'Simulation forecast generated successfully').send(res);
-  new ApiResponse(200, simulation, 'Simulation forecast generated successfully').send(res);
 }));
 
 /**
@@ -262,7 +249,6 @@ router.get("/forecast", protect, asyncHandler(async (req, res, next) => {
   );
 
   return new ApiResponse(200, forecasts, 'User forecasts retrieved successfully').send(res);
-  new ApiResponse(200, forecasts, 'User forecasts retrieved successfully').send(res);
 }));
 
 /**
@@ -282,7 +268,6 @@ router.get("/forecast/:forecastId", protect, asyncHandler(async (req, res, next)
   }
 
   return new ApiResponse(200, forecast, 'Forecast retrieved successfully').send(res);
-  new ApiResponse(200, forecast, 'Forecast retrieved successfully').send(res);
 }));
 
 /**
@@ -310,7 +295,5 @@ router.delete("/forecast/:forecastId", protect,
 
     return new ApiResponse(200, null, 'Forecast deleted successfully').send(res);
   }));
-  new ApiResponse(200, null, 'Forecast deleted successfully').send(res);
-}));
 
 export default router;

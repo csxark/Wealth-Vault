@@ -6,15 +6,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { goalsAPI } from '../../services/api';
 import { useLoading } from '../../context/LoadingContext';
 import { useToast } from '../../context/ToastContext';
-import type { Goal } from '../../types';
+import type { Goal, Milestone } from '../../types';
 
-export const Goals: React.FC = () => {
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<Goal | undefined>();
-  const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
-  const { withLoading } = useLoading();
 export const Goals: React.FC = () => {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -27,7 +20,6 @@ export const Goals: React.FC = () => {
   const [selectedGoalId, setSelectedGoalId] = useState<string | undefined>();
   const { user } = useAuth();
   const { withLoading } = useLoading();
-=======
   const { showToast } = useToast();
 
   const loadGoals = useCallback(async () => {
