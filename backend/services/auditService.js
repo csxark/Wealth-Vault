@@ -89,6 +89,7 @@ export const AuditActions = {
   TAX_WITHHELD: 'TAX_WITHHELD',
 };
 
+
 // Resource Types
 export const ResourceTypes = {
   USER: 'user',
@@ -106,6 +107,7 @@ export const ResourceTypes = {
   SUCCESSION: 'succession',
   ENTITY: 'entity'
 };
+
 
 /**
  * Log an audit event asynchronously

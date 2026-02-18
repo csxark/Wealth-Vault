@@ -7,7 +7,7 @@ import assetService from '../services/assetService.js';
 import projectionEngine from '../services/projectionEngine.js';
 import marketData from '../services/marketData.js';
 import riskEngine from '../services/riskEngine.js';
-import ApiResponse from '../utils/ApiResponse.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
 
 const router = express.Router();
 

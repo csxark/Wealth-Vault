@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { exchangeRates } from '../db/schema.js';
+import { exchangeRateHistory as exchangeRates } from '../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import axios from 'axios';
 

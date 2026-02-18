@@ -16,6 +16,37 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
     window.location.href = '/';
   };
 
+  const handleThemeChange = async (mode: ThemeMode) => {
+    await setTheme(mode);
+    setShowThemeMenu(false);
+  };
+
+  // Close theme menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (themeMenuRef.current && !themeMenuRef.current.contains(event.target as Node)) {
+        setShowThemeMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const getThemeIcon = () => {
+    if (themeMode === 'auto') return <Monitor className="h-5 w-5" />;
+    return isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />;
+  };
+
+  const getThemeLabel = () => {
+    switch (themeMode) {
+      case 'auto': return 'Auto';
+      case 'light': return 'Light';
+      case 'dark': return 'Dark';
+      default: return 'Auto';
+    }
+  };
+
   return (
     <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm border-b border-neutral-200/60 dark:border-slate-700/60 absolute top-0 z-40 w-full">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

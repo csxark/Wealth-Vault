@@ -123,6 +123,8 @@ import { initializeAnalyticsListeners } from "./listeners/analyticsListeners.js"
 import { initializeSubscriptionListeners } from "./listeners/subscriptionListeners.js";
 import { initializeSavingsListeners } from "./listeners/savingsListeners.js";
 
+
+
 // Load environment variables
 dotenv.config();
 
@@ -323,6 +325,10 @@ app.use("/api/compliance", userLimiter, complianceRoutes);
 
 
 // Secur fil servr for uploddd fils
+
+
+
+
 app.use("/uploads", createFileServerRoute());
 
 // Health check endpoint

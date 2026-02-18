@@ -793,7 +793,10 @@ export async function sendSecuritySummaryReport({ email, userName, stats, period
   });
 }
 
+export { sendEmail };
+
 export default {
+  sendEmail,
   sendLoginNotification,
   sendMFAEnabledNotification,
   sendMFADisabledNotification,
