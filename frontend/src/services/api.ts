@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert } from '../types';
+import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert, Vault, VaultWithRole, VaultMember, VaultBalance } from '../types';
 
 // Use environment variable for API URL
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -1348,6 +1348,200 @@ export const investmentsAPI = {
   },
 };
 
+// Vault API
+export const vaultAPI = {
+  // Vault CRUD
+  vaults: {
+    // Create a new vault
+    create: async (vaultData: { name: string; description?: string; currency?: string }) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>('/vaults', {
+        method: 'POST',
+        data: vaultData,
+      });
+    },
+
+    // Get all vaults user is a member of
+    getAll: async () => {
+      return apiRequest<{
+        success: boolean;
+        data: VaultWithRole[];
+        message: string;
+      }>('/vaults');
+    },
+
+    // Get vault by ID
+    getById: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>(`/vaults/${id}`);
+    },
+
+    // Update vault
+    update: async (id: string, vaultData: Partial<Vault>) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>(`/vaults/${id}`, {
+        method: 'PUT',
+        data: vaultData,
+      });
+    },
+
+    // Delete vault
+    delete: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/vaults/${id}`, {
+        method: 'DELETE',
+      });
+    },
+  },
+
+  // Vault members
+  members: {
+    // Get vault members
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: VaultMember[];
+        message: string;
+      }>(`/vaults/${vaultId}/members`);
+    },
+  },
+
+  // Vault invites
+  invites: {
+    // Invite user to vault
+    create: async (vaultId: string, inviteData: { email: string; role?: string }) => {
+      return apiRequest<{
+        success: boolean;
+        data: { inviteToken: string };
+        message: string;
+      }>(`/vaults/${vaultId}/invite`, {
+        method: 'POST',
+        data: inviteData,
+      });
+    },
+
+    // Accept vault invitation
+    accept: async (token: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>('/vaults/accept-invite', {
+        method: 'POST',
+        data: { token },
+      });
+    },
+  },
+
+  // Vault balances
+  balances: {
+    // Get vault balances
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          balances: VaultBalance[];
+          debtStructure: any; // Simplified debt structure
+        };
+        message: string;
+      }>(`/vaults/${vaultId}/balances`);
+    },
+  },
+
+  // Shared budgets
+  sharedBudgets: {
+    // Create shared budget
+    create: async (vaultId: string, budgetData: {
+      name: string;
+      description?: string;
+      totalBudget: number;
+      period?: string;
+      approvalRequired?: boolean;
+      approvalThreshold?: number;
+      categories?: string[];
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Shared budget object
+        message: string;
+      }>(`/vaults/${vaultId}/shared-budgets`, {
+        method: 'POST',
+        data: budgetData,
+      });
+    },
+
+    // Get shared budgets
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any[]; // Array of shared budgets
+        message: string;
+      }>(`/vaults/${vaultId}/shared-budgets`);
+    },
+  },
+
+  // Expense approvals
+  expenseApprovals: {
+    // Get pending approvals
+    getPending: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any[]; // Array of pending approvals
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals`);
+    },
+
+    // Approve expense
+    approve: async (vaultId: string, approvalId: string, notes?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Approval result
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals/${approvalId}/approve`, {
+        method: 'POST',
+        data: { notes },
+      });
+    },
+
+    // Reject expense
+    reject: async (vaultId: string, approvalId: string, notes?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Rejection result
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals/${approvalId}/reject`, {
+        method: 'POST',
+        data: { notes },
+      });
+    },
+  },
+
+  // Budget utilization
+  budgetUtilization: {
+    // Get budget utilization report
+    getByVaultId: async (vaultId: string, period?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Budget utilization data
+        message: string;
+      }>(`/vaults/${vaultId}/budget-utilization`, {
+        method: 'GET',
+        params: { period },
+      });
+    },
+  },
+};
+
 // Export all APIs
 export default {
   auth: authAPI,
@@ -1357,4 +1551,5 @@ export default {
   analytics: analyticsAPI,
   investments: investmentsAPI,
   health: healthAPI,
+  vaults: vaultAPI,
 };
