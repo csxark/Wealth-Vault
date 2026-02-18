@@ -1069,6 +1069,8 @@ export const usersRelations = relations(users, ({ many }) => ({
     emergencyFundGoals: many(emergencyFundGoals),
     creditScores: many(creditScores),
     creditScoreAlerts: many(creditScoreAlerts),
+    billNegotiations: many(billNegotiation),
+    negotiationAttempts: many(negotiationAttempts),
 }));
 
 
@@ -1591,3 +1593,133 @@ export const netWorth = pgTable('net_worth', {
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+// Bill Negotiation Table
+export const billNegotiation = pgTable('bill_negotiation', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    billId: uuid('bill_id').references(() => bills.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Negotiation Tips & Strategies
+    category: text('category').notNull(), // 'utilities', 'insurance', 'internet', 'phone', 'subscription', 'loan', 'services', 'other'
+    tips: jsonb('tips').default([]), // Array of negotiation tips
+    strategies: jsonb('strategies').default([]), // Array of strategies with difficulty levels
+    
+    // Savings Analysis
+    currentAmount: numeric('current_amount', { precision: 12, scale: 2 }).notNull(),
+    estimatedSavings: numeric('estimated_savings', { precision: 12, scale: 2 }).default('0'),
+    estimatedSavingsPercentage: numeric('estimated_savings_percentage', { precision: 5, scale: 2 }).default('0'),
+    annualSavingsPotential: numeric('annual_savings_potential', { precision: 12, scale: 2 }).default('0'),
+    
+    // Negotiation Progress
+    status: text('status').default('pending'), // 'pending', 'attempted', 'successful', 'unsuccessful', 'no_action'
+    attemptCount: integer('attempt_count').default(0),
+    lastAttemptDate: timestamp('last_attempt_date'),
+    
+    // Negotiation Results
+    newAmount: numeric('new_amount', { precision: 12, scale: 2 }),
+    savingsAchieved: numeric('savings_achieved', { precision: 12, scale: 2 }),
+    negotiationNotes: text('negotiation_notes'),
+    
+    // Comparable Data
+    marketAverage: numeric('market_average', { precision: 12, scale: 2 }),
+    savingsPotential: jsonb('savings_potential').default({ low: 0, medium: 0, high: 0 }),
+    
+    // Metadata
+    providerInfo: jsonb('provider_info').default({}),
+    successTips: jsonb('success_tips').default([]),
+    confidenceScore: numeric('confidence_score', { precision: 3, scale: 2 }).default('0.5'),
+    
+    metadata: jsonb('metadata').default({
+        lastRecommendedAt: null,
+        userEngaged: false,
+        tags: []
+    }),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Negotiation Tips Table (Pre-defined tips by category)
+export const negotiationTips = pgTable('negotiation_tips', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    category: text('category').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    strategy: text('strategy').notNull(),
+    difficulty: text('difficulty').default('medium'), // 'easy', 'medium', 'hard'
+    estimatedSavings: numeric('estimated_savings', { precision: 5, scale: 2 }).default('0'),
+    successRate: numeric('success_rate', { precision: 3, scale: 2 }).default('0.5'),
+    implementationTime: text('implementation_time'),
+    tags: jsonb('tags').default([]),
+    
+    // Contact templates
+    scriptTemplate: text('script_template'),
+    bestTimeToNegotiate: text('best_time_to_negotiate'),
+    requiredDocuments: jsonb('required_documents').default([]),
+    
+    isActive: boolean('is_active').default(true),
+    displayOrder: integer('display_order').default(0),
+    
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Negotiation Attempts Table
+export const negotiationAttempts = pgTable('negotiation_attempts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    billNegotiationId: uuid('bill_negotiation_id').references(() => billNegotiation.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Attempt Details
+    attemptNumber: integer('attempt_number').notNull(),
+    attemptDate: timestamp('attempt_date').defaultNow(),
+    contactMethod: text('contact_method'), // 'phone', 'email', 'chat', 'in_person'
+    
+    // Results
+    status: text('status').default('pending'), // 'pending', 'in_progress', 'successful', 'unsuccessful', 'waiting'
+    outcomeDescription: text('outcome_description'),
+    
+    // Financial Impact
+    amountBefore: numeric('amount_before', { precision: 12, scale: 2 }),
+    amountAfter: numeric('amount_after', { precision: 12, scale: 2 }),
+    savings: numeric('savings', { precision: 12, scale: 2 }),
+    
+    // Follow-up
+    followUpDate: timestamp('follow_up_date'),
+    followUpNotes: text('follow_up_notes'),
+    
+    // Additional Context
+    tipsUsed: jsonb('tips_used').default([]),
+    notes: text('notes'),
+    
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Bill Negotiation Relations
+export const billNegotiationRelations = relations(billNegotiation, ({ one, many }) => ({
+    user: one(users, {
+        fields: [billNegotiation.userId],
+        references: [users.id],
+    }),
+    bill: one(bills, {
+        fields: [billNegotiation.billId],
+        references: [bills.id],
+    }),
+    attempts: many(negotiationAttempts),
+}));
+
+// Negotiation Attempts Relations
+export const negotiationAttemptsRelations = relations(negotiationAttempts, ({ one }) => ({
+    user: one(users, {
+        fields: [negotiationAttempts.userId],
+        references: [users.id],
+    }),
+    billNegotiation: one(billNegotiation, {
+        fields: [negotiationAttempts.billNegotiationId],
+        references: [billNegotiation.id],
+    }),
+}));
