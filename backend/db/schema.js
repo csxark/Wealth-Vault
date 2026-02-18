@@ -2426,3 +2426,58 @@ export const entityConsolidationRulesRelations = relations(entityConsolidationRu
     parentEntity: one(corporateEntities, { fields: [entityConsolidationRules.parentEntityId], references: [corporateEntities.id] }),
     childEntity: one(corporateEntities, { fields: [entityConsolidationRules.childEntityId], references: [corporateEntities.id] }),
 }));
+
+// ============================================================================
+// AI-DRIVEN MULTI-TIER SUCCESSION EXECUTION & DIGITAL WILL (L3) (#406)
+// ============================================================================
+
+export const digitalWillDefinitions = pgTable('digital_will_definitions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    willName: text('will_name').notNull(),
+    legalJurisdiction: text('legal_jurisdiction').notNull(),
+    executorId: uuid('executor_id').references(() => users.id), // Lead executor
+    revocationKeyHash: text('revocation_key_hash'), // For "Living Will" updates
+    status: text('status').default('draft'), // 'draft', 'active', 'triggered', 'settled'
+    isPublicNotarized: boolean('is_public_notarized').default(false),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const heirIdentityVerifications = pgTable('heir_identity_verifications', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id).notNull(), // Heir's user account
+    willId: uuid('will_id').references(() => digitalWillDefinitions.id, { onDelete: 'cascade' }).notNull(),
+    verificationMethod: text('verification_method').notNull(), // 'biometric', 'legal_doc', 'social_vouch'
+    verificationStatus: text('verification_status').default('pending'), // 'pending', 'verified', 'rejected'
+    verifiedAt: timestamp('verified_at'),
+    metadata: jsonb('metadata'),
+});
+
+export const trusteeVoteLedger = pgTable('trustee_vote_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    willId: uuid('will_id').references(() => digitalWillDefinitions.id, { onDelete: 'cascade' }).notNull(),
+    trusteeId: uuid('trustee_id').references(() => users.id).notNull(),
+    voteResult: text('vote_result').notNull(), // 'approve_trigger', 'deny_trigger'
+    reason: text('reason'),
+    votedAt: timestamp('voted_at').defaultNow(),
+});
+
+// Relations
+export const digitalWillDefinitionsRelations = relations(digitalWillDefinitions, ({ one, many }) => ({
+    user: one(users, { fields: [digitalWillDefinitions.userId], references: [users.id] }),
+    executor: one(users, { fields: [digitalWillDefinitions.executorId], references: [users.id] }),
+    heirs: many(heirIdentityVerifications),
+    votes: many(trusteeVoteLedger),
+}));
+
+export const heirIdentityVerificationsRelations = relations(heirIdentityVerifications, ({ one }) => ({
+    user: one(users, { fields: [heirIdentityVerifications.userId], references: [users.id] }),
+    will: one(digitalWillDefinitions, { fields: [heirIdentityVerifications.willId], references: [digitalWillDefinitions.id] }),
+}));
+
+export const trusteeVoteLedgerRelations = relations(trusteeVoteLedger, ({ one }) => ({
+    will: one(digitalWillDefinitions, { fields: [trusteeVoteLedger.willId], references: [digitalWillDefinitions.id] }),
+    trustee: one(users, { fields: [trusteeVoteLedger.trusteeId], references: [users.id] }),
+}));

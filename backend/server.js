@@ -69,6 +69,7 @@ import yieldsRoutes from "./routes/yields.js";
 import arbitrageRoutes from "./routes/arbitrage.js";
 import riskLabRoutes from "./routes/risk-lab.js";
 import corporateRoutes from "./routes/corporate.js";
+import successionApiRoutes from "./routes/succession-api.js";
 import { presenceTracker } from "./middleware/successionMiddleware.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
@@ -107,6 +108,7 @@ import riskScanner from "./jobs/riskScanner.js";
 import marketRateSyncJob from "./jobs/marketRateSyncJob.js";
 import volatilityMonitor from "./jobs/volatilityMonitor.js";
 import payrollCycleJob from "./jobs/payrollCycleJob.js";
+import mortalityDaemon from "./jobs/mortalityDaemon.js";
 import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
@@ -311,6 +313,7 @@ app.use("/api/yields", userLimiter, yieldsRoutes);
 app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
 app.use("/api/risk-lab", userLimiter, riskLabRoutes);
 app.use("/api/corporate", userLimiter, corporateRoutes);
+app.use("/api/succession-plan", userLimiter, successionApiRoutes);
 
 
 
@@ -388,6 +391,7 @@ if (process.env.NODE_ENV !== 'test') {
     marketRateSyncJob.start();
     volatilityMonitor.start();
     payrollCycleJob.start();
+    mortalityDaemon.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
