@@ -3095,3 +3095,35 @@ export const creditScoreAlerts = pgTable('credit_score_alerts', {
     }),
     createdAt: timestamp('created_at').defaultNow(),
 });
+
+// Retirement Planning Table
+export const retirementPlanning = pgTable('retirement_planning', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    currentAge: integer('current_age').notNull(),
+    retirementAge: integer('retirement_age').notNull(),
+    currentSavings: numeric('current_savings', { precision: 15, scale: 2 }).notNull().default('0'),
+    desiredRetirementSavings: numeric('desired_retirement_savings', { precision: 15, scale: 2 }).notNull(),
+    expectedAnnualReturn: doublePrecision('expected_annual_return').default(0.07), // 7% default
+    yearsToRetirement: integer('years_to_retirement').notNull(),
+    monthlyContribution: numeric('monthly_contribution', { precision: 12, scale: 2 }).default('0'),
+    totalAmountNeeded: numeric('total_amount_needed', { precision: 15, scale: 2 }).notNull(), // Amount needed to save from now until retirement
+    inflationRate: doublePrecision('inflation_rate').default(0.03), // 3% default
+    currency: text('currency').default('USD'),
+    // Calculation results
+    calculatedMonthlyContribution: numeric('calculated_monthly_contribution', { precision: 12, scale: 2 }).default('0'),
+    projectedRetirementAmount: numeric('projected_retirement_amount', { precision: 15, scale: 2 }).default('0'),
+    retirementGoalMet: boolean('retirement_goal_met').default(false),
+    shortfallAmount: numeric('shortfall_amount', { precision: 15, scale: 2 }).default('0'),
+    // Analysis
+    status: text('status').default('active'), // 'active', 'on_track', 'off_track', 'ahead'
+    lastCalculatedAt: timestamp('last_calculated_at').defaultNow(),
+    metadata: jsonb('metadata').default({
+        assumptions: {}, // Store calculation assumptions
+        scenarioAnalysis: [], // Different scenarios (conservative, moderate, aggressive)
+        milestones: [] // Age-based milestones
+    }),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
