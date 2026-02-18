@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { eq, and } from 'drizzle-orm';
 import db from '../config/db.js';
-import { users, deviceSessions } from '../db/schema.js';
+import { users } from '../db/schema.js';
 import * as schema from '../db/schema.js';
 import { verifyAccessToken, isTokenBlacklisted } from '../services/tokenService.js';
 
@@ -11,7 +11,9 @@ const getTable = (modelName) => {
     'User': schema.users,
     'Expense': schema.expenses,
     'Category': schema.categories,
-    'Goal': schema.goals
+    'Goal': schema.goals,
+    'Asset': schema.fixedAssets,
+    'Investment': schema.investments
   };
   return map[modelName];
 };
@@ -46,32 +48,32 @@ export const protect = async (req, res, next) => {
         });
       }
 
-      // Verify session exists and is active
-      if (decoded.sessionId) {
-        const [session] = await db
-          .select()
-          .from(deviceSessions)
-          .where(
-            and(
-              eq(deviceSessions.id, decoded.sessionId),
-              eq(deviceSessions.userId, decoded.id),
-              eq(deviceSessions.isActive, true)
-            )
-          );
+      // TODO: Verify session exists and is active when deviceSessions table exists
+      // if (decoded.sessionId) {
+      //   const [session] = await db
+      //     .select()
+      //     .from(deviceSessions)
+      //     .where(
+      //       and(
+      //         eq(deviceSessions.id, decoded.sessionId),
+      //         eq(deviceSessions.userId, decoded.id),
+      //         eq(deviceSessions.isActive, true)
+      //       )
+      //     );
 
-        if (!session) {
-          return res.status(401).json({
-            success: false,
-            message: 'Session not found or expired.',
-            code: 'SESSION_EXPIRED'
-          });
-        }
+      //   if (!session) {
+      //     return res.status(401).json({
+      //       success: false,
+      //       message: 'Session not found or expired.',
+      //       code: 'SESSION_EXPIRED'
+      //     });
+      //   }
 
-        // Update last activity
-        await db.update(deviceSessions)
-          .set({ lastActivity: new Date() })
-          .where(eq(deviceSessions.id, session.id));
-      }
+      //   // Update last activity
+      //   await db.update(deviceSessions)
+      //     .set({ lastActivity: new Date() })
+      //     .where(eq(deviceSessions.id, session.id));
+      // }
 
       // Get user from token
       const [user] = await db.select().from(users).where(eq(users.id, decoded.id));
