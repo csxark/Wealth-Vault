@@ -1,0 +1,75 @@
+import fs from 'fs';
+import path from 'path';
+import db from '../config/db.js';
+import { taxDeductionLedger } from '../db/schema.js';
+import { eq, inArray } from 'drizzle-orm';
+import { logInfo, logError } from '../utils/logger.js';
+
+/**
+ * Tax Filing Service (L3)
+ * Service to generate structured files for jurisdictional tax reporting (1099, W-2 equivalents).
+ */
+class TaxFilingService {
+    /**
+     * Generate Tax Filing File (XML/CSV/JSON)
+     */
+    async generateFiling(userId, entityId, ledgerIds) {
+        try {
+            const entries = await db.query.taxDeductionLedger.findMany({
+                where: and(
+                    eq(taxDeductionLedger.entityId, entityId),
+                    inArray(taxDeductionLedger.id, ledgerIds)
+                )
+            });
+
+            if (entries.length === 0) throw new Error('No entries found for filing');
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const fileName = `tax_filing_${entityId}_${timestamp}.json`;
+            const filePath = path.join(process.cwd(), 'logs', 'filings', fileName);
+
+            // Ensure directory exists
+            if (!fs.existsSync(path.dirname(filePath))) {
+                fs.mkdirSync(path.dirname(filePath), { recursive: true });
+            }
+
+            const filingContent = {
+                metadata: {
+                    userId,
+                    entityId,
+                    totalAmount: entries.reduce((sum, e) => sum + parseFloat(e.amount), 0),
+                    jurisdictions: [...new Set(entries.map(e => e.jurisdiction))]
+                },
+                data: entries
+            };
+
+            fs.writeFileSync(filePath, JSON.stringify(filingContent, null, 2));
+
+            // Mark entries as filed
+            await db.update(taxDeductionLedger)
+                .set({ status: 'filed' })
+                .where(inArray(taxDeductionLedger.id, ledgerIds));
+
+            logInfo(`[Tax Filing] Generated tax filing file: ${fileName}`);
+            return { fileName, filePath };
+        } catch (error) {
+            logError('[Tax Filing] Filing generation failed:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get Upcoming Deadlines
+     */
+    async getUpcomingDeadlines(userId) {
+        return await db.query.taxDeductionLedger.findMany({
+            where: and(
+                eq(taxDeductionLedger.userId, userId),
+                eq(taxDeductionLedger.status, 'pending_filing')
+            ),
+            orderBy: (t, { asc }) => [asc(t.filingDeadline)]
+        });
+    }
+}
+
+export default new TaxFilingService();
