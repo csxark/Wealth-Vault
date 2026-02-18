@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mail, UserPlus, X, Copy, ExternalLink } from 'lucide-react';
+import api from '../../services/api';
 import { VaultInvite } from '../../types';
 
 interface VaultInvitationProps {
@@ -16,8 +17,24 @@ const VaultInvitation: React.FC<VaultInvitationProps> = ({
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('member');
   const [loading, setLoading] = useState(false);
+  const [fetchingInvites, setFetchingInvites] = useState(true);
   const [pendingInvites, setPendingInvites] = useState<VaultInvite[]>([]);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchPendingInvites();
+  }, [vaultId]);
+
+  const fetchPendingInvites = async () => {
+    try {
+      const response = await api.vaults.invites.getPending(vaultId);
+      setPendingInvites(response.data);
+    } catch (error) {
+      console.error('Failed to fetch pending invites:', error);
+    } finally {
+      setFetchingInvites(false);
+    }
+  };
 
   const handleSendInvite = async () => {
     if (!email.trim()) {
@@ -27,33 +44,20 @@ const VaultInvitation: React.FC<VaultInvitationProps> = ({
 
     setLoading(true);
     try {
-      // Mock API call - replace with actual API call
-      const response = {
-        data: {
-          data: {
-            inviteToken: Math.random().toString(36).substring(7),
-          }
-        }
-      };
-
-      const newInvite: VaultInvite = {
-        id: Date.now().toString(),
-        vaultId: vaultId,
-        inviterId: 'current-user-id', // This should come from auth context
+      const response = await api.vaults.invites.create(vaultId, {
         email: email.trim(),
-        token: response.data.data.inviteToken,
         role,
-        status: 'pending',
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        createdAt: new Date().toISOString(),
-      };
+      });
 
-      setPendingInvites(prev => [...prev, newInvite]);
-      setInviteLink(`${window.location.origin}/join-vault/${response.data.data.inviteToken}`);
+      // Refresh pending invites after sending new invite
+      await fetchPendingInvites();
+
+      setInviteLink(`${window.location.origin}/join-vault/${response.data.inviteToken}`);
       setEmail('');
       alert(`Invitation sent to ${email}`);
     } catch (error: any) {
-      alert('Failed to send invitation');
+      console.error('Failed to send invitation:', error);
+      alert('Failed to send invitation. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -67,8 +71,15 @@ const VaultInvitation: React.FC<VaultInvitationProps> = ({
   };
 
   const cancelInvite = async (inviteId: string) => {
-    setPendingInvites(prev => prev.filter(invite => invite.id !== inviteId));
-    alert('Invitation cancelled');
+    try {
+      await api.vaults.invites.cancel(vaultId, inviteId);
+      // Refresh pending invites after cancelling
+      await fetchPendingInvites();
+      alert('Invitation cancelled');
+    } catch (error) {
+      console.error('Failed to cancel invitation:', error);
+      alert('Failed to cancel invitation. Please try again.');
+    }
   };
 
   return (
@@ -151,7 +162,16 @@ const VaultInvitation: React.FC<VaultInvitationProps> = ({
       </div>
 
       {/* Pending Invites */}
-      {pendingInvites.length > 0 && (
+      {fetchingInvites ? (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-4">
+            Pending Invitations
+          </h3>
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-600"></div>
+          </div>
+        </div>
+      ) : pendingInvites.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
           <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-4">
             Pending Invitations
@@ -178,7 +198,7 @@ const VaultInvitation: React.FC<VaultInvitationProps> = ({
                 </div>
                 <div className="flex items-center space-x-2">
                   <span className="px-2 py-1 text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded">
-                    Pending
+                    {invite.status}
                   </span>
                   <button
                     onClick={() => cancelInvite(invite.id)}
