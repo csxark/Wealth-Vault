@@ -1429,6 +1429,25 @@ export const vaultAPI = {
       });
     },
 
+    // Get pending invites for vault
+    getPending: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: VaultInvite[];
+        message: string;
+      }>(`/vaults/${vaultId}/invites/pending`);
+    },
+
+    // Cancel vault invitation
+    cancel: async (vaultId: string, inviteId: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/vaults/${vaultId}/invites/${inviteId}`, {
+        method: 'DELETE',
+      });
+    },
+
     // Accept vault invitation
     accept: async (token: string) => {
       return apiRequest<{
