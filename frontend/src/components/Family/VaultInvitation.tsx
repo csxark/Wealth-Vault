@@ -1,19 +1,11 @@
 import React, { useState } from 'react';
 import { Mail, UserPlus, X, Copy, ExternalLink } from 'lucide-react';
+import { VaultInvite } from '../../types';
 
 interface VaultInvitationProps {
   vaultId: string;
   vaultName: string;
   onClose?: () => void;
-}
-
-interface PendingInvite {
-  id: string;
-  email: string;
-  role: string;
-  token: string;
-  expiresAt: string;
-  status: string;
 }
 
 const VaultInvitation: React.FC<VaultInvitationProps> = ({
@@ -24,7 +16,7 @@ const VaultInvitation: React.FC<VaultInvitationProps> = ({
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('member');
   const [loading, setLoading] = useState(false);
-  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<VaultInvite[]>([]);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
 
   const handleSendInvite = async () => {
@@ -44,13 +36,16 @@ const VaultInvitation: React.FC<VaultInvitationProps> = ({
         }
       };
 
-      const newInvite: PendingInvite = {
+      const newInvite: VaultInvite = {
         id: Date.now().toString(),
+        vaultId: vaultId,
+        inviterId: 'current-user-id', // This should come from auth context
         email: email.trim(),
-        role,
         token: response.data.data.inviteToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        role,
         status: 'pending',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
       };
 
       setPendingInvites(prev => [...prev, newInvite]);
