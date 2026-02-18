@@ -55,8 +55,23 @@ class MortalityDaemon {
     }
 
     async findWillsAwaitingExecution() {
-        // Mock query to find wills where count(approvals) >= 2
-        return [];
+        const approvalThreshold = 2; // Business rule: 2+ trustees must approve
+
+        const results = await db
+            .select({
+                willId: trusteeVoteLedger.willId,
+                count: sql`count(${trusteeVoteLedger.id})`.mapWith(Number)
+            })
+            .from(trusteeVoteLedger)
+            .innerJoin(digitalWillDefinitions, eq(trusteeVoteLedger.willId, digitalWillDefinitions.id))
+            .where(and(
+                eq(trusteeVoteLedger.voteResult, 'approve_trigger'),
+                eq(digitalWillDefinitions.status, 'active')
+            ))
+            .groupBy(trusteeVoteLedger.willId)
+            .having(sql`count(${trusteeVoteLedger.id}) >= ${approvalThreshold}`);
+
+        return results.map(r => r.willId);
     }
 }
 
