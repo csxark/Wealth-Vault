@@ -2,6 +2,7 @@ import express from 'express';
 import { protect } from '../middleware/auth.js';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/errorHandler.js';
 import billService from '../services/billService.js';
+import billNegotiationService from '../services/billNegotiationService.js';
 
 const router = express.Router();
 
@@ -331,6 +332,109 @@ router.post('/:id/smart-schedule', protect, asyncHandler(async (req, res) => {
     data: bill,
     suggestions: suggestions ? suggestions[0] : null,
     message: `Smart scheduling ${bill.smartScheduleEnabled ? 'enabled' : 'disabled'}`
+  });
+}));
+
+/**
+ * @route   GET /api/bills/negotiable
+ * @desc    Get all bills that can be negotiated
+ * @access  Private
+ */
+router.get('/negotiable', protect, asyncHandler(async (req, res) => {
+  const negotiableBills = await billNegotiationService.getNegotiableBills(req.user.id);
+  
+  res.json({
+    success: true,
+    data: negotiableBills,
+    count: negotiableBills.length
+  });
+}));
+
+/**
+ * @route   GET /api/bills/:id/negotiation
+ * @desc    Get negotiation recommendations and tips for a bill
+ * @access  Private
+ */
+router.get('/:id/negotiation', protect, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const negotiation = await billNegotiationService.getNegotiationRecommendations(req.user.id, id);
+  
+  if (!negotiation) {
+    throw new NotFoundError('Negotiation recommendations not found');
+  }
+  
+  res.json({
+    success: true,
+    data: negotiation,
+    message: 'Negotiation recommendations retrieved successfully'
+  });
+}));
+
+/**
+ * @route   GET /api/bills/:id/negotiation/history
+ * @desc    Get negotiation history for a bill
+ * @access  Private
+ */
+router.get('/:id/negotiation/history', protect, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const history = await billNegotiationService.getNegotiationHistory(req.user.id, id);
+  
+  res.json({
+    success: true,
+    data: history,
+    message: 'Negotiation history retrieved successfully'
+  });
+}));
+
+/**
+ * @route   POST /api/bills/:id/negotiation/attempt
+ * @desc    Record a negotiation attempt
+ * @access  Private
+ */
+router.post('/:id/negotiation/attempt', protect, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { contactMethod, status, outcomeDescription, amountAfter, followUpDate, followUpNotes, tipsUsed, notes } = req.body;
+  
+  // Validate required fields
+  if (!contactMethod || !status) {
+    throw new ValidationError('contactMethod and status are required');
+  }
+  
+  // Get the bill to find its negotiation record
+  const bill = await billService.getBillById(id, req.user.id);
+  if (!bill) {
+    throw new NotFoundError('Bill not found');
+  }
+  
+  // Find or create negotiation record
+  let negotiation = await billNegotiationService.getNegotiationHistory(req.user.id, id);
+  if (!negotiation) {
+    // Create it if it doesn't exist
+    negotiation = await billNegotiationService.getNegotiationRecommendations(req.user.id, id);
+  }
+  
+  // Record the attempt
+  const attempt = await billNegotiationService.recordNegotiationAttempt(
+    req.user.id,
+    negotiation.id,
+    {
+      contactMethod,
+      status,
+      outcomeDescription,
+      amountAfter,
+      followUpDate,
+      followUpNotes,
+      tipsUsed,
+      notes
+    }
+  );
+  
+  res.json({
+    success: true,
+    data: attempt,
+    message: 'Negotiation attempt recorded successfully'
   });
 }));
 
