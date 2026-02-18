@@ -2229,3 +2229,62 @@ export const entityTrustMapsRelations = relations(entityTrustMaps, ({ one }) => 
     sourceEntity: one(corporateEntities, { fields: [entityTrustMaps.sourceEntityId], references: [corporateEntities.id] }),
     targetTrust: one(corporateEntities, { fields: [entityTrustMaps.targetTrustId], references: [corporateEntities.id] }),
 }));
+
+// ============================================================================
+// DEBT-ARBITRAGE & WACC-OPTIMIZED CAPITAL REALLOCATION ENGINE (L3) (#392)
+// ============================================================================
+
+export const debtArbitrageLogs = pgTable('debt_arbitrage_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }),
+    investmentId: uuid('investment_id').references(() => investments.id),
+    actionType: text('action_type').notNull(), // 'LOAN_TO_INVEST', 'LIQUIDATE_TO_PAYOFF', 'REFINANCE_SWAP'
+    arbitrageAlpha: numeric('arbitrage_alpha', { precision: 10, scale: 4 }).notNull(), // Spread %
+    amountInvolved: numeric('amount_involved', { precision: 18, scale: 2 }).notNull(),
+    estimatedAnnualSavings: numeric('estimated_annual_savings', { precision: 18, scale: 2 }),
+    status: text('status').default('proposed'), // 'proposed', 'executed', 'ignored', 'failed'
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const capitalCostSnapshots = pgTable('capital_cost_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    wacc: numeric('wacc', { precision: 10, scale: 4 }).notNull(),
+    costOfDebt: numeric('cost_of_debt', { precision: 10, scale: 4 }).notNull(),
+    costOfEquity: numeric('cost_of_equity', { precision: 10, scale: 4 }).notNull(),
+    totalDebt: numeric('total_debt', { precision: 18, scale: 2 }).notNull(),
+    totalEquity: numeric('total_equity', { precision: 18, scale: 2 }).notNull(),
+    snapshotDate: timestamp('snapshot_date').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const refinanceRoiMetrics = pgTable('refinance_roi_metrics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    currentDebtId: uuid('current_debt_id').references(() => debts.id, { onDelete: 'cascade' }),
+    proposedRate: numeric('proposed_rate', { precision: 10, scale: 4 }).notNull(),
+    closingCosts: numeric('closing_costs', { precision: 18, scale: 2 }).notNull(),
+    breakEvenMonths: integer('break_even_months').notNull(),
+    netPresentValue: numeric('net_present_value', { precision: 18, scale: 2 }).notNull(),
+    roiPercent: numeric('roi_percent', { precision: 10, scale: 2 }),
+    isAutoRecommended: boolean('is_auto_recommended').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations
+export const debtArbitrageLogsRelations = relations(debtArbitrageLogs, ({ one }) => ({
+    user: one(users, { fields: [debtArbitrageLogs.userId], references: [users.id] }),
+    debt: one(debts, { fields: [debtArbitrageLogs.debtId], references: [debts.id] }),
+    investment: one(investments, { fields: [debtArbitrageLogs.investmentId], references: [investments.id] }),
+}));
+
+export const capitalCostSnapshotsRelations = relations(capitalCostSnapshots, ({ one }) => ({
+    user: one(users, { fields: [capitalCostSnapshots.userId], references: [users.id] }),
+}));
+
+export const refinanceRoiMetricsRelations = relations(refinanceRoiMetrics, ({ one }) => ({
+    user: one(users, { fields: [refinanceRoiMetrics.userId], references: [users.id] }),
+    currentDebt: one(debts, { fields: [refinanceRoiMetrics.currentDebtId], references: [debts.id] }),
+}));
