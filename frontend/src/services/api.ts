@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert } from '../types';
+import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert, Vault, VaultWithRole, VaultMember, VaultBalance } from '../types';
 
 // Use environment variable for API URL
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -1351,56 +1351,58 @@ export const investmentsAPI = {
 // Vault API
 export const vaultAPI = {
   // Vault CRUD
-  // Create a new vault
-  create: async (vaultData: { name: string; description?: string | undefined; currency?: string }) => {
-    return apiRequest<{
-      success: boolean;
-      data: Vault;
-      message: string;
-    }>('/vaults', {
-      method: 'POST',
-      data: vaultData,
-    });
-  },
+  vaults: {
+    // Create a new vault
+    create: async (vaultData: { name: string; description?: string; currency?: string }) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>('/vaults', {
+        method: 'POST',
+        data: vaultData,
+      });
+    },
 
-  // Get all vaults user is a member of
-  getAll: async () => {
-    return apiRequest<{
-      success: boolean;
-      data: VaultWithRole[];
-      message: string;
-    }>('/vaults');
-  },
+    // Get all vaults user is a member of
+    getAll: async () => {
+      return apiRequest<{
+        success: boolean;
+        data: VaultWithRole[];
+        message: string;
+      }>('/vaults');
+    },
 
-  // Get vault by ID
-  getById: async (id: string) => {
-    return apiRequest<{
-      success: boolean;
-      data: Vault;
-      message: string;
-    }>(`/vaults/${id}`);
-  },
+    // Get vault by ID
+    getById: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>(`/vaults/${id}`);
+    },
 
-  // Update vault
-  update: async (id: string, vaultData: Partial<Vault>) => {
-    return apiRequest<{
-      success: boolean;
-      data: Vault;
-      message: string;
-    }>(`/vaults/${id}`, {
-      method: 'PUT',
-      data: vaultData,
-    });
-  },
+    // Update vault
+    update: async (id: string, vaultData: Partial<Vault>) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>(`/vaults/${id}`, {
+        method: 'PUT',
+        data: vaultData,
+      });
+    },
 
-  // Delete vault
-  delete: async (id: string) => {
-    return apiRequest<{
-      success: boolean;
-      message: string;
-    }>(`/vaults/${id}`, {
-      method: 'DELETE',
-    });
+    // Delete vault
+    delete: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/vaults/${id}`, {
+        method: 'DELETE',
+      });
+    },
   },
 
   // Vault members
