@@ -2288,3 +2288,61 @@ export const refinanceRoiMetricsRelations = relations(refinanceRoiMetrics, ({ on
     user: one(users, { fields: [refinanceRoiMetrics.userId], references: [users.id] }),
     currentDebt: one(debts, { fields: [refinanceRoiMetrics.currentDebtId], references: [debts.id] }),
 }));
+
+// ============================================================================
+// BLACK-SWAN ADAPTIVE HEDGING & SYNTHETIC ASSET PROTECTION (L3) (#408)
+// ============================================================================
+
+export const marketAnomalyDefinitions = pgTable('market_anomaly_definitions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    anomalyType: text('anomaly_type').notNull(), // 'Flash-Crash', 'Hyper-Volatility', 'De-Pegging', 'Bank-Run'
+    detectionThreshold: numeric('detection_threshold', { precision: 10, scale: 4 }).notNull(), // e.g. 10% drop in < 1hr
+    cooldownPeriodMinutes: integer('cooldown_period_minutes').default(1440), // 24 hours
+    autoPivotEnabled: boolean('auto_pivot_enabled').default(false),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const hedgeExecutionHistory = pgTable('hedge_execution_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    anomalyId: uuid('anomaly_id').references(() => marketAnomalyDefinitions.id),
+    vaultId: uuid('vault_id').references(() => vaults.id),
+    actionTaken: text('action_taken').notNull(), // 'SAFE_HAVEN_PIVOT', 'LIQUIDITY_FREEZE', 'SYNTHETIC_HEDGE'
+    amountShielded: numeric('amount_shielded', { precision: 18, scale: 2 }).notNull(),
+    pnlImpactEstimated: numeric('pnl_impact_estimated', { precision: 18, scale: 2 }),
+    status: text('status').default('completed'),
+    executionDate: timestamp('execution_date').defaultNow(),
+    restoredDate: timestamp('restored_date'),
+    metadata: jsonb('metadata'),
+});
+
+export const syntheticVaultMappings = pgTable('synthetic_vault_mappings', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceVaultId: uuid('source_vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    safeHavenVaultId: uuid('safe_haven_vault_id').references(() => vaults.id).notNull(), // Usually Stablecoin or Gold-linked
+    pivotTriggerRatio: numeric('pivot_trigger_ratio', { precision: 5, scale: 2 }).default('0.50'), // Move 50% on trigger
+    priority: integer('priority').default(1),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations
+export const marketAnomalyDefinitionsRelations = relations(marketAnomalyDefinitions, ({ many, one }) => ({
+    user: one(users, { fields: [marketAnomalyDefinitions.userId], references: [users.id] }),
+    executions: many(hedgeExecutionHistory),
+}));
+
+export const hedgeExecutionHistoryRelations = relations(hedgeExecutionHistory, ({ one }) => ({
+    user: one(users, { fields: [hedgeExecutionHistory.userId], references: [users.id] }),
+    anomaly: one(marketAnomalyDefinitions, { fields: [hedgeExecutionHistory.anomalyId], references: [marketAnomalyDefinitions.id] }),
+    vault: one(vaults, { fields: [hedgeExecutionHistory.vaultId], references: [vaults.id] }),
+}));
+
+export const syntheticVaultMappingsRelations = relations(syntheticVaultMappings, ({ one }) => ({
+    user: one(users, { fields: [syntheticVaultMappings.userId], references: [users.id] }),
+    sourceVault: one(vaults, { fields: [syntheticVaultMappings.sourceVaultId], references: [vaults.id] }),
+    safeHavenVault: one(vaults, { fields: [syntheticVaultMappings.safeHavenVaultId], references: [vaults.id] }),
+}));
