@@ -2481,3 +2481,57 @@ export const trusteeVoteLedgerRelations = relations(trusteeVoteLedger, ({ one })
     will: one(digitalWillDefinitions, { fields: [trusteeVoteLedger.willId], references: [digitalWillDefinitions.id] }),
     trustee: one(users, { fields: [trusteeVoteLedger.trusteeId], references: [users.id] }),
 }));
+
+// ============================================================================
+// AUTONOMOUS CROSS-BORDER TAX RESIDENCY & WITHHOLDING ENGINE (L3) (#405)
+// ============================================================================
+
+export const taxResidencyHistory = pgTable('tax_residency_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    jurisdictionCode: text('jurisdiction_code').notNull(), // ISO country code
+    residencyType: text('residency_type').notNull(), // 'tax_resident', 'non_resident', 'transient'
+    startDate: timestamp('start_date').notNull(),
+    endDate: timestamp('end_date'),
+    daysPresentInYear: integer('days_present_in_year').default(0),
+    isPrimary: boolean('is_primary').default(false),
+    status: text('status').default('active'), // 'verifying', 'active', 'archived'
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const jurisdictionTaxRules = pgTable('jurisdiction_tax_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    jurisdictionCode: text('jurisdiction_code').notNull().unique(), // ISO country code
+    baseIncomeTaxRate: numeric('base_income_tax_rate', { precision: 5, scale: 2 }).notNull(),
+    dividendWithholdingRate: numeric('dividend_withholding_rate', { precision: 5, scale: 2 }).default('15.00'),
+    interestWithholdingRate: numeric('interest_withholding_rate', { precision: 5, scale: 2 }).default('10.00'),
+    residencyDayThreshold: integer('residency_day_threshold').default(183),
+    treatyNetwork: jsonb('treaty_network'), // Map of DTAA reduction rates per country
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const withholdingLedger = pgTable('withholding_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'set null' }),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    taxAmount: numeric('tax_amount', { precision: 18, scale: 2 }).notNull(),
+    sourceJurisdiction: text('source_jurisdiction').notNull(),
+    targetJurisdiction: text('target_jurisdiction').notNull(),
+    withholdingType: text('withholding_type').notNull(), // 'dividend', 'interest', 'capital_gains'
+    treatyApplied: boolean('treaty_applied').default(false),
+    status: text('status').default('estimated'), // 'estimated', 'withheld', 'remitted'
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations
+export const taxResidencyHistoryRelations = relations(taxResidencyHistory, ({ one }) => ({
+    user: one(users, { fields: [taxResidencyHistory.userId], references: [users.id] }),
+}));
+
+export const withholdingLedgerRelations = relations(withholdingLedger, ({ one }) => ({
+    user: one(users, { fields: [withholdingLedger.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [withholdingLedger.vaultId], references: [vaults.id] }),
+}));
