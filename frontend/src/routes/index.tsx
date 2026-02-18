@@ -15,6 +15,11 @@ import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
 import TaxCenter from '../pages/TaxCenter';
+import Vaults from '../pages/Vaults/Vaults';
+import CreateVault from '../pages/Vaults/CreateVault';
+import VaultDetails from '../pages/Vaults/VaultDetails';
+import VaultMembers from '../pages/Vaults/VaultMembers';
+import AcceptInvite from '../pages/Vaults/AcceptInvite';
 
 
 interface ProtectedRouteProps {
@@ -169,6 +174,46 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <TaxCenter />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults',
+    element: (
+      <ProtectedRoute>
+        <Vaults />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/create',
+    element: (
+      <ProtectedRoute>
+        <CreateVault />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/:vaultId',
+    element: (
+      <ProtectedRoute>
+        <VaultDetails />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/:vaultId/members',
+    element: (
+      <ProtectedRoute>
+        <VaultMembers />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/invite/:token',
+    element: (
+      <ProtectedRoute>
+        <AcceptInvite />
       </ProtectedRoute>
     )
   },
