@@ -1,7 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Vault, Menu, User, LogOut, Sun, Moon, Monitor } from 'lucide-react';
+import { Vault, Menu, User, LogOut } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { useTheme, ThemeMode } from '../../hooks/useTheme';
+import { ThemeToggle } from '../Navbar/ThemeToggle';
 
 interface HeaderProps {
   onMenuToggle: () => void;
@@ -9,9 +8,8 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const { user, signOut } = useAuth();
-  const { isDark, toggleTheme, themeMode, setTheme, isAuto, isLight, isDarkMode } = useTheme();
-  const [showThemeMenu, setShowThemeMenu] = useState(false);
-  const themeMenuRef = useRef<HTMLDivElement>(null);
+  // useTheme is now used inside ThemeToggle, but we might need it for other things if we used to use isDark
+  // In this file, isDark was only used for the button. So we don't need it here anymore if we replace the button.
 
   const handleSignOut = async () => {
     await signOut();
@@ -73,54 +71,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Theme Toggle Dropdown */}
-            <div className="relative" ref={themeMenuRef}>
-              <button
-                onClick={() => setShowThemeMenu(!showThemeMenu)}
-                className="p-2.5 rounded-xl text-neutral-600 dark:text-slate-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-slate-700 transition-all flex items-center gap-2"
-                title={`Current theme: ${getThemeLabel()}`}
-                aria-label={`Current theme: ${getThemeLabel()}. Click to change.`}
-              >
-                {getThemeIcon()}
-              </button>
-
-              {/* Theme Dropdown Menu */}
-              {showThemeMenu && (
-                <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-neutral-200 dark:border-slate-700 py-1 z-50">
-                  <button
-                    onClick={() => handleThemeChange('auto')}
-                    className={`w-full px-4 py-2.5 text-left flex items-center gap-3 text-sm hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors ${
-                      isAuto ? 'text-primary-500 font-medium' : 'text-neutral-700 dark:text-slate-300'
-                    }`}
-                  >
-                    <Monitor className="h-4 w-4" />
-                    Auto
-                    {isAuto && <span className="ml-auto text-primary-500">✓</span>}
-                  </button>
-                  <button
-                    onClick={() => handleThemeChange('light')}
-                    className={`w-full px-4 py-2.5 text-left flex items-center gap-3 text-sm hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors ${
-                      isLight ? 'text-primary-500 font-medium' : 'text-neutral-700 dark:text-slate-300'
-                    }`}
-                  >
-                    <Moon className="h-4 w-4" />
-                    Light
-                    {isLight && <span className="ml-auto text-primary-500">✓</span>}
-                  </button>
-                  <button
-                    onClick={() => handleThemeChange('dark')}
-                    className={`w-full px-4 py-2.5 text-left flex items-center gap-3 text-sm hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors ${
-                      isDarkMode ? 'text-primary-500 font-medium' : 'text-neutral-700 dark:text-slate-300'
-                    }`}
-                  >
-                    <Sun className="h-4 w-4" />
-                    Dark
-                    {isDarkMode && <span className="ml-auto text-primary-500">✓</span>}
-                  </button>
-                </div>
-              )}
-            </div>
-
+            <ThemeToggle />
             <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-100 dark:bg-slate-700 text-sm text-neutral-700 dark:text-slate-300">
               <User className="h-4 w-4" />
               <span className="max-w-[150px] truncate font-medium">{user?.email}</span>
