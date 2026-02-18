@@ -3200,7 +3200,7 @@ export const trusteeVoteLedger = pgTable('trustee_vote_ledger', {
 });
 
 // ============================================================================
-// CREDIT SCORING & RETIREMENT PLANNING (from main)
+// CREDIT SCORING & RETIREMENT PLANNING
 // ============================================================================
 
 export const creditScores = pgTable('credit_scores', {
@@ -3226,6 +3226,7 @@ export const creditScores = pgTable('credit_scores', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Credit Score Alerts Table
 export const creditScoreAlerts = pgTable('credit_score_alerts', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -3246,6 +3247,7 @@ export const creditScoreAlerts = pgTable('credit_score_alerts', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Retirement Planning Table
 export const retirementPlanning = pgTable('retirement_planning', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -3259,16 +3261,18 @@ export const retirementPlanning = pgTable('retirement_planning', {
     totalAmountNeeded: numeric('total_amount_needed', { precision: 15, scale: 2 }).notNull(), // Amount needed to save from now until retirement
     inflationRate: doublePrecision('inflation_rate').default(0.03), // 3% default
     currency: text('currency').default('USD'),
+    // Calculation results
     calculatedMonthlyContribution: numeric('calculated_monthly_contribution', { precision: 12, scale: 2 }).default('0'),
     projectedRetirementAmount: numeric('projected_retirement_amount', { precision: 15, scale: 2 }).default('0'),
     retirementGoalMet: boolean('retirement_goal_met').default(false),
     shortfallAmount: numeric('shortfall_amount', { precision: 15, scale: 2 }).default('0'),
+    // Analysis
     status: text('status').default('active'), // 'active', 'on_track', 'off_track', 'ahead'
     lastCalculatedAt: timestamp('last_calculated_at').defaultNow(),
     metadata: jsonb('metadata').default({
-        assumptions: {},
-        scenarioAnalysis: [],
-        milestones: []
+        assumptions: {}, // Store calculation assumptions
+        scenarioAnalysis: [], // Different scenarios (conservative, moderate, aggressive)
+        milestones: [] // Age-based milestones
     }),
     notes: text('notes'),
     createdAt: timestamp('created_at').defaultNow(),
@@ -3358,4 +3362,7 @@ export const creditScoresRelations = relations(creditScores, ({ one }) => ({
 export const creditScoreAlertsRelations = relations(creditScoreAlerts, ({ one }) => ({
     user: one(users, { fields: [creditScoreAlerts.userId], references: [users.id] }),
     creditScore: one(creditScores, { fields: [creditScoreAlerts.creditScoreId], references: [creditScores.id] }),
+}));
+export const retirementPlanningRelations = relations(retirementPlanning, ({ one }) => ({
+    user: one(users, { fields: [retirementPlanning.userId], references: [users.id] }),
 }));
