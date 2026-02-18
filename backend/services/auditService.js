@@ -83,6 +83,7 @@ export const AuditActions = {
   SAFE_MODE_TRIGGERED: 'SAFE_MODE_TRIGGERED',
 };
 
+
 // Resource Types
 export const ResourceTypes = {
   USER: 'user',
@@ -100,6 +101,7 @@ export const ResourceTypes = {
   SUCCESSION: 'succession',
   ENTITY: 'entity'
 };
+
 
 /**
  * Log an audit event asynchronously

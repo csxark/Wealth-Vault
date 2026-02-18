@@ -14,7 +14,10 @@ export const aiLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.user?.id || req.ip
+    keyGenerator: (req, res) => {
+        // Use authenticated user ID if available, otherwise fall back to IP
+        return req.user?.id || req.ip;
+    }
 });
 
 /**

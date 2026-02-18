@@ -1,7 +1,7 @@
 import db from '../config/db.js';
 import { debts, refinanceOpportunities, refinanceProposals } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
-import { generateInsights } from './geminiservice.js';
+import { generateInsights } from './aiInsightsService.js';
 import debtEngine from './debtEngine.js';
 
 class RefinanceScout {

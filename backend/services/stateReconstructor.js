@@ -156,7 +156,7 @@ class StateReconstructor {
     /**
      * Generate checksum for state integrity verification
      */
-    generateChecksum(state) {
+    async generateChecksum(state) {
         const crypto = await import('crypto');
         return crypto.createHash('sha256')
             .update(JSON.stringify(state))

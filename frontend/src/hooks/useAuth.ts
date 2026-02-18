@@ -1,12 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import type { User } from '../types';
+
+// Helper function to sync theme preference to localStorage
+const syncThemePreference = (user: User) => {
+  if (user?.preferences?.theme) {
+    const themeMode = user.preferences.theme;
+    localStorage.setItem('themeMode', themeMode);
+    console.log('[useAuth] Theme preference synced from backend:', themeMode);
+  }
+};
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const { showToast } = useToast();
+
+  // Effect to sync theme when user changes
+  useEffect(() => {
+    if (user) {
+      syncThemePreference(user);
+    }
+  }, [user]);
 
   useEffect(() => {
     // Check current session
@@ -26,6 +42,8 @@ export const useAuth = () => {
               const parsedUser = JSON.parse(storedUser);
               console.log('[useAuth] Setting dev user:', parsedUser);
               setUser(parsedUser);
+              // Sync theme preference for dev user
+              syncThemePreference(parsedUser);
               setLoading(false);
               return;
             }
@@ -37,6 +55,8 @@ export const useAuth = () => {
           if (response.success && response.data.user) {
             console.log('[useAuth] Backend profile success:', response.data.user);
             setUser(response.data.user);
+            // Sync theme preference
+            syncThemePreference(response.data.user);
           } else {
             // Token might be invalid, remove it
             console.log('[useAuth] Invalid token, removing');
@@ -53,7 +73,10 @@ export const useAuth = () => {
           const storedUser = localStorage.getItem('user');
           if (storedUser) {
             console.log('[useAuth] Error but dev token present, using mock user');
-            setUser(JSON.parse(storedUser));
+            const parsedUser = JSON.parse(storedUser);
+            setUser(parsedUser);
+            // Sync theme preference for dev user
+            syncThemePreference(parsedUser);
             setLoading(false);
             return;
           }
