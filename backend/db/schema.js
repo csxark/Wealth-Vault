@@ -3370,6 +3370,40 @@ export const entityConsolidationRules = pgTable('entity_consolidation_rules', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// PREDICTIVE LIQUIDITY STRESS-TESTING & AUTONOMOUS INSOLVENCY PREVENTION (#428)
+export const cashFlowProjections = pgTable('cash_flow_projections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    targetDate: timestamp('target_date').notNull(),
+    projectedBalance: numeric('projected_balance', { precision: 18, scale: 2 }).notNull(),
+    confidenceLow: numeric('confidence_low', { precision: 18, scale: 2 }),
+    confidenceHigh: numeric('confidence_high', { precision: 18, scale: 2 }),
+    simulationType: text('simulation_type').default('monte_carlo'), // 'deterministic', 'monte_carlo'
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const stressTestScenarios = pgTable('stress_test_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scenarioName: text('scenario_name').notNull(), // '50% Income Drop', 'Flash-Crash', 'Medical Emergency'
+    impactMagnitude: numeric('impact_magnitude', { precision: 5, scale: 2 }).notNull(), // e.g. 0.50 for 50% drop
+    variableAffected: text('variable_affected').notNull(), // 'income', 'expense', 'asset_value'
+    probabilityWeight: numeric('probability_weight', { precision: 5, scale: 2 }).default('1.00'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const liquidityVelocityLogs = pgTable('liquidity_velocity_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    dailyBurnRate: numeric('daily_burn_rate', { precision: 18, scale: 2 }).notNull(),
+    weeklyVelocity: numeric('weekly_velocity', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    measuredAt: timestamp('measured_at').defaultNow(),
+});
+
 // ============================================================================
 // RELATIONS
 // ============================================================================
@@ -3424,4 +3458,16 @@ export const creditScoreAlertsRelations = relations(creditScoreAlerts, ({ one })
 }));
 export const retirementPlanningRelations = relations(retirementPlanning, ({ one }) => ({
     user: one(users, { fields: [retirementPlanning.userId], references: [users.id] }),
+}));
+export const cashFlowProjectionsRelations = relations(cashFlowProjections, ({ one }) => ({
+    user: one(users, { fields: [cashFlowProjections.userId], references: [users.id] }),
+}));
+
+export const stressTestScenariosRelations = relations(stressTestScenarios, ({ one }) => ({
+    user: one(users, { fields: [stressTestScenarios.userId], references: [users.id] }),
+}));
+
+export const liquidityVelocityLogsRelations = relations(liquidityVelocityLogs, ({ one }) => ({
+    user: one(users, { fields: [liquidityVelocityLogs.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [liquidityVelocityLogs.vaultId], references: [vaults.id] }),
 }));
