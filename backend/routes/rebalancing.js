@@ -1,7 +1,7 @@
 import express from 'express';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect } from '../middleware/auth.js';
 import rebalanceEngine from '../services/rebalanceEngine.js';
-import { db } from '../db/index.js';
+import db from '../config/db.js';
 import { targetAllocations, rebalanceHistory, driftLogs } from '../db/schema.js';
 import { eq, desc, and } from 'drizzle-orm';
 import { body, validationResult } from 'express-validator';

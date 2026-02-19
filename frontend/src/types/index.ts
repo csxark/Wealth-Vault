@@ -294,6 +294,23 @@ export interface RegisterData {
   monthlyBudget?: number;
 }
 
+// Budget Alert interface
+export interface BudgetAlert {
+  id: string;
+  userId: string;
+  categoryId: string;
+  categoryName: string;
+  threshold: number;
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  currentSpending: number;
+  alertDate: string;
+  isRead: boolean;
+  message: string;
+  severity: 'low' | 'medium' | 'high';
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Transaction interface for CSV import functionality
 export interface Transaction {
   id: string;
@@ -303,4 +320,51 @@ export interface Transaction {
   category: SpendingCategory;
   date: string;
   created_at: string;
+}
+
+// Vault interfaces
+export interface Vault {
+  id: string;
+  name: string;
+  description?: string;
+  ownerId: string;
+  currency: string;
+  isActive: boolean;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VaultMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  joinedAt: string;
+}
+
+export interface VaultInvite {
+  id: string;
+  vaultId: string;
+  inviterId: string;
+  email: string;
+  token: string;
+  role: string;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface VaultBalance {
+  userId: string;
+  balance: string;
+  lastSettlementAt?: string;
+  userName: string;
+  userEmail: string;
+}
+
+export interface VaultWithRole extends Vault {
+  role: string;
+  joinedAt: string;
 }

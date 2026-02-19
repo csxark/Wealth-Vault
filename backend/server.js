@@ -103,12 +103,7 @@ import payoutMonitor from "./jobs/payoutMonitor.js";
 import taxAuditJob from "./jobs/taxAuditJob.js";
 import riskScanner from "./jobs/riskScanner.js";
 import marketRateSyncJob from "./jobs/marketRateSyncJob.js";
-<<<<<<< Updated upstream
-=======
-import velocityJob from "./jobs/velocityJob.js";
-import marketMonitor from "./jobs/marketMonitor.js";
 import debtRecalculator from "./jobs/debtRecalculator.js";
->>>>>>> Stashed changes
 import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
@@ -120,6 +115,8 @@ import { initializeNotificationListeners } from "./listeners/notificationListene
 import { initializeAnalyticsListeners } from "./listeners/analyticsListeners.js";
 import { initializeSubscriptionListeners } from "./listeners/subscriptionListeners.js";
 import { initializeSavingsListeners } from "./listeners/savingsListeners.js";
+
+
 
 // Load environment variables
 dotenv.config();
@@ -311,12 +308,20 @@ app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 app.use("/api/forensic", userLimiter, forensicRoutes);
 app.use("/api/yields", userLimiter, yieldsRoutes);
 app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
+app.use("/api/risk-lab", userLimiter, riskLabRoutes);
+app.use("/api/corporate", userLimiter, corporateRoutes);
+app.use("/api/succession-plan", userLimiter, successionApiRoutes);
+app.use("/api/compliance", userLimiter, complianceRoutes);
 
 
 
 
 
 // Secur fil servr for uploddd fils
+
+
+
+
 app.use("/uploads", createFileServerRoute());
 
 // Health check endpoint
@@ -386,16 +391,11 @@ if (process.env.NODE_ENV !== 'test') {
     taxAuditJob.start();
     riskScanner.start();
     marketRateSyncJob.start();
-<<<<<<< Updated upstream
-=======
-    velocityJob.start();
-    marketMonitor.start();
     debtRecalculator.start();
     volatilityMonitor.start();
     payrollCycleJob.start();
     mortalityDaemon.start();
     residencyAuditJob.start();
->>>>>>> Stashed changes
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
