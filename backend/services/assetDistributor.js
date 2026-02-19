@@ -13,20 +13,35 @@ class AssetDistributor {
      * Creates new memberships in the vault for heirs based on fractional shares defined in the will.
      */
     async splitVaultToHeirs(tx, vaultId, willId) {
-        // Fetch distribution plan from will metadata (mocked structure)
-        // In real app, we'd query digitalWillDefinitions.metadata
-        const distributionPlan = [
-            { userId: ' heir-uuid-1', share: 0.50 },
-            { userId: ' heir-uuid-2', share: 0.50 }
-        ];
+        // Fetch verified heirs for this will
+        const verifiedHeirs = await tx.query.heirIdentityVerifications.findMany({
+            where: (ver, { and, eq }) => and(
+                eq(ver.willId, willId),
+                eq(ver.verificationStatus, 'verified')
+            )
+        });
 
-        logInfo(`[Asset Distributor] Splitting Vault ${vaultId} across ${distributionPlan.length} heirs.`);
+        if (verifiedHeirs.length === 0) {
+            logInfo(`[Asset Distributor] No verified heirs found for Will ${willId}. Skipping vault split.`);
+            return { success: false, reason: 'no_verified_heirs' };
+        }
 
-        for (const plan of distributionPlan) {
+        // Fetch distribution plan from will metadata
+        const will = await tx.query.digitalWillDefinitions.findFirst({
+            where: (w, { eq }) => eq(w.id, willId)
+        });
+
+        const distributionPlan = will.metadata?.distributionPlan || [];
+
+        logInfo(`[Asset Distributor] Splitting Vault ${vaultId} across ${verifiedHeirs.length} verified heirs.`);
+
+        for (const heir of verifiedHeirs) {
+            const plan = distributionPlan.find(p => p.userId === heir.userId) || { share: (1 / verifiedHeirs.length).toFixed(4) };
+
             // Fractionalize access
             await tx.insert(vaultMembers).values({
                 vaultId,
-                userId: plan.userId,
+                userId: heir.userId,
                 role: 'beneficiary',
                 permissions: {
                     fractionalShare: plan.share,

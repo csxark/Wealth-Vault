@@ -892,33 +892,33 @@ export const refinanceOpportunities = pgTable('refinance_opportunities', {
 
 export const taxCategories = pgTable('tax_categories', {
     id: serial('id').primaryKey(),
-    
+
     // Category identity
     categoryName: varchar('category_name', { length: 200 }).notNull().unique(),
     description: text('description'),
-    
+
     // Deductibility rules
     deductibilityType: varchar('deductibility_type', { length: 50 }).notNull(),
     deductibilityRate: numeric('deductibility_rate', { precision: 3, scale: 2 }).default('1.00'),
-    
+
     // Regulatory compliance
     taxJurisdiction: varchar('tax_jurisdiction', { length: 100 }).default('US_Federal'),
     irsCode: varchar('irs_code', { length: 100 }),
     conditionsForDeductibility: jsonb('conditions_for_deductibility').default('{}'),
-    
+
     // Limits and thresholds
     maxDeductionLimit: numeric('max_deduction_limit', { precision: 15, scale: 2 }),
     percentageAgiLimit: numeric('percentage_agi_limit', { precision: 5, scale: 2 }),
-    
+
     // Categorization assistance
     applicableExpenseCategories: text('applicable_expense_categories').array(),
     exampleExpenses: text('example_expenses').array(),
     requiredDocumentation: text('required_documentation').array(),
-    
+
     // Metadata
     isActive: boolean('is_active').default(true),
     priorityOrder: integer('priority_order').default(0),
-    
+
     // Timestamps
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
@@ -975,41 +975,41 @@ export const taxReports = pgTable('tax_reports', {
 export const userTaxProfiles = pgTable('user_tax_profiles', {
     id: serial('id').primaryKey(),
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
-    
+
     // Filing status and basic info
     filingStatus: varchar('filing_status', { length: 50 }).default('single').notNull(),
     annualIncome: numeric('annual_income', { precision: 15, scale: 2 }).default('0'),
     estimatedTaxBracket: varchar('estimated_tax_bracket', { length: 20 }),
     standardDeduction: numeric('standard_deduction', { precision: 15, scale: 2 }).default('14600.00'),
-    
+
     // Taxpayer classification
     dependents: integer('dependents').default(0),
     selfEmployed: boolean('self_employed').default(false),
     businessOwner: boolean('business_owner').default(false),
     quarterlyTaxPayer: boolean('quarterly_tax_payer').default(false),
-    
+
     // Filing dates
     lastFilingDate: date('last_filing_date'),
     nextFilingDeadline: date('next_filing_deadline'),
-    
+
     // Tax preferences
     taxPreferences: jsonb('tax_preferences').default('{}'),
     itemizeDeductions: boolean('itemize_deductions').default(false),
-    
+
     // Year-to-date tracking
     ytdTaxPaid: numeric('ytd_tax_paid', { precision: 15, scale: 2 }).default('0'),
     ytdTaxableIncome: numeric('ytd_taxable_income', { precision: 15, scale: 2 }).default('0'),
     ytdDeductions: numeric('ytd_deductions', { precision: 15, scale: 2 }).default('0'),
     estimatedQuarterlyPayments: numeric('estimated_quarterly_payments', { precision: 15, scale: 2 }).default('0'),
-    
+
     // AI optimization
     aiTaxAdvice: jsonb('ai_tax_advice').default('{}'),
     lastAiAnalysisDate: timestamp('last_ai_analysis_date'),
     optimizationPreferences: jsonb('optimization_preferences').default('{}'),
-    
+
     // Reminders and notifications
     reminderPreferences: jsonb('reminder_preferences').default('{"quarterly": true, "annual": true, "threshold_alerts": true}'),
-    
+
     // Timestamps
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
@@ -3031,27 +3031,178 @@ export const entityTrustMapsRelations = relations(entityTrustMaps, ({ one }) => 
     targetTrust: one(corporateEntities, { fields: [entityTrustMaps.targetTrustId], references: [corporateEntities.id] }),
 }));
 
-// Credit Scores Relations
-export const creditScoresRelations = relations(creditScores, ({ one }) => ({
-    user: one(users, {
-        fields: [creditScores.userId],
-        references: [users.id],
-    }),
-}));
+// ============================================================================
+// AI-DRIVEN FINANCIAL ENGINEERING (L3)
+// ============================================================================
 
-// Credit Score Alerts Relations
-export const creditScoreAlertsRelations = relations(creditScoreAlerts, ({ one }) => ({
-    user: one(users, {
-        fields: [creditScoreAlerts.userId],
-        references: [users.id],
-    }),
-    creditScore: one(creditScores, {
-        fields: [creditScoreAlerts.creditScoreId],
-        references: [creditScores.id],
-    }),
-}));
+// DEBT-ARBITRAGE & WACC-OPTIMIZED CAPITAL REALLOCATION ENGINE (#392)
+export const debtArbitrageLogs = pgTable('debt_arbitrage_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    debtId: uuid('debt_id').references(() => debts.id, { onDelete: 'cascade' }),
+    investmentId: uuid('investment_id').references(() => investments.id),
+    actionType: text('action_type').notNull(), // 'LOAN_TO_INVEST', 'LIQUIDATE_TO_PAYOFF', 'REFINANCE_SWAP'
+    arbitrageAlpha: numeric('arbitrage_alpha', { precision: 10, scale: 4 }).notNull(), // Spread %
+    amountInvolved: numeric('amount_involved', { precision: 18, scale: 2 }).notNull(),
+    estimatedAnnualSavings: numeric('estimated_annual_savings', { precision: 18, scale: 2 }),
+    status: text('status').default('proposed'), // 'proposed', 'executed', 'ignored', 'failed'
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
 
-// Credit Scores Table
+export const capitalCostSnapshots = pgTable('capital_cost_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    wacc: numeric('wacc', { precision: 10, scale: 4 }).notNull(),
+    costOfDebt: numeric('cost_of_debt', { precision: 10, scale: 4 }).notNull(),
+    costOfEquity: numeric('cost_of_equity', { precision: 10, scale: 4 }).notNull(),
+    totalDebt: numeric('total_debt', { precision: 18, scale: 2 }).notNull(),
+    totalEquity: numeric('total_equity', { precision: 18, scale: 2 }).notNull(),
+    snapshotDate: timestamp('snapshot_date').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const refinanceRoiMetrics = pgTable('refinance_roi_metrics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    currentDebtId: uuid('current_debt_id').references(() => debts.id, { onDelete: 'cascade' }),
+    proposedRate: numeric('proposed_rate', { precision: 10, scale: 4 }).notNull(),
+    closingCosts: numeric('closing_costs', { precision: 18, scale: 2 }).notNull(),
+    breakEvenMonths: integer('break_even_months').notNull(),
+    netPresentValue: numeric('net_present_value', { precision: 18, scale: 2 }).notNull(),
+    roiPercent: numeric('roi_percent', { precision: 10, scale: 2 }),
+    isAutoRecommended: boolean('is_auto_recommended').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// BLACK-SWAN ADAPTIVE HEDGING & SYNTHETIC ASSET PROTECTION (#408)
+export const marketAnomalyDefinitions = pgTable('market_anomaly_definitions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    anomalyType: text('anomaly_type').notNull(), // 'Flash-Crash', 'Hyper-Volatility', 'De-Pegging', 'Bank-Run'
+    detectionThreshold: numeric('detection_threshold', { precision: 10, scale: 4 }).notNull(), // e.g. 10% drop in < 1hr
+    cooldownPeriodMinutes: integer('cooldown_period_minutes').default(1440), // 24 hours
+    autoPivotEnabled: boolean('auto_pivot_enabled').default(false),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const hedgeExecutionHistory = pgTable('hedge_execution_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    anomalyId: uuid('anomaly_id').references(() => marketAnomalyDefinitions.id),
+    vaultId: uuid('vault_id').references(() => vaults.id),
+    actionTaken: text('action_taken').notNull(), // 'SAFE_HAVEN_PIVOT', 'LIQUIDITY_FREEZE', 'SYNTHETIC_HEDGE'
+    amountShielded: numeric('amount_shielded', { precision: 18, scale: 2 }).notNull(),
+    pnlImpactEstimated: numeric('pnl_impact_estimated', { precision: 18, scale: 2 }),
+    status: text('status').default('completed'),
+    executionDate: timestamp('execution_date').defaultNow(),
+    restoredDate: timestamp('restored_date'),
+    metadata: jsonb('metadata'),
+});
+
+export const syntheticVaultMappings = pgTable('synthetic_vault_mappings', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceVaultId: uuid('source_vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    safeHavenVaultId: uuid('safe_haven_vault_id').references(() => vaults.id).notNull(), // Usually Stablecoin or Gold-linked
+    pivotTriggerRatio: numeric('pivot_trigger_ratio', { precision: 5, scale: 2 }).default('0.50'), // Move 50% on trigger
+    priority: integer('priority').default(1),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// MULTI-ENTITY INTER-COMPANY LEDGER & GLOBAL PAYROLL SWEEP (#390)
+export const interCompanyTransfers = pgTable('inter_company_transfers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceEntityId: uuid('source_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    targetEntityId: uuid('target_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    transferType: text('transfer_type').notNull(), // 'loan', 'revenue_distribution', 'expense_reimbursement'
+    loanInterestRate: numeric('loan_interest_rate', { precision: 10, scale: 4 }),
+    status: text('status').default('pending'),
+    referenceNumber: text('reference_number').unique(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const payrollBuckets = pgTable('payroll_buckets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    bucketName: text('bucket_name').notNull(),
+    totalAllocated: numeric('total_allocated', { precision: 18, scale: 2 }).default('0.00'),
+    frequency: text('frequency').default('monthly'), // 'weekly', 'bi-weekly', 'monthly'
+    nextPayrollDate: timestamp('next_payroll_date'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const taxDeductionLedger = pgTable('tax_deduction_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    payrollId: uuid('payroll_id'), // Reference to a payout record (dividend payout or future payroll execution)
+    taxType: text('tax_type').notNull(), // 'federal_income_tax', 'social_security', 'medicare', 'state_tax'
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    jurisdiction: text('jurisdiction').notNull(),
+    status: text('status').default('pending_filing'), // 'pending_filing', 'filed', 'paid'
+    filingDeadline: timestamp('filing_deadline'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const entityConsolidationRules = pgTable('entity_consolidation_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    parentEntityId: uuid('parent_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    childEntityId: uuid('child_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    consolidationMethod: text('consolidation_method').default('full'), // 'full', 'equity_method', 'proportionate'
+    ownershipStake: numeric('ownership_stake', { precision: 5, scale: 2 }).default('100.00'),
+    eliminationEntriesRequired: boolean('elimination_entries_required').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// AI-DRIVEN MULTI-TIER SUCCESSION EXECUTION & DIGITAL WILL (#406)
+export const digitalWillDefinitions = pgTable('digital_will_definitions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    willName: text('will_name').notNull(),
+    legalJurisdiction: text('legal_jurisdiction').notNull(),
+    executorId: uuid('executor_id').references(() => users.id), // Lead executor
+    revocationKeyHash: text('revocation_key_hash'), // For "Living Will" updates
+    status: text('status').default('draft'), // 'draft', 'active', 'triggered', 'settled'
+    isPublicNotarized: boolean('is_public_notarized').default(false),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const heirIdentityVerifications = pgTable('heir_identity_verifications', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id).notNull(), // Heir's user account
+    willId: uuid('will_id').references(() => digitalWillDefinitions.id, { onDelete: 'cascade' }).notNull(),
+    verificationMethod: text('verification_method').notNull(), // 'biometric', 'legal_doc', 'social_vouch'
+    verificationStatus: text('verification_status').default('pending'), // 'pending', 'verified', 'rejected'
+    verifiedAt: timestamp('verified_at'),
+    metadata: jsonb('metadata'),
+});
+
+export const trusteeVoteLedger = pgTable('trustee_vote_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    willId: uuid('will_id').references(() => digitalWillDefinitions.id, { onDelete: 'cascade' }).notNull(),
+    trusteeId: uuid('trustee_id').references(() => users.id).notNull(),
+    voteResult: text('vote_result').notNull(), // 'approve_trigger', 'deny_trigger'
+    reason: text('reason'),
+    votedAt: timestamp('voted_at').defaultNow(),
+});
+
+// ============================================================================
+// CREDIT SCORING & RETIREMENT PLANNING
+// ============================================================================
+
 export const creditScores = pgTable('credit_scores', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -3129,6 +3280,40 @@ export const retirementPlanning = pgTable('retirement_planning', {
 });
 
 // ============================================================================
+// RELATIONS
+// ============================================================================
+
+export const debtArbitrageLogsRelations = relations(debtArbitrageLogs, ({ one }) => ({
+    user: one(users, { fields: [debtArbitrageLogs.userId], references: [users.id] }),
+    debt: one(debts, { fields: [debtArbitrageLogs.debtId], references: [debts.id] }),
+    investment: one(investments, { fields: [debtArbitrageLogs.investmentId], references: [investments.id] }),
+}));
+
+export const capitalCostSnapshotsRelations = relations(capitalCostSnapshots, ({ one }) => ({
+    user: one(users, { fields: [capitalCostSnapshots.userId], references: [users.id] }),
+}));
+
+export const refinanceRoiMetricsRelations = relations(refinanceRoiMetrics, ({ one }) => ({
+    user: one(users, { fields: [refinanceRoiMetrics.userId], references: [users.id] }),
+    currentDebt: one(debts, { fields: [refinanceRoiMetrics.currentDebtId], references: [debts.id] }),
+}));
+
+export const marketAnomalyDefinitionsRelations = relations(marketAnomalyDefinitions, ({ many, one }) => ({
+    user: one(users, { fields: [marketAnomalyDefinitions.userId], references: [users.id] }),
+    executions: many(hedgeExecutionHistory),
+}));
+
+export const hedgeExecutionHistoryRelations = relations(hedgeExecutionHistory, ({ one }) => ({
+    user: one(users, { fields: [hedgeExecutionHistory.userId], references: [users.id] }),
+    anomaly: one(marketAnomalyDefinitions, { fields: [hedgeExecutionHistory.anomalyId], references: [marketAnomalyDefinitions.id] }),
+    vault: one(vaults, { fields: [hedgeExecutionHistory.vaultId], references: [vaults.id] }),
+}));
+
+export const syntheticVaultMappingsRelations = relations(syntheticVaultMappings, ({ one }) => ({
+    user: one(users, { fields: [syntheticVaultMappings.userId], references: [users.id] }),
+    sourceVault: one(vaults, { fields: [syntheticVaultMappings.sourceVaultId], references: [vaults.id] }),
+    safeHavenVault: one(vaults, { fields: [syntheticVaultMappings.safeHavenVaultId], references: [vaults.id] }),
+}));
 // AI-DRIVEN FINANCIAL ENGINEERING (L3)
 // ============================================================================
 
@@ -3212,6 +3397,31 @@ export const entityConsolidationRulesRelations = relations(entityConsolidationRu
     childEntity: one(corporateEntities, { fields: [entityConsolidationRules.childEntityId], references: [corporateEntities.id] }),
 }));
 
+export const digitalWillDefinitionsRelations = relations(digitalWillDefinitions, ({ one, many }) => ({
+    user: one(users, { fields: [digitalWillDefinitions.userId], references: [users.id] }),
+    executor: one(users, { fields: [digitalWillDefinitions.executorId], references: [users.id] }),
+    heirs: many(heirIdentityVerifications),
+    votes: many(trusteeVoteLedger),
+}));
+
+export const heirIdentityVerificationsRelations = relations(heirIdentityVerifications, ({ one }) => ({
+    user: one(users, { fields: [heirIdentityVerifications.userId], references: [users.id] }),
+    will: one(digitalWillDefinitions, { fields: [heirIdentityVerifications.willId], references: [digitalWillDefinitions.id] }),
+}));
+
+export const trusteeVoteLedgerRelations = relations(trusteeVoteLedger, ({ one }) => ({
+    will: one(digitalWillDefinitions, { fields: [trusteeVoteLedger.willId], references: [digitalWillDefinitions.id] }),
+    trustee: one(users, { fields: [trusteeVoteLedger.trusteeId], references: [users.id] }),
+}));
+
+export const creditScoresRelations = relations(creditScores, ({ one }) => ({
+    user: one(users, { fields: [creditScores.userId], references: [users.id] }),
+}));
+
+export const creditScoreAlertsRelations = relations(creditScoreAlerts, ({ one }) => ({
+    user: one(users, { fields: [creditScoreAlerts.userId], references: [users.id] }),
+    creditScore: one(creditScores, { fields: [creditScoreAlerts.creditScoreId], references: [creditScores.id] }),
+}));
 export const retirementPlanningRelations = relations(retirementPlanning, ({ one }) => ({
     user: one(users, { fields: [retirementPlanning.userId], references: [users.id] }),
 }));
