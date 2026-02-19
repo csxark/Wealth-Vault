@@ -62,12 +62,24 @@ class SuccessionService {
     }
 
     /**
-     * Records presence to delay the inactivity trigger
+     * Records presence to delay the inactivity trigger (Internal call)
+     */
+    async trackActivity(userId, activityType = 'api_interaction') {
+        try {
+            await db.update(users)
+                .set({ lastPresenceAt: new Date() })
+                .where(eq(users.id, userId));
+            // logInfo(`[Succession] Activity tracked for user ${userId}: ${activityType}`);
+        } catch (error) {
+            console.error('[Succession Service] Failed to track activity:', error);
+        }
+    }
+
+    /**
+     * Alias for manual UI pings
      */
     async recordProofOfLife(userId) {
-        await db.update(users)
-            .set({ lastPresenceAt: new Date() })
-            .where(eq(users.id, userId));
+        return this.trackActivity(userId, 'manual_ping');
     }
 }
 

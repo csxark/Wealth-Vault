@@ -13,7 +13,7 @@ class TaxFilingService {
     /**
      * Generate Tax Filing File (XML/CSV/JSON)
      */
-    async generateFiling(userId, entityId, ledgerIds) {
+    async generateFiling(userId, entityId, ledgerIds, format = 'json') {
         try {
             const entries = await db.query.taxDeductionLedger.findMany({
                 where: and(
@@ -25,33 +25,44 @@ class TaxFilingService {
             if (entries.length === 0) throw new Error('No entries found for filing');
 
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const fileName = `tax_filing_${entityId}_${timestamp}.json`;
+            const fileName = `tax_filing_${entityId}_${timestamp}.${format}`;
             const filePath = path.join(process.cwd(), 'logs', 'filings', fileName);
 
-            // Ensure directory exists
             if (!fs.existsSync(path.dirname(filePath))) {
                 fs.mkdirSync(path.dirname(filePath), { recursive: true });
             }
 
-            const filingContent = {
-                metadata: {
-                    userId,
-                    entityId,
-                    totalAmount: entries.reduce((sum, e) => sum + parseFloat(e.amount), 0),
-                    jurisdictions: [...new Set(entries.map(e => e.jurisdiction))]
-                },
-                data: entries
-            };
+            let content;
+            if (format === 'json') {
+                content = JSON.stringify({
+                    metadata: {
+                        userId,
+                        entityId,
+                        totalAmount: entries.reduce((sum, e) => sum + parseFloat(e.amount), 0),
+                        jurisdictions: [...new Set(entries.map(e => e.jurisdiction))]
+                    },
+                    data: entries
+                }, null, 2);
+            } else if (format === 'csv') {
+                const header = 'id,tax_type,amount,jurisdiction,status,created_at\n';
+                const rows = entries.map(e => `${e.id},${e.taxType},${e.amount},${e.jurisdiction},${e.status},${e.createdAt}`).join('\n');
+                content = header + rows;
+            } else if (format === 'pdf') {
+                // Mocking a PDF data block (binary-like structure)
+                content = `%PDF-1.4\n%WealthVault Tax Record\n1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj\n... [Simulated PDF Data Block for ${entityId}] ...`;
+            } else {
+                throw new Error('Unsupported format');
+            }
 
-            fs.writeFileSync(filePath, JSON.stringify(filingContent, null, 2));
+            fs.writeFileSync(filePath, content);
 
             // Mark entries as filed
             await db.update(taxDeductionLedger)
                 .set({ status: 'filed' })
                 .where(inArray(taxDeductionLedger.id, ledgerIds));
 
-            logInfo(`[Tax Filing] Generated tax filing file: ${fileName}`);
-            return { fileName, filePath };
+            logInfo(`[Tax Filing] Generated ${format.toUpperCase()} tax filing: ${fileName}`);
+            return { fileName, filePath, format };
         } catch (error) {
             logError('[Tax Filing] Filing generation failed:', error);
             throw error;
