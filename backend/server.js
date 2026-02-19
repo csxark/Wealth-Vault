@@ -104,6 +104,7 @@ import taxAuditJob from "./jobs/taxAuditJob.js";
 import riskScanner from "./jobs/riskScanner.js";
 import marketRateSyncJob from "./jobs/marketRateSyncJob.js";
 import velocityJob from "./jobs/velocityJob.js";
+import marketMonitor from "./jobs/marketMonitor.js";
 import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
@@ -392,6 +393,7 @@ if (process.env.NODE_ENV !== 'test') {
     riskScanner.start();
     marketRateSyncJob.start();
     velocityJob.start();
+    marketMonitor.start();
     volatilityMonitor.start();
     payrollCycleJob.start();
     mortalityDaemon.start();

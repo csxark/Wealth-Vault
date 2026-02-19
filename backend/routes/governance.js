@@ -11,6 +11,10 @@ import { assetStepUpLogs } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import shieldService from '../services/shieldService.js';
 import riskEngine from '../services/riskEngine.js';
+import anomalyScanner from '../services/anomalyScanner.js';
+import hedgingOrchestrator from '../services/hedgingOrchestrator.js';
+import { marketAnomalyDefinitions, syntheticVaultMappings, hedgeExecutionHistory, vaults } from '../db/schema.js';
+import { eq, and, desc } from 'drizzle-orm';
 
 const router = express.Router();
 
@@ -261,6 +265,96 @@ router.post('/shield/sensitivity', protect, asyncHandler(async (req, res) => {
     const { level } = req.body;
     const result = await riskEngine.calibrateSensitivity(req.user.id, level);
     new ApiResponse(200, result).send(res);
+}));
+
+/**
+ * @route   GET /api/governance/risk/system-status
+ * @desc    Get real-time market anomaly scanner status
+ */
+router.get('/risk/system-status', protect, asyncHandler(async (req, res) => {
+    const status = anomalyScanner.getSystemStatus();
+    new ApiResponse(200, status).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/risk/reset
+ * @desc    Manually reset system alert state to NORMAL
+ */
+router.post('/risk/reset', protect, asyncHandler(async (req, res) => {
+    anomalyScanner.resetState();
+    new ApiResponse(200, null, 'System state reset to NORMAL').send(res);
+}));
+
+/**
+ * @route   GET /api/governance/risk/anomalies
+ * @desc    Get detected market anomalies for the user
+ */
+router.get('/risk/anomalies', protect, asyncHandler(async (req, res) => {
+    const history = await db.query.marketAnomalyDefinitions.findMany({
+        where: eq(marketAnomalyDefinitions.userId, req.user.id),
+        with: {
+            executions: {
+                orderBy: [desc(hedgeExecutionHistory.executionDate)],
+                limit: 10
+            }
+        }
+    });
+    new ApiResponse(200, history).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/risk/hedge-rules
+ * @desc    Create a new market anomaly detection and auto-hedge rule
+ */
+router.post('/risk/hedge-rules', protect, [
+    body('anomalyType').isIn(['Flash-Crash', 'Hyper-Volatility', 'De-Pegging', 'Bank-Run']),
+    body('detectionThreshold').isNumeric(),
+    body('autoPivotEnabled').isBoolean().optional(),
+], asyncHandler(async (req, res) => {
+    const { anomalyType, detectionThreshold, autoPivotEnabled } = req.body;
+    const [rule] = await db.insert(marketAnomalyDefinitions).values({
+        userId: req.user.id,
+        anomalyType,
+        detectionThreshold: detectionThreshold.toString(),
+        autoPivotEnabled: autoPivotEnabled ?? false,
+    }).returning();
+    new ApiResponse(201, rule).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/risk/synthetic-mappings
+ * @desc    Map a volatile vault to a synthetic safe-haven vault
+ */
+router.post('/risk/synthetic-mappings', protect, [
+    body('sourceVaultId').isUUID(),
+    body('safeHavenVaultId').isUUID(),
+    body('pivotTriggerRatio').isNumeric().optional(),
+], asyncHandler(async (req, res) => {
+    const { sourceVaultId, safeHavenVaultId, pivotTriggerRatio } = req.body;
+
+    // Check ownership of both vaults
+    const v1 = await db.query.vaults.findFirst({ where: and(eq(vaults.id, sourceVaultId), eq(vaults.ownerId, req.user.id)) });
+    const v2 = await db.query.vaults.findFirst({ where: and(eq(vaults.id, safeHavenVaultId), eq(vaults.ownerId, req.user.id)) });
+
+    if (!v1 || !v2) return next(new AppError(404, 'One or both vaults not found or unauthorized'));
+
+    const [mapping] = await db.insert(syntheticVaultMappings).values({
+        userId: req.user.id,
+        sourceVaultId,
+        safeHavenVaultId,
+        pivotTriggerRatio: pivotTriggerRatio?.toString() || '0.50',
+    }).returning();
+
+    new ApiResponse(201, mapping).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/risk/freeze/lift
+ * @desc    Manually lift liquidity freeze for the user's vaults
+ */
+router.post('/risk/freeze/lift', protect, asyncHandler(async (req, res) => {
+    await hedgingOrchestrator.liftLiquidityFreeze(req.user.id);
+    new ApiResponse(200, null, 'Liquidity freeze lifted').send(res);
 }));
 
 export default router;
