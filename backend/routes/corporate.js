@@ -71,8 +71,8 @@ router.post('/payroll/sweep/:bucketId', protect, asyncHandler(async (req, res) =
  * @desc    Generate tax filing for specific entries
  */
 router.post('/tax/file', protect, asyncHandler(async (req, res) => {
-    const { entityId, ledgerIds } = req.body;
-    const filing = await taxFilingService.generateFiling(req.user.id, entityId, ledgerIds);
+    const { entityId, ledgerIds, format } = req.body;
+    const filing = await taxFilingService.generateFiling(req.user.id, entityId, ledgerIds, format);
     new ApiResponse(200, filing).send(res);
 }));
 
@@ -86,6 +86,25 @@ router.get('/history', protect, asyncHandler(async (req, res) => {
         orderBy: [desc(interCompanyTransfers.createdAt)]
     });
     new ApiResponse(200, logs).send(res);
+}));
+
+/**
+ * @route   GET /api/corporate/ledger/health/:entityId
+ * @desc    Get real-time financial health metrics for an entity
+ */
+router.get('/ledger/health/:entityId', protect, asyncHandler(async (req, res) => {
+    const health = await ledgerBalancer.calculateEntityHealth(req.params.entityId);
+    new ApiResponse(200, health).send(res);
+}));
+
+/**
+ * @route   GET /api/corporate/ledger/balance-sheet
+ * @desc    Get consolidated group balance sheet
+ */
+router.get('/ledger/balance-sheet', protect, asyncHandler(async (req, res) => {
+    const { parentId } = req.query;
+    const balanceSheet = await ledgerBalancer.getConsolidatedBalanceSheet(req.user.id, parentId);
+    new ApiResponse(200, balanceSheet).send(res);
 }));
 
 export default router;

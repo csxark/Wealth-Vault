@@ -3127,3 +3127,91 @@ export const retirementPlanning = pgTable('retirement_planning', {
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+// ============================================================================
+// AI-DRIVEN FINANCIAL ENGINEERING (L3)
+// ============================================================================
+
+// MULTI-ENTITY INTER-COMPANY LEDGER & GLOBAL PAYROLL SWEEP (#390)
+export const interCompanyTransfers = pgTable('inter_company_transfers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceEntityId: uuid('source_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    targetEntityId: uuid('target_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    transferType: text('transfer_type').notNull(), // 'loan', 'revenue_distribution', 'expense_reimbursement'
+    loanInterestRate: numeric('loan_interest_rate', { precision: 10, scale: 4 }),
+    status: text('status').default('pending'),
+    referenceNumber: text('reference_number').unique(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const payrollBuckets = pgTable('payroll_buckets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    bucketName: text('bucket_name').notNull(),
+    totalAllocated: numeric('total_allocated', { precision: 18, scale: 2 }).default('0.00'),
+    frequency: text('frequency').default('monthly'), // 'weekly', 'bi-weekly', 'monthly'
+    nextPayrollDate: timestamp('next_payroll_date'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const taxDeductionLedger = pgTable('tax_deduction_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    payrollId: uuid('payroll_id'), // Reference to a payout record (dividend payout or future payroll execution)
+    taxType: text('tax_type').notNull(), // 'federal_income_tax', 'social_security', 'medicare', 'state_tax'
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    jurisdiction: text('jurisdiction').notNull(),
+    status: text('status').default('pending_filing'), // 'pending_filing', 'filed', 'paid'
+    filingDeadline: timestamp('filing_deadline'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const entityConsolidationRules = pgTable('entity_consolidation_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    parentEntityId: uuid('parent_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    childEntityId: uuid('child_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    consolidationMethod: text('consolidation_method').default('full'), // 'full', 'equity_method', 'proportionate'
+    ownershipStake: numeric('ownership_stake', { precision: 5, scale: 2 }).default('100.00'),
+    eliminationEntriesRequired: boolean('elimination_entries_required').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================================================
+// RELATIONS
+// ============================================================================
+
+export const interCompanyTransfersRelations = relations(interCompanyTransfers, ({ one }) => ({
+    user: one(users, { fields: [interCompanyTransfers.userId], references: [users.id] }),
+    sourceEntity: one(corporateEntities, { fields: [interCompanyTransfers.sourceEntityId], references: [corporateEntities.id] }),
+    targetEntity: one(corporateEntities, { fields: [interCompanyTransfers.targetEntityId], references: [corporateEntities.id] }),
+}));
+
+export const payrollBucketsRelations = relations(payrollBuckets, ({ one }) => ({
+    user: one(users, { fields: [payrollBuckets.userId], references: [users.id] }),
+    entity: one(corporateEntities, { fields: [payrollBuckets.entityId], references: [corporateEntities.id] }),
+    vault: one(vaults, { fields: [payrollBuckets.vaultId], references: [vaults.id] }),
+}));
+
+export const taxDeductionLedgerRelations = relations(taxDeductionLedger, ({ one }) => ({
+    user: one(users, { fields: [taxDeductionLedger.userId], references: [users.id] }),
+    entity: one(corporateEntities, { fields: [taxDeductionLedger.entityId], references: [corporateEntities.id] }),
+}));
+
+export const entityConsolidationRulesRelations = relations(entityConsolidationRules, ({ one }) => ({
+    user: one(users, { fields: [entityConsolidationRules.userId], references: [users.id] }),
+    parentEntity: one(corporateEntities, { fields: [entityConsolidationRules.parentEntityId], references: [corporateEntities.id] }),
+    childEntity: one(corporateEntities, { fields: [entityConsolidationRules.childEntityId], references: [corporateEntities.id] }),
+}));
+
+export const retirementPlanningRelations = relations(retirementPlanning, ({ one }) => ({
+    user: one(users, { fields: [retirementPlanning.userId], references: [users.id] }),
+}));
