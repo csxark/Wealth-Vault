@@ -16,6 +16,7 @@ import eventBus from "../events/eventBus.js";
 import { AppError } from "../utils/AppError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { liquidityGuard } from "../middleware/liquidityGuard.js";
+import { riskInterceptor } from "../middleware/riskInterceptor.js";
 
 // Side-effects like updateCategoryStats, monitorBudget, matchSubscription 
 // are now handled by event listeners in ../listeners/
@@ -207,6 +208,7 @@ router.post(
   protect,
   securityGuard, // Security guard middleware
   liquidityGuard, // Predictive liquidity check
+  riskInterceptor, // Black-swan protection
   securityInterceptor(),
   [
     body("amount").isFloat({ min: 0.01 }),
