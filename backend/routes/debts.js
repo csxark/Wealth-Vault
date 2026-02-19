@@ -7,7 +7,14 @@ import payoffOptimizer from '../services/payoffOptimizer.js';
 import refinanceScout from '../services/refinanceScout.js';
 import db from '../config/db.js';
 import { debts } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
+import arbitrageEngine from '../services/arbitrageEngine.js';
+import refinanceService from '../services/refinanceService.js';
+import { arbitrageGuard } from '../middleware/arbitrageGuard.js';
+import { debtArbitrageLogs, capitalCostSnapshots } from '../db/schema.js';
+import { body } from 'express-validator';
+import { ApiResponse } from '../utils/ApiResponse.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
@@ -193,5 +200,70 @@ router.get('/refinance/roi', protect, async (req, res) => {
         res.error(error.message);
     }
 });
+
+/**
+ * @route   GET /api/debts/arbitrage/summary
+ * @desc    Get AI-driven arbitrage summary and WACC metrics
+ */
+router.get('/arbitrage/summary', protect, asyncHandler(async (req, res) => {
+    const waccMetrics = await arbitrageEngine.calculateWACC(req.user.id);
+    const recentSignals = await db.query.debtArbitrageLogs.findMany({
+        where: eq(debtArbitrageLogs.userId, req.user.id),
+        orderBy: [desc(debtArbitrageLogs.createdAt)],
+        limit: 10
+    });
+
+    return new ApiResponse(200, {
+        waccMetrics,
+        recentSignals
+    }, "Arbitrage summary generated").send(res);
+}));
+
+/**
+ * @route   GET /api/debts/refinance/proposals
+ * @desc    Get automated refinance recommendations
+ */
+router.get('/refinance/proposals', protect, asyncHandler(async (req, res) => {
+    const proposals = await refinanceService.getBestProposals(req.user.id);
+    return new ApiResponse(200, proposals).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/roi/comparison
+ * @desc    Manually compare an external refinance rate
+ */
+router.post('/roi/comparison', protect, [
+    body('debtId').isUUID(),
+    body('proposedRate').isNumeric(),
+    body('closingCosts').isNumeric()
+], asyncHandler(async (req, res) => {
+    const { debtId, proposedRate, closingCosts } = req.body;
+    const result = await refinanceService.analyzeRefinance(
+        req.user.id,
+        debtId,
+        parseFloat(proposedRate),
+        parseFloat(closingCosts)
+    );
+    return new ApiResponse(200, result).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/arbitrage/execute
+ * @desc    Execute a proposed arbitrage reallocation action
+ */
+router.post('/arbitrage/execute', protect, arbitrageGuard, [
+    body('signalId').isUUID()
+], asyncHandler(async (req, res) => {
+    const { signalId } = req.body;
+
+    const [signal] = await db.select().from(debtArbitrageLogs).where(and(eq(debtArbitrageLogs.id, signalId), eq(debtArbitrageLogs.userId, req.user.id)));
+    if (!signal) return res.status(404).json(new ApiResponse(404, null, "Arbitrage signal not found"));
+
+    // Execution logic would actually trigger transfers here. 
+    // For now, we simulation completion.
+    await db.update(debtArbitrageLogs).set({ status: 'executed' }).where(eq(debtArbitrageLogs.id, signalId));
+
+    return new ApiResponse(200, null, `Arbitrage action ${signal.actionType} executed successfully (Simulated)`).send(res);
+}));
 
 export default router;

@@ -2288,3 +2288,195 @@ export const refinanceRoiMetricsRelations = relations(refinanceRoiMetrics, ({ on
     user: one(users, { fields: [refinanceRoiMetrics.userId], references: [users.id] }),
     currentDebt: one(debts, { fields: [refinanceRoiMetrics.currentDebtId], references: [debts.id] }),
 }));
+<<<<<<< Updated upstream
+=======
+
+export const marketAnomalyDefinitionsRelations = relations(marketAnomalyDefinitions, ({ many, one }) => ({
+    user: one(users, { fields: [marketAnomalyDefinitions.userId], references: [users.id] }),
+    executions: many(hedgeExecutionHistory),
+}));
+
+export const hedgeExecutionHistoryRelations = relations(hedgeExecutionHistory, ({ one }) => ({
+    user: one(users, { fields: [hedgeExecutionHistory.userId], references: [users.id] }),
+    anomaly: one(marketAnomalyDefinitions, { fields: [hedgeExecutionHistory.anomalyId], references: [marketAnomalyDefinitions.id] }),
+    vault: one(vaults, { fields: [hedgeExecutionHistory.vaultId], references: [vaults.id] }),
+}));
+
+export const syntheticVaultMappingsRelations = relations(syntheticVaultMappings, ({ one }) => ({
+    user: one(users, { fields: [syntheticVaultMappings.userId], references: [users.id] }),
+    sourceVault: one(vaults, { fields: [syntheticVaultMappings.sourceVaultId], references: [vaults.id] }),
+    safeHavenVault: one(vaults, { fields: [syntheticVaultMappings.safeHavenVaultId], references: [vaults.id] }),
+}));
+// AI-DRIVEN FINANCIAL ENGINEERING (L3)
+// ============================================================================
+
+// MULTI-ENTITY INTER-COMPANY LEDGER & GLOBAL PAYROLL SWEEP (#390)
+export const interCompanyTransfers = pgTable('inter_company_transfers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    sourceEntityId: uuid('source_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    targetEntityId: uuid('target_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    transferType: text('transfer_type').notNull(), // 'loan', 'revenue_distribution', 'expense_reimbursement'
+    loanInterestRate: numeric('loan_interest_rate', { precision: 10, scale: 4 }),
+    status: text('status').default('pending'),
+    referenceNumber: text('reference_number').unique(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const payrollBuckets = pgTable('payroll_buckets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    bucketName: text('bucket_name').notNull(),
+    totalAllocated: numeric('total_allocated', { precision: 18, scale: 2 }).default('0.00'),
+    frequency: text('frequency').default('monthly'), // 'weekly', 'bi-weekly', 'monthly'
+    nextPayrollDate: timestamp('next_payroll_date'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const taxDeductionLedger = pgTable('tax_deduction_ledger', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    payrollId: uuid('payroll_id'), // Reference to a payout record (dividend payout or future payroll execution)
+    taxType: text('tax_type').notNull(), // 'federal_income_tax', 'social_security', 'medicare', 'state_tax'
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    jurisdiction: text('jurisdiction').notNull(),
+    status: text('status').default('pending_filing'), // 'pending_filing', 'filed', 'paid'
+    filingDeadline: timestamp('filing_deadline'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const entityConsolidationRules = pgTable('entity_consolidation_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    parentEntityId: uuid('parent_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    childEntityId: uuid('child_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    consolidationMethod: text('consolidation_method').default('full'), // 'full', 'equity_method', 'proportionate'
+    ownershipStake: numeric('ownership_stake', { precision: 5, scale: 2 }).default('100.00'),
+    eliminationEntriesRequired: boolean('elimination_entries_required').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// PREDICTIVE LIQUIDITY STRESS-TESTING & AUTONOMOUS INSOLVENCY PREVENTION (#428)
+export const cashFlowProjections = pgTable('cash_flow_projections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    targetDate: timestamp('target_date').notNull(),
+    projectedBalance: numeric('projected_balance', { precision: 18, scale: 2 }).notNull(),
+    confidenceLow: numeric('confidence_low', { precision: 18, scale: 2 }),
+    confidenceHigh: numeric('confidence_high', { precision: 18, scale: 2 }),
+    simulationType: text('simulation_type').default('monte_carlo'), // 'deterministic', 'monte_carlo'
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const stressTestScenarios = pgTable('stress_test_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scenarioName: text('scenario_name').notNull(), // '50% Income Drop', 'Flash-Crash', 'Medical Emergency'
+    impactMagnitude: numeric('impact_magnitude', { precision: 5, scale: 2 }).notNull(), // e.g. 0.50 for 50% drop
+    variableAffected: text('variable_affected').notNull(), // 'income', 'expense', 'asset_value'
+    probabilityWeight: numeric('probability_weight', { precision: 5, scale: 2 }).default('1.00'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const liquidityVelocityLogs = pgTable('liquidity_velocity_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    dailyBurnRate: numeric('daily_burn_rate', { precision: 18, scale: 2 }).notNull(),
+    weeklyVelocity: numeric('weekly_velocity', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    measuredAt: timestamp('measured_at').defaultNow(),
+});
+
+// ============================================================================
+// RELATIONS
+// ============================================================================
+
+export const interCompanyTransfersRelations = relations(interCompanyTransfers, ({ one }) => ({
+    user: one(users, { fields: [interCompanyTransfers.userId], references: [users.id] }),
+    sourceEntity: one(corporateEntities, { fields: [interCompanyTransfers.sourceEntityId], references: [corporateEntities.id] }),
+    targetEntity: one(corporateEntities, { fields: [interCompanyTransfers.targetEntityId], references: [corporateEntities.id] }),
+}));
+
+export const payrollBucketsRelations = relations(payrollBuckets, ({ one }) => ({
+    user: one(users, { fields: [payrollBuckets.userId], references: [users.id] }),
+    entity: one(corporateEntities, { fields: [payrollBuckets.entityId], references: [corporateEntities.id] }),
+    vault: one(vaults, { fields: [payrollBuckets.vaultId], references: [vaults.id] }),
+}));
+
+export const taxDeductionLedgerRelations = relations(taxDeductionLedger, ({ one }) => ({
+    user: one(users, { fields: [taxDeductionLedger.userId], references: [users.id] }),
+    entity: one(corporateEntities, { fields: [taxDeductionLedger.entityId], references: [corporateEntities.id] }),
+}));
+
+export const entityConsolidationRulesRelations = relations(entityConsolidationRules, ({ one }) => ({
+    user: one(users, { fields: [entityConsolidationRules.userId], references: [users.id] }),
+    parentEntity: one(corporateEntities, { fields: [entityConsolidationRules.parentEntityId], references: [corporateEntities.id] }),
+    childEntity: one(corporateEntities, { fields: [entityConsolidationRules.childEntityId], references: [corporateEntities.id] }),
+}));
+
+export const digitalWillDefinitionsRelations = relations(digitalWillDefinitions, ({ one, many }) => ({
+    user: one(users, { fields: [digitalWillDefinitions.userId], references: [users.id] }),
+    executor: one(users, { fields: [digitalWillDefinitions.executorId], references: [users.id] }),
+    heirs: many(heirIdentityVerifications),
+    votes: many(trusteeVoteLedger),
+}));
+
+export const heirIdentityVerificationsRelations = relations(heirIdentityVerifications, ({ one }) => ({
+    user: one(users, { fields: [heirIdentityVerifications.userId], references: [users.id] }),
+    will: one(digitalWillDefinitions, { fields: [heirIdentityVerifications.willId], references: [digitalWillDefinitions.id] }),
+}));
+
+export const trusteeVoteLedgerRelations = relations(trusteeVoteLedger, ({ one }) => ({
+    will: one(digitalWillDefinitions, { fields: [trusteeVoteLedger.willId], references: [digitalWillDefinitions.id] }),
+    trustee: one(users, { fields: [trusteeVoteLedger.trusteeId], references: [users.id] }),
+}));
+
+export const creditScoresRelations = relations(creditScores, ({ one }) => ({
+    user: one(users, { fields: [creditScores.userId], references: [users.id] }),
+}));
+
+export const creditScoreAlertsRelations = relations(creditScoreAlerts, ({ one }) => ({
+    user: one(users, { fields: [creditScoreAlerts.userId], references: [users.id] }),
+    creditScore: one(creditScores, { fields: [creditScoreAlerts.creditScoreId], references: [creditScores.id] }),
+}));
+export const retirementPlanningRelations = relations(retirementPlanning, ({ one }) => ({
+    user: one(users, { fields: [retirementPlanning.userId], references: [users.id] }),
+}));
+export const cashFlowProjectionsRelations = relations(cashFlowProjections, ({ one }) => ({
+    user: one(users, { fields: [cashFlowProjections.userId], references: [users.id] }),
+}));
+
+export const stressTestScenariosRelations = relations(stressTestScenarios, ({ one }) => ({
+    user: one(users, { fields: [stressTestScenarios.userId], references: [users.id] }),
+}));
+
+export const liquidityVelocityLogsRelations = relations(liquidityVelocityLogs, ({ one }) => ({
+    user: one(users, { fields: [liquidityVelocityLogs.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [liquidityVelocityLogs.vaultId], references: [vaults.id] }),
+}));
+
+export const debtArbitrageLogsRelations = relations(debtArbitrageLogs, ({ one }) => ({
+    user: one(users, { fields: [debtArbitrageLogs.userId], references: [users.id] }),
+    debt: one(debts, { fields: [debtArbitrageLogs.debtId], references: [debts.id] }),
+    investment: one(investments, { fields: [debtArbitrageLogs.investmentId], references: [investments.id] }),
+}));
+
+export const capitalCostSnapshotsRelations = relations(capitalCostSnapshots, ({ one }) => ({
+    user: one(users, { fields: [capitalCostSnapshots.userId], references: [users.id] }),
+}));
+
+export const refinanceRoiMetricsRelations = relations(refinanceRoiMetrics, ({ one }) => ({
+    user: one(users, { fields: [refinanceRoiMetrics.userId], references: [users.id] }),
+    debt: one(debts, { fields: [refinanceRoiMetrics.currentDebtId], references: [debts.id] }),
+}));
+>>>>>>> Stashed changes

@@ -103,6 +103,12 @@ import payoutMonitor from "./jobs/payoutMonitor.js";
 import taxAuditJob from "./jobs/taxAuditJob.js";
 import riskScanner from "./jobs/riskScanner.js";
 import marketRateSyncJob from "./jobs/marketRateSyncJob.js";
+<<<<<<< Updated upstream
+=======
+import velocityJob from "./jobs/velocityJob.js";
+import marketMonitor from "./jobs/marketMonitor.js";
+import debtRecalculator from "./jobs/debtRecalculator.js";
+>>>>>>> Stashed changes
 import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
 import { initializeDefaultTaxCategories } from "./services/taxService.js";
@@ -380,6 +386,16 @@ if (process.env.NODE_ENV !== 'test') {
     taxAuditJob.start();
     riskScanner.start();
     marketRateSyncJob.start();
+<<<<<<< Updated upstream
+=======
+    velocityJob.start();
+    marketMonitor.start();
+    debtRecalculator.start();
+    volatilityMonitor.start();
+    payrollCycleJob.start();
+    mortalityDaemon.start();
+    residencyAuditJob.start();
+>>>>>>> Stashed changes
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;

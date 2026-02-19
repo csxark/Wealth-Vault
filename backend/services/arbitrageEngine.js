@@ -1,204 +1,110 @@
 import db from '../config/db.js';
-import {
-    vaults, debts, arbitrageStrategies, arbitrageEvents, crossVaultTransfers, yieldPools
-} from '../db/schema.js';
+import { debts, investments, capitalCostSnapshots, debtArbitrageLogs, users } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
-import yieldService from './yieldService.js';
-import debtEngine from './debtEngine.js';
+import { calculateNPV } from '../utils/financialMath.js';
+import { logInfo, logError } from '../utils/logger.js';
 
 /**
- * Arbitrage Engine - Cross-vault recursive rebalancer
- * Optimizes math: Yield APY vs. Debt Interest vs. Transfer Fees
+ * Arbitrage Engine (L3)
+ * High-fidelity calculation logic for debt-liquidation vs. investment reallocation.
  */
 class ArbitrageEngine {
     /**
-     * Scan all users for arbitrage opportunities
+     * Calculate WACC (Weighted Average Cost of Capital) for a user
      */
-    async scanAndOptimize() {
-        const activeStrategies = await db.select()
-            .from(arbitrageStrategies)
-            .where(eq(arbitrageStrategies.isEnabled, true));
-
-        for (const strategy of activeStrategies) {
-            await this.optimizeForUser(strategy.userId, strategy);
-        }
-    }
-
-    /**
-     * Run optimization logic for a specific user
-     */
-    async optimizeForUser(userId, strategy) {
+    async calculateWACC(userId) {
         try {
-            // 1. Fetch current financial state
-            const userVaults = await db.select().from(vaults).where(eq(vaults.userId, userId));
+            // 1. Get all active debts
             const userDebts = await db.select().from(debts).where(and(eq(debts.userId, userId), eq(debts.isActive, true)));
 
-            const opportunities = [];
+            // 2. Get all investments
+            const userInvestments = await db.select().from(investments).where(and(eq(investments.userId, userId), eq(investments.isActive, true)));
 
-            for (const vault of userVaults) {
-                if (parseFloat(vault.balance) <= 0) continue;
-                if (strategy.restrictedVaultIds?.includes(vault.id)) continue;
+            let totalDebtValue = 0;
+            let weightedDebtCost = 0;
+            userDebts.forEach(d => {
+                const balance = parseFloat(d.currentBalance || 0);
+                const apr = parseFloat(d.apr || 0);
+                totalDebtValue += balance;
+                weightedDebtCost += (balance * apr);
+            });
 
-                const vaultApy = await this.getVaultApy(vault);
+            const costOfDebt = totalDebtValue > 0 ? (weightedDebtCost / totalDebtValue) : 0;
 
-                // A. Check Debt Payoff Opportunities (Arbitrage type: Yield vs Debt)
-                for (const debt of userDebts) {
-                    const debtApy = parseFloat(debt.interestRate);
-                    const spread = debtApy - vaultApy;
+            let totalEquityValue = 0;
+            let weightedEquityReturn = 0;
+            userInvestments.forEach(i => {
+                const marketValue = parseFloat(i.marketValue || 0);
+                // Assume 7% if unknown, or derive from metadata if available
+                const expectedReturn = i.metadata?.expectedReturn ? parseFloat(i.metadata.expectedReturn) : 7.0;
+                totalEquityValue += marketValue;
+                weightedEquityReturn += (marketValue * expectedReturn);
+            });
 
-                    if (spread >= parseFloat(strategy.minSpread)) {
-                        opportunities.push({
-                            userId,
-                            strategyId: strategy.id,
-                            sourceVaultId: vault.id,
-                            targetId: debt.id,
-                            targetType: 'debt',
-                            spread,
-                            advantage: (parseFloat(vault.balance) * (spread / 100)) / 12, // Monthly advantage
-                            amount: this.calculateOptimalTransfer(vault, debt, strategy)
-                        });
-                    }
-                }
+            const costOfEquity = totalEquityValue > 0 ? (weightedEquityReturn / totalEquityValue) : 7.0;
 
-                // B. Check Cross-Vault Yield Opportunities (Arbitrage type: Yield vs Yield)
-                for (const targetVault of userVaults) {
-                    if (vault.id === targetVault.id) continue;
-                    const targetApy = await this.getVaultApy(targetVault);
-                    const spread = targetApy - vaultApy;
+            const totalCapital = totalDebtValue + totalEquityValue;
+            if (totalCapital === 0) return { wacc: 0, costOfDebt: 0, costOfEquity: 0, totalDebt: 0, totalEquity: 0 };
 
-                    if (spread >= parseFloat(strategy.minSpread)) {
-                        opportunities.push({
-                            userId,
-                            strategyId: strategy.id,
-                            sourceVaultId: vault.id,
-                            targetId: targetVault.id,
-                            targetType: 'vault',
-                            spread,
-                            advantage: (parseFloat(vault.balance) * (spread / 100)) / 12,
-                            amount: this.calculateOptimalTransfer(vault, targetVault, strategy)
-                        });
-                    }
-                }
-            }
+            const wacc = ((totalDebtValue / totalCapital) * costOfDebt) + ((totalEquityValue / totalCapital) * costOfEquity);
 
-            // 2. Select best opportunity and execute/log
-            if (opportunities.length > 0) {
-                const bestOp = opportunities.sort((a, b) => b.advantage - a.advantage)[0];
-                await this.processOpportunity(bestOp, strategy);
-            }
+            // Log snapshot
+            await db.insert(capitalCostSnapshots).values({
+                userId,
+                wacc: wacc.toFixed(4),
+                costOfDebt: costOfDebt.toFixed(4),
+                costOfEquity: costOfEquity.toFixed(4),
+                totalDebt: totalDebtValue.toString(),
+                totalEquity: totalEquityValue.toString()
+            });
 
+            return { wacc, costOfDebt, costOfEquity, totalDebtValue, totalEquityValue };
         } catch (error) {
-            console.error(`Arbitrage failed for user ${userId}:`, error);
+            logError(`[Arbitrage Engine] WACC Calculation failed for user ${userId}: ${error.message}`);
+            throw error;
         }
-    }
-
-    async getVaultApy(vault) {
-        if (vault.metadata?.poolId) {
-            return await yieldService.getPoolYield(vault.metadata.poolId);
-        }
-        return 0.5; // Baseline cash yield
-    }
-
-    calculateOptimalTransfer(source, target, strategy) {
-        const available = parseFloat(source.balance);
-        const cap = parseFloat(strategy.maxTransferCap || 5000);
-        const backupThreshold = source.metadata?.minReserve || 500;
-        return Math.min(available - backupThreshold, cap);
     }
 
     /**
-     * Run a Monte Carlo simulation (1000 paths) to estimate probability of net gain
+     * Determine if excess capital should be "invested" or used for "debt-liquidation"
      */
-    async simulateArbitrageImpact(userId, amount, fromApy, toApy, horizonMonths = 12) {
-        const results = [];
-        const iterations = 1000;
+    async generateArbitrageSignals(userId) {
+        const { costOfDebt, costOfEquity } = await this.calculateWACC(userId);
+        const signals = [];
 
-        for (let i = 0; i < iterations; i++) {
-            let balance = amount;
-            let netGain = 0;
+        // Strategy 1: Debt Payoff vs Investment
+        // If Debt APR > Expected Investment Return, Paying off debt is a guaranteed ROI.
+        const userDebts = await db.select().from(debts).where(and(eq(debts.userId, userId), eq(debts.isActive, true)));
+        const userInvestments = await db.select().from(investments).where(and(eq(investments.userId, userId), eq(investments.isActive, true)));
 
-            for (let m = 0; m < horizonMonths; m++) {
-                const monthlyToApy = toApy * (1 + (Math.random() * 0.3 - 0.15)) / 12 / 100;
-                const monthlyFromApy = fromApy * (1 + (Math.random() * 0.1 - 0.05)) / 12 / 100;
+        for (const debt of userDebts) {
+            const apr = parseFloat(debt.apr);
 
-                const gain = balance * monthlyToApy;
-                const opportunityCost = balance * monthlyFromApy;
+            // Find investments with lower expected returns than this debt's cost
+            for (const inv of userInvestments) {
+                const expReturn = inv.metadata?.expectedReturn ? parseFloat(inv.metadata.expectedReturn) : 7.0;
 
-                netGain += (gain - opportunityCost);
-                balance += gain;
+                if (apr > expReturn + 2.0) { // 2% safety margin
+                    signals.push({
+                        userId,
+                        debtId: debt.id,
+                        investmentId: inv.id,
+                        actionType: 'LIQUIDATE_TO_PAYOFF',
+                        arbitrageAlpha: (apr - expReturn).toFixed(4),
+                        amountInvolved: Math.min(parseFloat(debt.currentBalance), parseFloat(inv.marketValue)).toString(),
+                        estimatedAnnualSavings: (Math.min(parseFloat(debt.currentBalance), parseFloat(inv.marketValue)) * (apr - expReturn) / 100).toFixed(2),
+                        status: 'proposed'
+                    });
+                }
             }
-            results.push(netGain);
         }
 
-        const avgGain = results.reduce((a, b) => a + b, 0) / iterations;
-        const winRate = results.filter(r => r > 0).length / iterations;
-
-        return {
-            expectedNetGain: avgGain.toFixed(2),
-            confidenceScore: (winRate * 100).toFixed(1),
-            isOptimal: winRate > 0.7 && avgGain > 0
-        };
-    }
-
-    async processOpportunity(op, strategy) {
-        const [event] = await db.insert(arbitrageEvents).values({
-            userId: op.userId,
-            strategyId: op.strategyId,
-            sourceVaultId: op.sourceVaultId,
-            targetTypeId: op.targetId,
-            targetType: op.targetType,
-            netAdvantage: op.advantage.toString(),
-            status: strategy.autoExecute ? 'executing' : 'detected'
-        }).returning();
-
-        if (strategy.autoExecute && parseFloat(op.amount) > 0) {
-            await this.executeArbitrage(event.id, op);
+        // Bulk insert proposals
+        if (signals.length > 0) {
+            await db.insert(debtArbitrageLogs).values(signals);
         }
-    }
 
-    async executeArbitrage(eventId, op) {
-        try {
-            const [transfer] = await db.insert(crossVaultTransfers).values({
-                userId: op.userId,
-                eventId,
-                amount: op.amount.toString(),
-                fromVaultId: op.sourceVaultId,
-                toVaultId: op.targetType === 'vault' ? op.targetId : null,
-                toDebtId: op.targetType === 'debt' ? op.targetId : null,
-                status: 'pending'
-            }).returning();
-
-            await db.update(vaults)
-                .set({ balance: sql`${vaults.balance} - ${op.amount}` })
-                .where(eq(vaults.id, op.sourceVaultId));
-
-            if (op.targetType === 'vault') {
-                await db.update(vaults)
-                    .set({ balance: sql`${vaults.balance} + ${op.amount}` })
-                    .where(eq(vaults.id, op.targetId));
-            } else {
-                await db.update(debts)
-                    .set({ currentBalance: sql`${debts.currentBalance} - ${op.amount}` })
-                    .where(eq(debts.id, op.targetId));
-
-                await debtEngine.calculateAmortization(op.targetId);
-            }
-
-            await db.update(crossVaultTransfers)
-                .set({ status: 'completed', transactionHash: `ARB-${Date.now()}` })
-                .where(eq(crossVaultTransfers.id, transfer.id));
-
-            await db.update(arbitrageEvents)
-                .set({ status: 'executed' })
-                .where(eq(arbitrageEvents.id, eventId));
-
-            console.log(`Arbitrage executed: ${op.amount} moved for net advantage ${op.advantage}`);
-        } catch (error) {
-            console.error('Arbitrage execution failed:', error);
-            await db.update(arbitrageEvents)
-                .set({ status: 'failed', executionLog: { error: error.message } })
-                .where(eq(arbitrageEvents.id, eventId));
-        }
+        return signals;
     }
 }
 
