@@ -13,8 +13,9 @@ import shieldService from '../services/shieldService.js';
 import riskEngine from '../services/riskEngine.js';
 import anomalyScanner from '../services/anomalyScanner.js';
 import hedgingOrchestrator from '../services/hedgingOrchestrator.js';
-import { marketAnomalyDefinitions, syntheticVaultMappings, hedgeExecutionHistory, vaults } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { marketAnomalyDefinitions, syntheticVaultMappings, hedgeExecutionHistory, vaults, executionWorkflows, workflowTriggers, workflowExecutionLogs } from '../db/schema.js';
+import { eq, and, desc, sql } from 'drizzle-orm';
+import workflowEngine from '../services/workflowEngine.js';
 
 const router = express.Router();
 
@@ -355,6 +356,72 @@ router.post('/risk/synthetic-mappings', protect, [
 router.post('/risk/freeze/lift', protect, asyncHandler(async (req, res) => {
     await hedgingOrchestrator.liftLiquidityFreeze(req.user.id);
     new ApiResponse(200, null, 'Liquidity freeze lifted').send(res);
+}));
+
+/**
+ * @route   POST /api/governance/workflows
+ * @desc    Create a new autonomous execution workflow
+ */
+router.post('/workflows', protect, [
+    body('name').isString(),
+    body('entityType').isIn(['DEBT', 'TAX', 'INVEST', 'LIQUIDITY']),
+    body('triggerLogic').isIn(['AND', 'OR']).optional(),
+    body('priority').isInt().optional(),
+], asyncHandler(async (req, res) => {
+    const { name, entityType, triggerLogic, priority, metadata } = req.body;
+    const [workflow] = await db.insert(executionWorkflows).values({
+        userId: req.user.id,
+        name,
+        entityType,
+        triggerLogic: triggerLogic || 'AND',
+        priority: priority || 1,
+        metadata: metadata || {}
+    }).returning();
+    new ApiResponse(201, workflow, 'Autonomous workflow created').send(res);
+}));
+
+/**
+ * @route   POST /api/governance/workflows/:workflowId/triggers
+ * @desc    Add a multivariable trigger to a workflow
+ */
+router.post('/workflows/:workflowId/triggers', protect, [
+    body('variable').isIn(['debt_apr', 'cash_reserve', 'market_volatility', 'tax_liability']),
+    body('operator').isIn(['>', '<', '==', '>=', '<=']),
+    body('thresholdValue').isNumeric(),
+], asyncHandler(async (req, res) => {
+    const { variable, operator, thresholdValue } = req.body;
+    const [trigger] = await db.insert(workflowTriggers).values({
+        userId: req.user.id,
+        workflowId: req.params.workflowId,
+        variable,
+        operator,
+        thresholdValue: thresholdValue.toString()
+    }).returning();
+    new ApiResponse(201, trigger, 'Workflow trigger added').send(res);
+}));
+
+/**
+ * @route   GET /api/governance/workflows/logs
+ * @desc    Get execution audit logs for autonomous workflows
+ */
+router.get('/workflows/logs', protect, asyncHandler(async (req, res) => {
+    const logs = await db.select().from(workflowExecutionLogs)
+        .where(eq(workflowExecutionLogs.userId, req.user.id))
+        .orderBy(desc(workflowExecutionLogs.createdAt))
+        .limit(50);
+    new ApiResponse(200, logs).send(res);
+}));
+
+/**
+ * @route   POST /api/governance/workflows/:workflowId/execute
+ * @desc    Manually trigger a workflow execution (Override)
+ */
+router.post('/workflows/:workflowId/execute', protect, asyncHandler(async (req, res) => {
+    const [workflow] = await db.select().from(executionWorkflows).where(eq(executionWorkflows.id, req.params.workflowId));
+    if (!workflow || workflow.userId !== req.user.id) return res.status(404).json({ message: 'Workflow not found' });
+
+    await workflowEngine.executeWorkflowAction(workflow);
+    new ApiResponse(200, null, 'Workflow execution triggered manually').send(res);
 }));
 
 export default router;

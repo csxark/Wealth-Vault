@@ -114,8 +114,31 @@ export const requireRole = (allowedRoles) => {
     };
 };
 
+/**
+ * AI-System Trust Level verification (L3)
+ * Ensures only users with 'owner' or 'parent' roles can manage autonomous execution.
+ */
+export const requireAutonomousSystemTrust = async (req, res, next) => {
+    try {
+        const user = req.user;
+        // Business Logic: System-level workflows require administrative trust
+        const isAdmin = user.preferences?.trustLevel === 'admin' || user.role === 'admin';
+
+        if (!isAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'SYSTEM_TRUST_ERROR: High-fidelity autonomous workflows require Admin Trust Level.'
+            });
+        }
+        next();
+    } catch (error) {
+        next(error);
+    }
+};
+
 export default {
     requirePermission,
     checkApprovalRequired,
-    requireRole
+    requireRole,
+    requireAutonomousSystemTrust
 };
