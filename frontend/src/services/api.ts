@@ -1775,6 +1775,129 @@ const vaultAPI = {
   },
 };
 
+// Gamification API Types
+export interface AchievementDefinition {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  tier: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+  pointsRequired: number;
+  criteria: {
+    type: string;
+    value: number;
+    metric: string;
+  };
+  rewardPoints: number;
+  rewardBadge: boolean;
+  isActive: boolean;
+  displayOrder: number;
+}
+
+export interface UserAchievement {
+  id: string;
+  progress: number;
+  isCompleted: boolean;
+  earnedAt: string;
+  completedAt: string;
+  achievementId: string;
+  code: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  tier: string;
+  rewardPoints: number;
+}
+
+export interface UserProgress {
+  points: number;
+  lifetimePoints: number;
+  level: number;
+  levelProgress: number;
+  pointsToNextLevel: number;
+  badges: number;
+  currentStreak: number;
+  longestStreak: number;
+  weeklyPoints: number;
+  monthlyPoints: number;
+  streaks: {
+    type: string;
+    current: number;
+    longest: number;
+  }[];
+  recentHistory: {
+    id: string;
+    points: number;
+    actionType: string;
+    description: string;
+    createdAt: string;
+  }[];
+}
+
+export interface UserStats {
+  totalAchievements: number;
+  earnedAchievements: number;
+  lifetimePoints: number;
+  pointsByAction: {
+    actionType: string;
+    total: number;
+  }[];
+  achievementsByTier: {
+    tier: string;
+    count: number;
+  }[];
+  completionPercentage: number;
+}
+
+export interface GamificationDashboard {
+  progress: UserProgress;
+  achievements: UserAchievement[];
+  availableAchievements: AchievementDefinition[];
+  stats: UserStats;
+  healthScore: {
+    score: number;
+    rating: string;
+  } | null;
+}
+
+// Gamification API
+const gamificationAPI = {
+  // Get user achievements
+  getAchievements: async () => {
+    return apiRequest<{ success: boolean; data: UserAchievement[] }>('/achievements');
+  },
+
+  // Get achievement progress
+  getProgress: async () => {
+    return apiRequest<{ success: boolean; data: UserProgress }>('/achievements/progress');
+  },
+
+  // Get available achievements
+  getAvailableAchievements: async () => {
+    return apiRequest<{ success: boolean; data: AchievementDefinition[] }>('/achievements/available');
+  },
+
+  // Get achievement statistics
+  getStats: async () => {
+    return apiRequest<{ success: boolean; data: UserStats }>('/achievements/stats');
+  },
+
+  // Get gamification dashboard
+  getDashboard: async () => {
+    return apiRequest<{ success: boolean; data: GamificationDashboard }>('/achievements/dashboard');
+  },
+
+  // Manually trigger achievement check
+  checkAchievements: async () => {
+    return apiRequest<{ success: boolean; data: AchievementDefinition[] }>('/achievements/check', {
+      method: 'POST',
+    });
+  },
+};
+
 // Export all APIs
 export default {
   auth: authAPI,
@@ -1786,4 +1909,5 @@ export default {
   subscriptions: subscriptionsAPI,
   health: healthAPI,
   vaults: vaultAPI,
+  gamification: gamificationAPI,
 };

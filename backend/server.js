@@ -60,6 +60,8 @@ import retirementPlanningRoutes from "./routes/retirementPlanning.js";
 import netWorthRoutes from "./routes/netWorth.js";
 import subscriptionTrackerRoutes from "./routes/subscriptionTracker.js";
 
+import achievementsRoutes from "./routes/achievements.js";
+
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
 
 
@@ -232,6 +234,9 @@ app.use("/api/credit-scores", userLimiter, creditScoreRoutes);
 app.use("/api/retirement-planning", userLimiter, retirementPlanningRoutes);
 app.use("/api/net-worth", userLimiter, netWorthRoutes);
 app.use("/api/subscription-tracker", userLimiter, subscriptionTrackerRoutes);
+
+// Gamification routes
+app.use("/api/achievements", userLimiter, achievementsRoutes);
 
 // Secur fil servr for uploddd fils
 

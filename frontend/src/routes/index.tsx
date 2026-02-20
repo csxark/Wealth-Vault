@@ -16,6 +16,7 @@ import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
 import TaxCenter from '../pages/TaxCenter';
 import SubscriptionTracker from '../pages/SubscriptionTracker';
+import GamificationDashboard from '../components/Gamification/GamificationDashboard';
 
 
 interface ProtectedRouteProps {
@@ -178,6 +179,14 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <TaxCenter />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/achievements',
+    element: (
+      <ProtectedRoute>
+        <GamificationDashboard />
       </ProtectedRoute>
     )
   },
