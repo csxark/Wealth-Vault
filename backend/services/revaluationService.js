@@ -8,6 +8,7 @@ import currencyService from './currencyService.js';
 import portfolioService from './portfolioService.js';
 import assetService from './assetService.js';
 import investmentService from './investmentService.js';
+import fxService from './fxService.js';
 
 class RevaluationService {
     /**
@@ -60,6 +61,9 @@ class RevaluationService {
                 await this.revaluateInvestments(user.id, getConversionRate, baseCurrency);
                 await this.revaluateAssets(user.id, getConversionRate, baseCurrency);
                 await this.revaluateDebts(user.id, getConversionRate, baseCurrency);
+
+                // Trigger Double-Entry Ledger and FX Revaluation (#432)
+                await fxService.triggerGlobalRevaluation(user.id);
 
                 // Update Portfolio Net Worth Cache (Triggers re-calculation of total portfolio value)
                 const portfolios = await portfolioService.getPortfolios(user.id);

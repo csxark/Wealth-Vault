@@ -13,6 +13,9 @@ import { shieldGuard } from "../middleware/shieldGuard.js";
 import { safeModeGuard } from "../middleware/safeModeGuard.js";
 import { complianceGuard } from "../middleware/complianceGuard.js";
 import { getSimplifiedDebts } from "../services/settlementService.js";
+import vaultService from "../services/vaultService.js";
+import fxService from "../services/fxService.js";
+import { ledgerEntries, ledgerAccounts, fxValuationSnapshots } from "../db/schema.js";
 
 const router = express.Router();
 
@@ -405,5 +408,130 @@ router.get(
         }, "Vault balances retrieved successfully").send(res);
     })
 );
+
+/**
+ * @route   GET /api/vaults/:vaultId/ledger
+ * @desc    Get detailed double-entry ledger auditing for a vault
+ */
+router.get("/:vaultId/ledger", protect, checkVaultAccess(), asyncHandler(async (req, res) => {
+    const { vaultId } = req.params;
+    const reval = await vaultService.getVaultLedgerBalance(vaultId, req.user.id);
+
+    // Get detailed entries
+    const entries = await db.select().from(ledgerEntries)
+        .where(and(eq(ledgerEntries.accountId, reval.accountId), eq(ledgerEntries.userId, req.user.id)))
+        .orderBy(desc(ledgerEntries.entryDate))
+        .limit(50);
+
+    return new ApiResponse(200, {
+        summary: reval,
+        history: entries
+    }, "Vault ledger audit retrieved successfully").send(res);
+}));
+
+/**
+ * @route   GET /api/vaults/:vaultId/fx-deltas
+ * @desc    Get real-time FX realized/unrealized delta history
+ */
+router.get("/:vaultId/fx-deltas", protect, checkVaultAccess(), asyncHandler(async (req, res) => {
+    const { vaultId } = req.params;
+    const delta = await fxService.getVaultRevaluationDelta(req.user.id, vaultId);
+
+    // Get recent snapshots
+    const accounts = await db.select({ id: ledgerAccounts.id }).from(ledgerAccounts)
+        .where(and(eq(ledgerAccounts.vaultId, vaultId), eq(ledgerAccounts.userId, req.user.id)));
+
+    const accountIds = accounts.map(a => a.id);
+    if (accountIds.length === 0) return new ApiResponse(200, delta).send(res);
+
+    // Filter snapshots manually since in IN-clause might be empty or too large
+    const snapshots = await db.select().from(fxValuationSnapshots)
+        .where(eq(fxValuationSnapshots.userId, req.user.id))
+        .orderBy(desc(fxValuationSnapshots.valuationDate))
+        .limit(50);
+
+    const relevantSnapshots = snapshots.filter(s => accountIds.includes(s.accountId));
+
+    return new ApiResponse(200, {
+        currentDelta: delta,
+        snapshotHistory: relevantSnapshots.slice(0, 20)
+    }, "FX valuation history retrieved successfully").send(res);
+}));
+
+// ============================================================================
+// DOUBLE-ENTRY LEDGER ENDPOINTS (L3)
+// ============================================================================
+
+/**
+ * Get vault balance from ledger (reconstructed balance)
+ * GET /vaults/:id/ledger/balance
+ */
+router.get('/:id/ledger/balance', protect, asyncWrapper(async (req, res) => {
+    const { id: vaultId } = req.params;
+    
+    const balance = await vaultService.getVaultLedgerBalance(vaultId, req.user.id);
+    
+    return new ApiResponse(200, balance, "Ledger-based balance retrieved successfully").send(res);
+}));
+
+/**
+ * Get vault ledger history (all journal entries)
+ * GET /vaults/:id/ledger/history
+ */
+router.get('/:id/ledger/history', protect, asyncWrapper(async (req, res) => {
+    const { id: vaultId } = req.params;
+    const { startDate, endDate, limit = 50 } = req.query;
+    
+    const account = await db.query.ledgerAccounts.findFirst({
+        where: and(
+            eq(ledgerAccounts.vaultId, vaultId),
+            eq(ledgerAccounts.userId, req.user.id)
+        )
+    });
+    
+    if (!account) {
+        return new ApiResponse(404, null, "Vault ledger account not found").send(res);
+    }
+    
+    let query = db.select().from(ledgerEntries)
+        .where(eq(ledgerEntries.accountId, account.id))
+        .orderBy(desc(ledgerEntries.createdAt))
+        .limit(parseInt(limit));
+    
+    const entries = await query;
+    
+    return new ApiResponse(200, {
+        accountId: account.id,
+        accountName: account.name,
+        entries,
+        count: entries.length
+    }, "Ledger history retrieved successfully").send(res);
+}));
+
+/**
+ * Get trial balance for user's ledger
+ * GET /vaults/ledger/trial-balance
+ */
+router.get('/ledger/trial-balance', protect, asyncWrapper(async (req, res) => {
+    const trialBalance = await ledgerService.getTrialBalance(req.user.id);
+    
+    return new ApiResponse(200, trialBalance, "Trial balance retrieved successfully").send(res);
+}));
+
+/**
+ * Trigger FX revaluation for all vaults
+ * POST /vaults/ledger/revalue
+ */
+router.post('/ledger/revalue', protect, asyncWrapper(async (req, res) => {
+    const { fxRates } = req.body;
+    
+    if (!fxRates) {
+        return new ApiResponse(400, null, "FX rates are required").send(res);
+    }
+    
+    const result = await ledgerService.revalueAllAccounts(req.user.id, fxRates);
+    
+    return new ApiResponse(200, result, "FX revaluation completed successfully").send(res);
+}));
 
 export default router;
