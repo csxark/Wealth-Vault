@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert } from '../types';
+import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert, Vault, VaultWithRole, VaultMember, VaultBalance } from '../types';
 
 // Use environment variable for API URL
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -1348,430 +1348,197 @@ export const investmentsAPI = {
   },
 };
 
-// Subscription API Types
-export interface Subscription {
-  id: string;
-  userId: string;
-  categoryId?: string;
-  serviceName: string;
-  description?: string;
-  cost: string;
-  currency: string;
-  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-  renewalDate: string;
-  autoRenewal: boolean;
-  status: 'active' | 'cancelled' | 'paused' | 'expired';
-  paymentMethod: string;
-  website?: string;
-  loginCredentials?: Record<string, any>;
-  tags: string[];
-  notes?: string;
-  cancellationDate?: string;
-  lastChargedDate?: string;
-  nextChargeDate?: string;
-  trialEndDate?: string;
-  isTrial: boolean;
-  metadata: Record<string, any>;
-  createdAt: string;
-  updatedAt: string;
-  category?: {
-    id: string;
-    name: string;
-    color: string;
-    icon: string;
-  };
-}
+// Vault API
+export const vaultAPI = {
+  // Vault CRUD
+  vaults: {
+    // Create a new vault
+    create: async (vaultData: { name: string; description?: string; currency?: string }) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>('/vaults', {
+        method: 'POST',
+        data: vaultData,
+      });
+    },
 
-// Subscription API
-export const subscriptionsAPI = {
-  // Get all subscriptions
-  getAll: async (params?: {
-    status?: 'active' | 'cancelled' | 'paused' | 'expired';
-    categoryId?: string;
-    sortBy?: 'renewalDate' | 'cost' | 'serviceName' | 'createdAt';
-    sortOrder?: 'asc' | 'desc';
-    limit?: number;
-    offset?: number;
-  }) => {
-    return apiRequest<{
-      success: boolean;
-      data: Subscription[];
-    }>('/subscriptions', {
-      method: 'GET',
-      params,
-    });
+    // Get all vaults user is a member of
+    getAll: async () => {
+      return apiRequest<{
+        success: boolean;
+        data: VaultWithRole[];
+        message: string;
+      }>('/vaults');
+    },
+
+    // Get vault by ID
+    getById: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>(`/vaults/${id}`);
+    },
+
+    // Update vault
+    update: async (id: string, vaultData: Partial<Vault>) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>(`/vaults/${id}`, {
+        method: 'PUT',
+        data: vaultData,
+      });
+    },
+
+    // Delete vault
+    delete: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/vaults/${id}`, {
+        method: 'DELETE',
+      });
+    },
   },
 
-  // Get subscription by ID
-  getById: async (id: string) => {
-    return apiRequest<{
-      success: boolean;
-      data: Subscription;
-    }>(`/subscriptions/${id}`);
+  // Vault members
+  members: {
+    // Get vault members
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: VaultMember[];
+        message: string;
+      }>(`/vaults/${vaultId}/members`);
+    },
   },
 
-  // Create new subscription
-  create: async (subscriptionData: Omit<Subscription, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'nextChargeDate' | 'metadata'>) => {
-    return apiRequest<{
-      success: boolean;
-      data: Subscription;
-    }>('/subscriptions', {
-      method: 'POST',
-      data: subscriptionData,
-    });
+  // Vault invites
+  invites: {
+    // Invite user to vault
+    create: async (vaultId: string, inviteData: { email: string; role?: string }) => {
+      return apiRequest<{
+        success: boolean;
+        data: { inviteToken: string };
+        message: string;
+      }>(`/vaults/${vaultId}/invite`, {
+        method: 'POST',
+        data: inviteData,
+      });
+    },
+
+    // Accept vault invitation
+    accept: async (token: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>('/vaults/accept-invite', {
+        method: 'POST',
+        data: { token },
+      });
+    },
   },
 
-  // Update subscription
-  update: async (id: string, subscriptionData: Partial<Subscription>) => {
-    return apiRequest<{
-      success: boolean;
-      data: Subscription;
-    }>(`/subscriptions/${id}`, {
-      method: 'PUT',
-      data: subscriptionData,
-    });
-  },
-
-  // Delete subscription
-  delete: async (id: string) => {
-    return apiRequest<{
-      success: boolean;
-      message: string;
-    }>(`/subscriptions/${id}`, {
-      method: 'DELETE',
-    });
-  },
-
-  // Cancel subscription
-  cancel: async (id: string, cancellationDate?: string) => {
-    return apiRequest<{
-      success: boolean;
-      data: Subscription;
-    }>(`/subscriptions/${id}/cancel`, {
-      method: 'PUT',
-      data: { cancellationDate },
-    });
-  },
-
-  // Get subscription analytics
-  getAnalytics: async (params?: {
-    period?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-  }) => {
-    return apiRequest<{
-      success: boolean;
-      data: {
-        summary: {
-          totalMonthly: number;
-          totalAnnual: number;
-          count: number;
+  // Vault balances
+  balances: {
+    // Get vault balances
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          balances: VaultBalance[];
+          debtStructure: any; // Simplified debt structure
         };
-        byCategory: Array<{
-          categoryName: string;
-          total: number;
-          count: number;
-        }>;
-        upcomingRenewals: Array<{
-          id: string;
-          serviceName: string;
-          cost: string;
-          nextChargeDate: string;
-          renewalDate: string;
-        }>;
-      };
-    }>('/subscriptions/analytics', {
-      method: 'GET',
-      params,
-    });
+        message: string;
+      }>(`/vaults/${vaultId}/balances`);
+    },
   },
 
-  // Detect potential subscriptions
-  detectPotential: async (params?: {
-    monthsToAnalyze?: number;
-  }) => {
-    return apiRequest<{
-      success: boolean;
-      data: Array<{
-        serviceName: string;
-        cost: string;
-        frequency: string;
-        confidence: number;
-        expenseIds: string[];
-        transactionCount: number;
-        firstDate: string;
-        lastDate: string;
-      }>;
-    }>('/subscriptions/detect', {
-      method: 'GET',
-      params,
-    });
+  // Shared budgets
+  sharedBudgets: {
+    // Create shared budget
+    create: async (vaultId: string, budgetData: {
+      name: string;
+      description?: string;
+      totalBudget: number;
+      period?: string;
+      approvalRequired?: boolean;
+      approvalThreshold?: number;
+      categories?: string[];
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Shared budget object
+        message: string;
+      }>(`/vaults/${vaultId}/shared-budgets`, {
+        method: 'POST',
+        data: budgetData,
+      });
+    },
+
+    // Get shared budgets
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any[]; // Array of shared budgets
+        message: string;
+      }>(`/vaults/${vaultId}/shared-budgets`);
+    },
   },
 
-  // Create subscription from detection
-  createFromDetection: async (detectionData: {
-    serviceName: string;
-    cost: string;
-    frequency: string;
-    categoryId?: string;
-    expenseIds: string[];
-    confidence: number;
-  }) => {
-    return apiRequest<{
-      success: boolean;
-      data: Subscription;
-    }>('/subscriptions/create-from-detection', {
-      method: 'POST',
-      data: detectionData,
-    });
+  // Expense approvals
+  expenseApprovals: {
+    // Get pending approvals
+    getPending: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any[]; // Array of pending approvals
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals`);
+    },
+
+    // Approve expense
+    approve: async (vaultId: string, approvalId: string, notes?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Approval result
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals/${approvalId}/approve`, {
+        method: 'POST',
+        data: { notes },
+      });
+    },
+
+    // Reject expense
+    reject: async (vaultId: string, approvalId: string, notes?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Rejection result
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals/${approvalId}/reject`, {
+        method: 'POST',
+        data: { notes },
+      });
+    },
   },
 
-  // Get detection statistics
-  getDetectionStats: async () => {
-    return apiRequest<{
-      success: boolean;
-      data: {
-        totalDetections: number;
-        highConfidence: number;
-        mediumConfidence: number;
-        lowConfidence: number;
-      };
-    }>('/subscriptions/detection-stats');
-  },
-};
-
-// Vault/Family API
-const vaultAPI = {
-  // Get user vaults
-  getVaults: async () => {
-    return apiRequest<{
-      success: boolean;
-      data: Array<{
-        id: string;
-        name: string;
-        description: string;
-        ownerId: string;
-        currency: string;
-        role: string;
-        joinedAt: string;
-      }>;
-    }>('/vaults');
-  },
-
-  // Create vault
-  createVault: async (data: { name: string; description?: string; currency?: string }) => {
-    return apiRequest<{
-      success: boolean;
-      message: string;
-      data: { id: string; name: string; description: string; ownerId: string; currency: string };
-    }>('/vaults', {
-      method: 'POST',
-      data,
-    });
-  },
-
-  // Get vault members
-  getVaultMembers: async (vaultId: string) => {
-    return apiRequest<{
-      success: boolean;
-      data: Array<{
-        id: string;
-        firstName: string;
-        lastName: string;
-        email: string;
-        role: string;
-        joinedAt: string;
-      }>;
-    }>(`/vaults/${vaultId}/members`);
-  },
-
-  // Invite member to vault
-  inviteMember: async (vaultId: string, data: { email: string; role?: string }) => {
-    return apiRequest<{
-      success: boolean;
-      data: { inviteToken: string };
-    }>(`/vaults/${vaultId}/invite`, {
-      method: 'POST',
-      data,
-    });
-  },
-
-  // Accept vault invitation
-  acceptInvite: async (data: { token: string }) => {
-    return apiRequest<{
-      success: boolean;
-      message: string;
-    }>('/vaults/accept-invite', {
-      method: 'POST',
-      data,
-    });
-  },
-
-  // Split expense among family members
-  splitExpense: async (vaultId: string, data: {
-    expenseId: string;
-    shares: Array<{
-      userId: string;
-      shareAmount: number;
-      sharePercentage?: number;
-      notes?: string;
-    }>;
-  }) => {
-    return apiRequest<{
-      success: boolean;
-      message: string;
-      data: Array<{ id: string; userId: string; shareAmount: number; sharePercentage: number }>;
-    }>(`/vaults/${vaultId}/expense-shares`, {
-      method: 'POST',
-      data,
-    });
-  },
-
-  // Get expense shares for vault
-  getExpenseShares: async (vaultId: string, expenseId?: string) => {
-    return apiRequest<{
-      success: boolean;
-      data: Array<{
-        id: string;
-        expenseId: string;
-        userId: string;
-        shareAmount: number;
-        sharePercentage: number;
-        isPaid: boolean;
-        paidAt?: string;
-        notes?: string;
-      }>;
-    }>(`/vaults/${vaultId}/expense-shares${expenseId ? `?expenseId=${expenseId}` : ''}`);
-  },
-
-  // Create reimbursement request
-  createReimbursement: async (vaultId: string, data: {
-    fromUserId: string;
-    toUserId: string;
-    amount: number;
-    currency: string;
-    description: string;
-    expenseId?: string;
-    dueDate?: string;
-    notes?: string;
-  }) => {
-    return apiRequest<{
-      success: boolean;
-      message: string;
-      data: { id: string; status: string; createdAt: string };
-    }>(`/vaults/${vaultId}/reimbursements`, {
-      method: 'POST',
-      data,
-    });
-  },
-
-  // Get reimbursements for vault
-  getReimbursements: async (vaultId: string, status?: string) => {
-    return apiRequest<{
-      success: boolean;
-      data: Array<{
-        id: string;
-        fromUserId: string;
-        toUserId: string;
-        amount: number;
-        currency: string;
-        description: string;
-        status: string;
-        expenseId?: string;
-        completedAt?: string;
-        dueDate?: string;
-        notes?: string;
-        createdAt: string;
-      }>;
-    }>(`/vaults/${vaultId}/reimbursements${status ? `?status=${status}` : ''}`);
-  },
-
-  // Mark reimbursement as completed
-  completeReimbursement: async (vaultId: string, reimbursementId: string) => {
-    return apiRequest<{
-      success: boolean;
-      message: string;
-    }>(`/vaults/${vaultId}/reimbursements/${reimbursementId}/complete`, {
-      method: 'PUT',
-    });
-  },
-
-  // Get family financial health score
-  getFamilyHealth: async (vaultId: string) => {
-    return apiRequest<{
-      success: boolean;
-      data: {
-        vaultId: string;
-        overallScore: number;
-        breakdown: {
-          expenseManagement: number;
-          expenseSharing: number;
-          goalAchievement: number;
-          individualHealth: number;
-        };
-        metrics: {
-          memberCount: number;
-          totalExpenses: number;
-          sharedExpenses: number;
-          pendingReimbursements: number;
-          totalOwed: number;
-          activeGoals: number;
-          completedGoals: number;
-        };
-        categoryBreakdown: Array<{
-          category: string;
-          totalSpent: number;
-          percentage: number;
-        }>;
-        recommendations: string[];
-        calculatedAt: string;
-      };
-    }>(`/vaults/${vaultId}/family-health`);
-  },
-
-  // Get family dashboard data
-  getFamilyDashboard: async (vaultId: string) => {
-    return apiRequest<{
-      success: boolean;
-      data: {
-        vault: {
-          id: string;
-          name: string;
-          description: string;
-          currency: string;
-          memberCount: number;
-        };
-        recentExpenses: Array<{
-          id: string;
-          amount: number;
-          description: string;
-          category: string;
-          date: string;
-          userId: string;
-          userName: string;
-          isShared: boolean;
-        }>;
-        pendingReimbursements: Array<{
-          id: string;
-          fromUser: string;
-          toUser: string;
-          amount: number;
-          description: string;
-          dueDate?: string;
-        }>;
-        familyGoals: Array<{
-          id: string;
-          title: string;
-          targetAmount: number;
-          currentAmount: number;
-          status: string;
-          progress: number;
-        }>;
-        monthlySpending: {
-          total: number;
-          byCategory: Array<{ category: string; amount: number; percentage: number }>;
-          trend: Array<{ month: string; amount: number }>;
-        };
-      };
-    }>(`/vaults/${vaultId}/family-dashboard`);
+  // Budget utilization
+  budgetUtilization: {
+    // Get budget utilization report
+    getByVaultId: async (vaultId: string, period?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Budget utilization data
+        message: string;
+      }>(`/vaults/${vaultId}/budget-utilization`, {
+        method: 'GET',
+        params: { period },
+      });
+    },
   },
 };
 
@@ -1783,7 +1550,6 @@ export default {
   goals: goalsAPI,
   analytics: analyticsAPI,
   investments: investmentsAPI,
-  subscriptions: subscriptionsAPI,
   health: healthAPI,
   vaults: vaultAPI,
 };
