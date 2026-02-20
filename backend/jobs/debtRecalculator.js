@@ -1,52 +1,54 @@
 import cron from 'node-cron';
 import db from '../config/db.js';
-import { debts, users } from '../db/schema.js';
-import refinanceScout from '../services/refinanceScout.js';
-import debtEngine from '../services/debtEngine.js';
+import { users } from '../db/schema.js';
+import arbitrageEngine from '../services/arbitrageEngine.js';
 import { logInfo, logError } from '../utils/logger.js';
-import auditService from '../services/auditService.js';
 
 /**
  * Debt Recalculator Job (L3)
- * Nightly job to update "Arbitrage Alpha" as global interest rates fluctuate.
+ * Monitors debt balances and updates global WACC metrics for all active users every hour.
  */
-class DebtRecalculator {
-    startScheduledJob() {
-        // Run at 2 AM daily
-        cron.schedule('0 2 * * *', async () => {
-            logInfo('[Debt Recalculator] Starting nightly scan...');
-            await this.scanAllUsers();
+class DebtRecalculatorJob {
+    start() {
+        // Runs every hour
+        cron.schedule('0 * * * *', async () => {
+            logInfo('[Debt Recalculator] Starting hourly WACC update cycle...');
+
+            try {
+                const activeUsers = await db.select({ id: users.id }).from(users).where(sql`${users.isActive} = true`);
+
+                for (const user of activeUsers) {
+                    try {
+                        // 1. Recalculate WACC and save snapshot
+                        await arbitrageEngine.calculateWACC(user.id);
+
+                        // 2. Scan for new arbitrage opportunities
+                        await arbitrageEngine.generateArbitrageSignals(user.id);
+
+                        logInfo(`[Debt Recalculator] Successfully updated metrics for user ${user.id}`);
+                    } catch (userErr) {
+                        logError(`[Debt Recalculator] Failed for user ${user.id}: ${userErr.message}`);
+                    }
+                }
+
+                logInfo('[Debt Recalculator] Update cycle completed.');
+            } catch (error) {
+                logError(`[Debt Recalculator] Critical job failure: ${error.message}`);
+            }
         });
     }
 
-    async scanAllUsers() {
-        try {
-            const allUsers = await db.select().from(users);
-
-            for (const user of allUsers) {
-                // 1. Scan for refinance opportunities based on current market rates
-                const proposals = await refinanceScout.scanForRefinance(user.id);
-
-                if (proposals.length > 0) {
-                    await auditService.logAuditEvent({
-                        userId: user.id,
-                        action: 'REFINANCE_SCAN_COMPLETED',
-                        resourceType: 'debt',
-                        metadata: { proposalsFound: proposals.length }
-                    });
-                }
-
-                // 2. Perform amortization updates for all active debts
-                const userDebts = await db.select().from(debts).where(eq(debts.userId, user.id));
-                for (const debt of userDebts) {
-                    await debtEngine.calculateAmortization(debt.id);
-                }
-            }
-            logInfo('[Debt Recalculator] Nightly scan completed.');
-        } catch (error) {
-            logError('[Debt Recalculator] Job failed:', error);
+    /**
+     * Manual trigger for testing or forced updates
+     */
+    async executeNow() {
+        logInfo('[Debt Recalculator] Manual execution triggered.');
+        const activeUsers = await db.select({ id: users.id }).from(users).where(sql`${users.isActive} = true`);
+        for (const user of activeUsers) {
+            await arbitrageEngine.calculateWACC(user.id);
+            await arbitrageEngine.generateArbitrageSignals(user.id);
         }
     }
 }
 
-export default new DebtRecalculator();
+export default new DebtRecalculatorJob();
