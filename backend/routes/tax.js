@@ -7,9 +7,10 @@ import harvestEngine from '../services/harvestEngine.js';
 import taxLotService from '../services/taxLotService.js';
 import reinvestmentService from '../services/reinvestmentService.js';
 import { validateTaxDeductionLimit } from '../middleware/taxValidator.js';
-import db from '../config/db.js';
-import { harvestOpportunities, taxLots, harvestExecutionLogs } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
+import corporateService from '../services/corporateService.js';
+import residencyEngine from '../services/residencyEngine.js';
+import { taxNexusMappings } from '../db/schema.js';
 
 const router = express.Router();
 
@@ -112,6 +113,36 @@ router.post('/lots/:id/sell', protect, asyncHandler(async (req, res) => {
     .returning();
 
   return new ApiResponse(200, updated, 'Tax lot adjusted').send(res);
+}));
+
+/**
+ * @route   GET /api/tax/corporate/consolidated
+ * @desc    Get consolidated corporate tax liability and blended rate
+ */
+router.get('/corporate/consolidated', protect, asyncHandler(async (req, res) => {
+  const data = await corporateService.calculateConsolidatedTaxLiability(req.user.id);
+  return new ApiResponse(200, data, 'Consolidated tax liability calculated').send(res);
+}));
+
+/**
+ * @route   GET /api/tax/nexus/exposure
+ * @desc    Get tax nexus exposures across jurisdictions
+ */
+router.get('/nexus/exposure', protect, asyncHandler(async (req, res) => {
+  const exposures = await db.select().from(taxNexusMappings).where(eq(taxNexusMappings.userId, req.user.id));
+  return new ApiResponse(200, exposures, 'Nexus exposures retrieved').send(res);
+}));
+
+/**
+ * @route   POST /api/tax/nexus/override
+ * @desc    Override tax rate for a specific nexus jurisdiction
+ */
+router.post('/nexus/override', protect, asyncHandler(async (req, res) => {
+  const { mappingId, rateOverride } = req.body;
+  await db.update(taxNexusMappings)
+    .set({ taxRateOverride: rateOverride.toString() })
+    .where(and(eq(taxNexusMappings.id, mappingId), eq(taxNexusMappings.userId, req.user.id)));
+  return new ApiResponse(200, null, 'Tax rate override applied').send(res);
 }));
 
 export default router;

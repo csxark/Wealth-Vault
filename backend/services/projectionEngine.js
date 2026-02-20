@@ -3,6 +3,7 @@ import { cashFlowProjections, liquidityVelocityLogs, vaults, transactions, users
 import { eq, and, desc, sql, gte } from 'drizzle-orm';
 import { simulateStep, calculateConfidenceInterval } from '../utils/simulationMath.js';
 import { logInfo, logError } from '../utils/logger.js';
+import corporateService from './corporateService.js';
 
 /**
  * Projection Engine (L3)
@@ -31,6 +32,10 @@ class ProjectionEngine {
             const forecastData = [];
             const months = 12;
 
+            // Fetch monthly corporate tax drag
+            const annualTaxLiability = await corporateService.calculateCorporateTaxDrag(userId);
+            const monthlyTaxDrag = annualTaxLiability / 12;
+
             for (let m = 1; m <= months; m++) {
                 const monthResults = [];
                 for (let s = 0; s < simulations; s++) {
@@ -38,6 +43,8 @@ class ProjectionEngine {
                     // Simulate step-by-step up to current month
                     for (let step = 1; step <= m; step++) {
                         simulatedBalance = simulateStep(simulatedBalance, drift, volatility);
+                        // Subtract corporate tax leakage
+                        simulatedBalance -= monthlyTaxDrag;
                     }
                     monthResults.push(simulatedBalance);
                 }
