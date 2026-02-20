@@ -15,6 +15,7 @@ import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
 import TaxCenter from '../pages/TaxCenter';
+import SubscriptionTracker from '../pages/SubscriptionTracker';
 
 
 interface ProtectedRouteProps {
@@ -153,6 +154,14 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <Analytics />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/subscription-tracker',
+    element: (
+      <ProtectedRoute>
+        <SubscriptionTracker />
       </ProtectedRoute>
     )
   },
