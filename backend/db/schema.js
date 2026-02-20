@@ -3471,3 +3471,121 @@ export const liquidityVelocityLogsRelations = relations(liquidityVelocityLogs, (
     user: one(users, { fields: [liquidityVelocityLogs.userId], references: [users.id] }),
     vault: one(vaults, { fields: [liquidityVelocityLogs.vaultId], references: [vaults.id] }),
 }));
+
+// ============================================
+// GAMIFICATION TABLES
+// ============================================
+
+// Achievement Definitions Table (predefined achievements)
+export const achievementDefinitions = pgTable('achievement_definitions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    code: text('code').notNull().unique(),
+    name: text('name').notNull(),
+    description: text('description'),
+    category: text('category').notNull(), // 'savings', 'budgeting', 'goals', 'streaks', 'challenges', 'education'
+    icon: text('icon'),
+    tier: text('tier').notNull().default('bronze'), // 'bronze', 'silver', 'gold', 'platinum', 'diamond'
+    pointsRequired: integer('points_required').default(0),
+    criteria: jsonb('criteria').notNull(), // { type: 'action_count'|'milestone'|'streak'|'score', value: number, metric: string }
+    rewardPoints: integer('reward_points').notNull().default(0),
+    rewardBadge: boolean('reward_badge').default(true),
+    isActive: boolean('is_active').default(true),
+    displayOrder: integer('display_order').default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// User Achievements Table (tracks earned achievements)
+export const userAchievements = pgTable('user_achievements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    achievementId: uuid('achievement_id').references(() => achievementDefinitions.id, { onDelete: 'cascade' }).notNull(),
+    earnedAt: timestamp('earned_at').defaultNow(),
+    progress: integer('progress').default(0),
+    isCompleted: boolean('is_completed').default(false),
+    completedAt: timestamp('completed_at'),
+    metadata: jsonb('metadata').default({}),
+});
+
+// User Points System Table
+export const userPoints = pgTable('user_points', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    totalPoints: integer('total_points').notNull().default(0),
+    lifetimePoints: integer('lifetime_points').notNull().default(0),
+    currentLevel: integer('current_level').notNull().default(1),
+    totalBadges: integer('total_badges').notNull().default(0),
+    currentStreak: integer('current_streak').notNull().default(0),
+    longestStreak: integer('longest_streak').notNull().default(0),
+    lastActivityDate: timestamp('last_activity_date'),
+    weeklyPoints: integer('weekly_points').notNull().default(0),
+    monthlyPoints: integer('monthly_points').notNull().default(0),
+    pointsToNextLevel: integer('points_to_next_level').notNull().default(100),
+    levelProgress: integer('level_progress').notNull().default(0),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Points History Table (transaction log)
+export const pointsHistory = pgTable('points_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    points: integer('points').notNull(),
+    actionType: text('action_type').notNull(), // 'achievement_earned', 'challenge_completed', 'goal_reached', 'daily_login', etc.
+    description: text('description'),
+    referenceId: uuid('reference_id'), // Optional reference to related entity
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// User Streaks Table
+export const userStreaks = pgTable('user_streaks', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    streakType: text('streak_type').notNull(), // 'daily_login', 'budget_adherence', 'savings_contribution', 'expense_log'
+    currentCount: integer('current_count').notNull().default(0),
+    longestCount: integer('longest_count').notNull().default(0),
+    startDate: timestamp('start_date'),
+    lastActivityDate: timestamp('last_activity_date'),
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations for Gamification Tables
+export const achievementDefinitionsRelations = relations(achievementDefinitions, ({ many }) => ({
+    userAchievements: many(userAchievements),
+}));
+
+export const userAchievementsRelations = relations(userAchievements, ({ one }) => ({
+    user: one(users, {
+        fields: [userAchievements.userId],
+        references: [users.id],
+    }),
+    achievement: one(achievementDefinitions, {
+        fields: [userAchievements.achievementId],
+        references: [achievementDefinitions.id],
+    }),
+}));
+
+export const userPointsRelations = relations(userPoints, ({ one }) => ({
+    user: one(users, {
+        fields: [userPoints.userId],
+        references: [users.id],
+    }),
+}));
+
+export const pointsHistoryRelations = relations(pointsHistory, ({ one }) => ({
+    user: one(users, {
+        fields: [pointsHistory.userId],
+        references: [users.id],
+    }),
+}));
+
+export const userStreaksRelations = relations(userStreaks, ({ one }) => ({
+    user: one(users, {
+        fields: [userStreaks.userId],
+        references: [users.id],
+    }),
+}));
