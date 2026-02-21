@@ -3165,6 +3165,34 @@ export const entityConsolidationRules = pgTable('entity_consolidation_rules', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// GLOBAL TAX RESIDENCY & CROSS-BORDER NEXUS RECONCILIATION (#434)
+export const taxNexusMappings = pgTable('tax_nexus_mappings', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
+    jurisdiction: text('jurisdiction').notNull(),
+    nexusType: text('nexus_type').notNull(), // 'physical', 'economic', 'residency'
+    thresholdValue: numeric('threshold_value', { precision: 18, scale: 2 }).default('0.00'),
+    currentExposure: numeric('current_exposure', { precision: 18, scale: 2 }).default('0.00'),
+    isTriggered: boolean('is_triggered').default(false),
+    taxRateOverride: numeric('tax_rate_override', { precision: 5, scale: 2 }),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const entityTaxBrackets = pgTable('entity_tax_brackets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    jurisdiction: text('jurisdiction').notNull(),
+    entityType: text('entity_type').notNull(), // 'LLC', 'C-Corp', 'S-Corp'
+    minIncome: numeric('min_income', { precision: 18, scale: 2 }).notNull(),
+    maxIncome: numeric('max_income', { precision: 18, scale: 2 }),
+    taxRate: numeric('tax_rate', { precision: 5, scale: 2 }).notNull(),
+    effectiveYear: integer('effective_year').notNull(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // AI-DRIVEN MULTI-TIER SUCCESSION EXECUTION & DIGITAL WILL (#406)
 export const digitalWillDefinitions = pgTable('digital_will_definitions', {
     id: uuid('id').defaultRandom().primaryKey(),

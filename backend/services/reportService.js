@@ -4,12 +4,13 @@ import path from 'path';
 import fs from 'fs/promises';
 import { eq, and, gte, lte, desc, sql, between } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, goals, reports, users, subscriptions, cancellationSuggestions, debts, debtPayments, refinanceOpportunities, entities, interCompanyLedger } from "../db/schema.js";
+import { expenses, categories, goals, reports, users, subscriptions, cancellationSuggestions, debts, debtPayments, refinanceOpportunities, corporateEntities, interCompanyTransfers, taxNexusMappings } from "../db/schema.js";
 import { getAIProvider } from './aiProvider.js';
 import emailService from './emailService.js';
 import debtEngine from './debtEngine.js';
 import payoffOptimizer from './payoffOptimizer.js';
 import refinanceScout from './refinanceScout.js';
+import corporateService from './corporateService.js';
 import logger from '../utils/logger.js';
 
 class ReportService {
@@ -1669,6 +1670,41 @@ Please provide actionable insights about spending patterns, goal progress, and f
     } catch (error) {
       logger.error('Error generating consolidated report:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Generate a comprehensive Tax-Unity audit report (L3)
+   * Reconciles global residency and corporate tax liabilities.
+   */
+  async generateTaxUnityAuditReport(userId) {
+    try {
+      const corporateSummary = await corporateService.calculateConsolidatedTaxLiability(userId);
+      const nexusExposures = await db.select().from(taxNexusMappings).where(eq(taxNexusMappings.userId, userId));
+
+      const report = {
+        reportType: 'tax_unity_audit',
+        generatedAt: new Date().toISOString(),
+        corporateConsolidation: corporateSummary,
+        nexusTracking: nexusExposures.map(n => ({
+          jurisdiction: n.jurisdiction,
+          nexusType: n.nexusType,
+          exposure: parseFloat(n.currentExposure),
+          threshold: parseFloat(n.thresholdValue),
+          isTriggered: n.isTriggered,
+          effectiveRate: n.taxRateOverride ? parseFloat(n.taxRateOverride) : 'Standard'
+        })),
+        auditNotes: [
+          "Consolidated corporate tax-drag is affecting personal net wealth growth.",
+          nexusExposures.some(n => n.isTriggered) ? "ACTION REQUIRED: One or more jurisdictions have triggered economic nexus." : "All jurisdictions are currently within threshold limits."
+        ]
+      };
+
+      logger.info('Tax-Unity audit report generated', { userId });
+      return report;
+    } catch (error) {
+      logger.error('Error generating tax unity audit report:', error);
+      throw new Error('Failed to generate tax unity audit report');
     }
   }
 }

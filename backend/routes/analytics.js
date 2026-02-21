@@ -14,9 +14,10 @@ import { convertAmount, getAllRates } from "../services/currencyService.js";
 import assetService from "../services/assetService.js";
 import projectionEngine from "../services/projectionEngine.js";
 import marketData from "../services/marketData.js";
-import debtEngine from "../services/debtEngine.js";
-import payoffOptimizer from "../services/payoffOptimizer.js";
 import refinanceScout from "../services/refinanceScout.js";
+import corporateService from "../services/corporateService.js";
+import residencyEngine from "../services/residencyEngine.js";
+import { taxNexusMappings } from "../db/schema.js";
 
 const router = express.Router();
 
@@ -554,6 +555,44 @@ router.get("/insights", protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error while generating insights",
+    });
+  }
+});
+
+/**
+ * @route   GET /api/analytics/post-tax-wealth
+ * @desc    Get consolidated net-wealth analysis accounting for corporate tax liabilities
+ */
+router.get("/post-tax-wealth", protect, async (req, res) => {
+  try {
+    // 1. Get gross liquidity from personal vaults
+    const userVaults = await db.query.vaults.findMany({
+      where: and(eq(vaults.ownerId, req.user.id), eq(vaults.status, 'active'))
+    });
+    const grossPersonalLiquidity = userVaults.reduce((sum, v) => sum + parseFloat(v.balance), 0);
+
+    // 2. Get corporate tax drag
+    const taxLiabilitySummary = await corporateService.calculateConsolidatedTaxLiability(req.user.id);
+
+    // 3. Calculate post-tax wealth
+    const netWealthPostTax = grossPersonalLiquidity - taxLiabilitySummary.totalEstimatedTax;
+
+    res.json({
+      success: true,
+      data: {
+        grossPersonalLiquidity,
+        corporateTaxLiability: taxLiabilitySummary.totalEstimatedTax,
+        netWealthPostTax,
+        taxUnityDetails: taxLiabilitySummary,
+        lastUpdated: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("Post-tax wealth calculation error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while calculating post-tax wealth",
+      error: error.message
     });
   }
 });
