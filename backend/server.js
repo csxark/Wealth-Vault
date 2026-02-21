@@ -67,6 +67,7 @@ import successionRoutes from "./routes/succession.js";
 import entityRoutes from "./routes/entities.js";
 import yieldsRoutes from "./routes/yields.js";
 import arbitrageRoutes from "./routes/arbitrage.js";
+import escrowRoutes from "./routes/escrow.js";
 import { presenceTracker } from "./middleware/successionMiddleware.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
@@ -98,6 +99,7 @@ import clearingJob from "./jobs/clearingJob.js";
 import taxHarvestJob from "./jobs/taxHarvestJob.js";
 import riskBaselineJob from "./jobs/riskBaselineJob.js";
 import yieldMonitorJob from "./jobs/yieldMonitorJob.js";
+import scheduleOracleSync from "./jobs/oracleSync.js";
 import simulationJob from "./jobs/simulationJob.js";
 import payoutMonitor from "./jobs/payoutMonitor.js";
 import taxAuditJob from "./jobs/taxAuditJob.js";
@@ -309,6 +311,7 @@ app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
 app.use("/api/forensic", userLimiter, forensicRoutes);
 app.use("/api/yields", userLimiter, yieldsRoutes);
 app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
+app.use("/api/escrow", userLimiter, escrowRoutes);
 app.use("/api/risk-lab", userLimiter, riskLabRoutes);
 app.use("/api/corporate", userLimiter, corporateRoutes);
 app.use("/api/succession-plan", userLimiter, successionApiRoutes);
@@ -398,6 +401,7 @@ if (process.env.NODE_ENV !== 'test') {
     payrollCycleJob.start();
     mortalityDaemon.start();
     residencyAuditJob.start();
+    scheduleOracleSync();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
