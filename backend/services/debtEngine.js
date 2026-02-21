@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { debts, debtPayments, users } from '../db/schema.js';
+import { debts, debtPayments, users, debtRestructuringPlans } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import eventBus from '../events/eventBus.js';
 import { logInfo, logError } from '../utils/logger.js';
@@ -195,6 +195,51 @@ class DebtEngine {
     });
 
     return finalRate;
+  }
+
+  /**
+   * Draft Algorithmic Restructuring Plan (#441)
+   * Analyzes all debts and suggests an optimization strategy.
+   */
+  async draftRestructuringPlan(userId, predictionScoreId) {
+    const userDebts = await db.query.debts.findMany({
+      where: and(eq(debts.userId, userId), eq(debts.isActive, true))
+    });
+
+    if (userDebts.length === 0) return null;
+
+    // 1. Determine Strategy (L3 logic: Default to consolidation if count > 3)
+    let planType = 'snowball';
+    const highAprDebts = userDebts.filter(d => parseFloat(d.apr) > 0.15);
+
+    if (highAprDebts.length > 2) {
+      planType = 'avalanche';
+    } else if (userDebts.length > 5) {
+      planType = 'consolidation';
+    }
+
+    // 2. Propose detailed adjustments (Simulated logic)
+    const totalBalance = userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0);
+    const proposedAdjustments = userDebts.map(d => ({
+      debtId: d.id,
+      debtName: d.name,
+      currentPayment: d.minimumPayment,
+      proposedPayment: (parseFloat(d.minimumPayment) * 1.25).toFixed(2),
+      logic: `Accelerated ${planType} allocation`
+    }));
+
+    // 3. Save the plan
+    const [plan] = await db.insert(debtRestructuringPlans).values({
+      userId,
+      predictionId: predictionScoreId,
+      planType,
+      proposedAdjustments,
+      estimatedInterestSavings: (totalBalance * 0.04).toFixed(2),
+      status: 'proposed'
+    }).returning();
+
+    logInfo(`[Debt Engine] Drafted ${planType} restructuring plan for user ${userId}`);
+    return plan;
   }
 }
 

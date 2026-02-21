@@ -1,6 +1,7 @@
 import projectionEngine from '../services/projectionEngine.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { logInfo } from '../utils/logger.js';
+import defaultPredictorAI from '../services/defaultPredictorAI.js';
 
 /**
  * Liquidity Guard Middleware (L3)
@@ -43,6 +44,16 @@ export const liquidityGuard = async (req, res, next) => {
         if (postTransactionLowerBound < (currentProjectedBalance * 0.1)) {
             logInfo(`[Liquidity Guard] Warning issued for user ${userId}. Tight liquidity window.`);
             res.setHeader('X-Liquidity-Warning', 'Low safety margin detected for next 30 days.');
+        }
+
+        // 5. Default Prediction Guard (#441)
+        const prediction = await defaultPredictorAI.getLatestScore(userId);
+        if (prediction && parseFloat(prediction.probabilityOfDefault) > 0.75) {
+            logInfo(`[Liquidity Guard] Transaction BLOCKED for user ${userId}. Default Risk CRITICAL: ${(parseFloat(prediction.probabilityOfDefault) * 100).toFixed(2)}%`);
+
+            return res.status(403).json(new ApiResponse(403, null,
+                "Transaction hard-blocked. Default probability exceeds 75% safety threshold. Debt restructuring required."
+            ));
         }
 
         next();

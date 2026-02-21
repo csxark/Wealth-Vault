@@ -2,10 +2,95 @@ import InvestmentRepository from '../repositories/InvestmentRepository.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
 import eventBus from '../events/eventBus.js';
 import db from '../config/db.js';
-import { goals, goalRiskProfiles, rebalanceTriggers } from '../db/schema.js';
+import { goals, goalRiskProfiles, rebalanceTriggers, taxLossOpportunities, investments, portfolios } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import taxService from './taxService.js';
 import portfolioService from './portfolioService.js';
+
+/**
+ * Execute Tax-Loss Swap (L3)
+ * Atomically sells a losing asset and buys a highly correlated proxy asset to maintain market exposure.
+ */
+export const executeTaxLossSwap = async (userId, opportunityId) => {
+  return await db.transaction(async (tx) => {
+    const opportunity = await tx.query.taxLossOpportunities.findFirst({
+      where: and(
+        eq(taxLossOpportunities.id, opportunityId),
+        eq(taxLossOpportunities.userId, userId),
+        eq(taxLossOpportunities.status, 'pending')
+      )
+    });
+
+    if (!opportunity) throw new Error('Harvesting opportunity not found or already processed');
+
+    const target = await tx.query.investments.findFirst({
+      where: eq(investments.id, opportunity.investmentId)
+    });
+
+    if (!target) throw new Error('Target investment not found');
+
+    // 1. Sell the total position of the losing asset
+    const sellAmount = parseFloat(target.quantity) * parseFloat(target.currentPrice);
+
+    // We use the existing addInvestmentTransaction logic which handles tax lots and wash-sales
+    await addInvestmentTransaction(target.id, {
+      type: 'sell',
+      quantity: target.quantity,
+      price: target.currentPrice,
+      totalAmount: sellAmount.toString(),
+      date: new Date(),
+      notes: `Tax-Loss Harvesting Swap: Sold ${target.symbol}`
+    }, userId);
+
+    // 2. Buy the proxy asset (maintains market exposure without violating 30-day wash-sale rule for Target)
+    if (opportunity.proxyAssetSymbol) {
+      const buyPrice = target.currentPrice; // Proxy assumed at same dollar exposure
+      const buyQuantity = (sellAmount / parseFloat(buyPrice)).toFixed(8);
+
+      await createInvestment({
+        portfolioId: target.portfolioId,
+        symbol: opportunity.proxyAssetSymbol,
+        name: `Tax-Proxy for ${target.symbol}`,
+        type: target.type,
+        quantity: buyQuantity,
+        averageCost: buyPrice.toString(),
+        totalCost: sellAmount.toString(),
+        metadata: {
+          harvestedFrom: target.symbol,
+          harvestOpportunityId: opportunity.id
+        }
+      }, userId);
+
+      logInfo(`[Investment Service] Automatically executed Tax-Loss Swap: ${target.symbol} -> ${opportunity.proxyAssetSymbol}`);
+
+      await logAuditEventAsync({
+        userId,
+        action: AuditActions.UPDATE,
+        resourceType: ResourceTypes.INVESTMENT,
+        resourceId: target.id,
+        metadata: {
+          type: 'tax_loss_swap',
+          harvestedFrom: target.symbol,
+          proxyAsset: opportunity.proxyAssetSymbol,
+          lossHarvested: opportunity.unrealizedLoss
+        },
+        status: 'success'
+      });
+    }
+
+    // 3. Mark opportunity as implemented
+    await tx.update(taxLossOpportunities)
+      .set({ status: 'executed', updatedAt: new Date() })
+      .where(eq(taxLossOpportunities.id, opportunity.id));
+
+    return {
+      success: true,
+      harvestedAsset: target.symbol,
+      proxyAsset: opportunity.proxyAssetSymbol,
+      lossHarvested: opportunity.unrealizedLoss
+    };
+  });
+};
 // Removed notificationService import - now decoupled via events
 
 /**
@@ -183,6 +268,7 @@ export const addInvestmentTransaction = async (investmentId, transactionData, us
       await portfolioService.addTaxLot(
         userId,
         investmentId,
+        investment.symbol,
         transaction.quantity,
         transaction.price,
         transaction.date || new Date()
@@ -564,5 +650,6 @@ export default {
   batchUpdateValuations,
   rebalanceGoalRisk,
   adjustAssetWeightsForGoal,
-  checkLiquidationTaxEfficiency
+  checkLiquidationTaxEfficiency,
+  executeTaxLossSwap
 };

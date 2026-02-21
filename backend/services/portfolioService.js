@@ -11,10 +11,11 @@ class PortfolioService {
   /**
    * Add a new tax lot after a purchase
    */
-  async addTaxLot(userId, investmentId, quantity, costBasis, acquiredAt) {
+  async addTaxLot(userId, investmentId, symbol, quantity, costBasis, acquiredAt) {
     const [lot] = await db.insert(taxLots).values({
       userId,
       investmentId,
+      symbol,
       quantity,
       costBasisPerUnit: costBasis,
       acquiredAt: acquiredAt || new Date(),

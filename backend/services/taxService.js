@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { taxLots, washSaleLogs, harvestOpportunities, taxCategories } from '../db/schema.js';
+import { taxLots, washSaleViolations, harvestOpportunities, taxCategories } from '../db/schema.js';
 import { eq, and, sql, gte, lte, asc, desc } from 'drizzle-orm';
 import eventBus from '../events/eventBus.js';
 import { logInfo, logError } from '../utils/logger.js';
@@ -40,32 +40,48 @@ class TaxService {
   }
 
   /**
-   * Detect potential Wash-Sale (Buy within 30 days before/after a loss sale)
+   * Global Wash-Sale Prevention Matrix (L3)
+   * Scans 30 days before and 30 days after for "substantially identical" purchases.
    */
-  async checkWashSaleRisk(userId, investmentId, sellDate, lossAmount) {
+  async checkWashSaleRisk(userId, assetSymbol, sellDate = new Date()) {
     const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000;
     const windowStart = new Date(sellDate.getTime() - thirtyDaysInMs);
     const windowEnd = new Date(sellDate.getTime() + thirtyDaysInMs);
 
-    // Check for "Replacement Shares" bought in the window
-    const replacementLots = await db.query.taxLots.findMany({
+    // 1. Check for shares BOUGHT in the 61-day window (lookback + lookahead)
+    const purchases = await db.query.taxLots.findMany({
       where: and(
         eq(taxLots.userId, userId),
-        eq(taxLots.investmentId, investmentId),
+        eq(taxLots.symbol, assetSymbol),
         gte(taxLots.acquiredAt, windowStart),
-        lte(taxLots.acquiredAt, windowEnd)
+        lte(taxLots.acquiredAt, windowEnd),
+        eq(taxLots.isSold, false)
       )
     });
 
-    if (replacementLots.length > 0) {
-      return {
-        isWashSale: true,
-        replacementLots,
-        disallowedLoss: lossAmount
-      };
+    if (purchases.length > 0) {
+      logInfo(`[Wash-Sale Matrix] Violation risk detected for ${assetSymbol} (Purchases found in window)`);
+      return true;
     }
 
-    return { isWashSale: false };
+    return false;
+  }
+
+  /**
+   * Record a Wash-Sale Violation
+   */
+  async recordViolation(userId, investmentId, symbol, amount, date) {
+    const [violation] = await db.insert(washSaleViolations).values({
+      userId,
+      investmentId,
+      assetSymbol: symbol,
+      violationDate: date,
+      disallowedLoss: amount.toString(),
+      description: `Wash-sale violation: Identical asset purchased within 30 days of loss-sale.`
+    }).returning();
+
+    logInfo(`[Wash-Sale Matrix] Recorded violation for ${symbol}: $${amount}`);
+    return violation;
   }
 
   /**
