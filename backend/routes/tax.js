@@ -10,9 +10,55 @@ import { validateTaxDeductionLimit } from '../middleware/taxValidator.js';
 import { eq, and, desc } from 'drizzle-orm';
 import corporateService from '../services/corporateService.js';
 import residencyEngine from '../services/residencyEngine.js';
-import { taxNexusMappings } from '../db/schema.js';
+import { taxNexusMappings, taxLossOpportunities, washSaleViolations, investments } from '../db/schema.js';
+import db from '../config/db.js';
+import taxScoutAI from '../services/taxScoutAI.js';
+import { executeTaxLossSwap } from '../services/investmentService.js';
 
 const router = express.Router();
+
+/**
+ * @route   GET /api/tax/scout/scan
+ * @desc    Trigger a Predictive Tax-Loss Harvesting scan (L3)
+ */
+router.get('/scout/scan', protect, asyncHandler(async (req, res) => {
+  const opportunities = await taxScoutAI.scanForOpportunities(req.user.id);
+  return new ApiResponse(200, opportunities, 'AI scan for harvesting opportunities completed').send(res);
+}));
+
+/**
+ * @route   GET /api/tax/scout/opportunities
+ * @desc    Review proposed tax-loss harvesting swaps
+ */
+router.get('/scout/opportunities', protect, asyncHandler(async (req, res) => {
+  const opportunities = await db.query.taxLossOpportunities.findMany({
+    where: and(eq(taxLossOpportunities.userId, req.user.id), eq(taxLossOpportunities.status, 'pending')),
+    orderBy: [desc(taxLossOpportunities.unrealizedLoss)]
+  });
+  return new ApiResponse(200, opportunities).send(res);
+}));
+
+/**
+ * @route   POST /api/tax/scout/swap
+ * @desc    Execute a Tax-Loss Swap (Sell Asset A -> Buy Correlated Asset B)
+ */
+router.post('/scout/swap', protect, asyncHandler(async (req, res) => {
+  const { opportunityId } = req.body;
+  const result = await executeTaxLossSwap(req.user.id, opportunityId);
+  return new ApiResponse(200, result, 'Swap algorithm executed successfully').send(res);
+}));
+
+/**
+ * @route   GET /api/tax/scout/violations
+ * @desc    Get Global Wash-Sale Prevention Matrix violations
+ */
+router.get('/scout/violations', protect, asyncHandler(async (req, res) => {
+  const violations = await db.query.washSaleViolations.findMany({
+    where: eq(washSaleViolations.userId, req.user.id),
+    orderBy: [desc(washSaleViolations.violationDate)]
+  });
+  return new ApiResponse(200, violations).send(res);
+}));
 
 /**
  * @route   GET /api/tax/alpha

@@ -1082,6 +1082,49 @@ export const userTaxProfiles = pgTable('user_tax_profiles', {
 });
 
 // ============================================================================
+// PREDICTIVE TAX-LOSS HARVESTING MODULE (#442)
+// ============================================================================
+
+export const taxLossOpportunities = pgTable('tax_loss_opportunities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    assetSymbol: text('asset_symbol').notNull(),
+    unrealizedLoss: numeric('unrealized_loss', { precision: 18, scale: 2 }).notNull(),
+    taxSavingsEstimate: numeric('tax_savings_estimate', { precision: 18, scale: 2 }),
+    status: text('status').default('pending'), // 'pending', 'executed', 'dismissed'
+    proxyAssetSymbol: text('proxy_asset_symbol'),
+    correlationScore: numeric('correlation_score', { precision: 5, scale: 4 }),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const washSaleViolations = pgTable('wash_sale_violations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }),
+    assetSymbol: text('asset_symbol').notNull(),
+    violationDate: timestamp('violation_date').notNull(),
+    description: text('description'),
+    disallowedLoss: numeric('disallowed_loss', { precision: 18, scale: 2 }).notNull(),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const assetCorrelationMatrix = pgTable('asset_correlation_matrix', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    baseAssetSymbol: text('base_asset_symbol').notNull(),
+    proxyAssetSymbol: text('proxy_asset_symbol').notNull(),
+    correlationCoefficient: numeric('correlation_coefficient', { precision: 5, scale: 4 }).notNull(),
+    beta: numeric('beta', { precision: 8, scale: 4 }),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+}, (table) => ({
+    assetPairIdx: index('idx_asset_correlation_pair').on(table.baseAssetSymbol, table.proxyAssetSymbol),
+}));
+
+// ============================================================================
 // REAL ESTATE MODULE (#265)
 // ============================================================================
 
@@ -1353,8 +1396,8 @@ export const goalsRelations = relations(goals, ({ one }) => ({
 // Ledger System Relations
 export const ledgerAccountsRelations = relations(ledgerAccounts, ({ one, many }) => ({
     user: one(users, { fields: [ledgerAccounts.userId], references: [users.id] }),
-    parentAccount: one(ledgerAccounts, { 
-        fields: [ledgerAccounts.parentAccountId], 
+    parentAccount: one(ledgerAccounts, {
+        fields: [ledgerAccounts.parentAccountId],
         references: [ledgerAccounts.id],
         relationName: 'account_hierarchy'
     }),
@@ -2557,6 +2600,7 @@ export const taxLots = pgTable('tax_lots', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    symbol: text('symbol').notNull(),
     quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
     costBasisPerUnit: numeric('cost_basis_per_unit', { precision: 18, scale: 2 }).notNull(),
     acquiredAt: timestamp('acquired_at').notNull(),
@@ -3494,45 +3538,7 @@ export const liquidityVelocityLogs = pgTable('liquidity_velocity_logs', {
 });
 
 // DOUBLE-ENTRY LEDGER SYSTEM & REAL-TIME FX REVALUATION (#432)
-export const ledgerAccounts = pgTable('ledger_accounts', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }), // Map to specific vault if applicable
-    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }), // Map to investment
-    name: text('name').notNull(),
-    accountType: text('account_type').notNull(), // 'asset', 'liability', 'equity', 'income', 'expense'
-    currency: text('currency').default('USD'),
-    metadata: jsonb('metadata'),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-});
-
-export const ledgerEntries = pgTable('ledger_entries', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    accountId: uuid('account_id').references(() => ledgerAccounts.id, { onDelete: 'cascade' }).notNull(),
-    transactionId: uuid('transaction_id'), // Link to external transaction logic
-    debit: numeric('debit', { precision: 18, scale: 2 }).default('0.00'),
-    credit: numeric('credit', { precision: 18, scale: 2 }).default('0.00'),
-    currency: text('currency').notNull(),
-    fxRateBase: numeric('fx_rate_base', { precision: 18, scale: 6 }).notNull(), // Rate to USD at time of entry
-    baseAmount: numeric('base_amount', { precision: 18, scale: 2 }).notNull(), // Value in USD at time of entry
-    description: text('description'),
-    entryDate: timestamp('entry_date').defaultNow(),
-    metadata: jsonb('metadata'),
-});
-
-export const fxValuationSnapshots = pgTable('fx_valuation_snapshots', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    accountId: uuid('account_id').references(() => ledgerAccounts.id, { onDelete: 'cascade' }).notNull(),
-    valuationDate: timestamp('valuation_date').defaultNow(),
-    bookValueBase: numeric('book_value_base', { precision: 18, scale: 2 }).notNull(), // Cost basis in USD
-    marketValueBase: numeric('market_value_base', { precision: 18, scale: 2 }).notNull(), // Current value in USD
-    unrealizedGainLoss: numeric('unrealized_gain_loss', { precision: 18, scale: 2 }).notNull(),
-    realizedGainLoss: numeric('realized_gain_loss', { precision: 18, scale: 2 }).default('0.00'),
-    createdAt: timestamp('created_at').defaultNow(),
-});
+// Removed duplicate definitions - using versions defined earlier in schema.js
 
 
 // ============================================================================
@@ -3622,7 +3628,7 @@ export const workflowExecutionLogsRelations = relations(workflowExecutionLogs, (
 export const taxNexusMappingsRelations = relations(taxNexusMappings, ({ one }) => ({
     user: one(users, { fields: [taxNexusMappings.userId], references: [users.id] }),
     entity: one(corporateEntities, { fields: [taxNexusMappings.entityId], references: [corporateEntities.id] }),
-// ============================================
+}));
 // GAMIFICATION TABLES
 // ============================================
 
@@ -3748,25 +3754,25 @@ export const userStreaksRelations = relations(userStreaks, ({ one }) => ({
 export const investmentRiskProfiles = pgTable('investment_risk_profiles', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    
+
     // Risk Assessment Answers
     riskScore: integer('risk_score').notNull().default(50),
     riskTolerance: text('risk_tolerance').notNull().default('moderate'), // conservative, moderate, aggressive
     investmentHorizon: text('investment_horizon').notNull().default('medium'), // short, medium, long
     investmentExperience: text('investment_experience').notNull().default('intermediate'), // beginner, intermediate, advanced
-    
+
     // Financial Profile
     annualIncome: numeric('annual_income', { precision: 15, scale: 2 }).default('0'),
     netWorth: numeric('net_worth', { precision: 15, scale: 2 }).default('0'),
     liquidAssets: numeric('liquid_assets', { precision: 15, scale: 2 }).default('0'),
     emergencyFundMonths: integer('emergency_fund_months').default(3),
-    
+
     // Investment Goals
     primaryGoal: text('primary_goal').notNull().default('growth'), // growth, income, preservation, balanced
     retirementAge: integer('retirement_age'),
     targetRetirementAmount: numeric('target_retirement_amount', { precision: 15, scale: 2 }),
     monthlyInvestmentCapacity: numeric('monthly_investment_capacity', { precision: 12, scale: 2 }).default('0'),
-    
+
     // Risk Factors
     hasDebt: boolean('has_debt').default(false),
     debtAmount: numeric('debt_amount', { precision: 15, scale: 2 }).default('0'),
@@ -3774,17 +3780,17 @@ export const investmentRiskProfiles = pgTable('investment_risk_profiles', {
     dependentCount: integer('dependent_count').default(0),
     hasOtherIncome: boolean('has_other_income').default(false),
     otherIncomeMonthly: numeric('other_income_monthly', { precision: 12, scale: 2 }).default('0'),
-    
+
     // Market Understanding
     understandsMarketVolatility: boolean('understands_market_volatility').default(false),
     canAffordLosses: boolean('can_afford_losses').default(false),
     maxLossTolerance: numeric('max_loss_tolerance', { precision: 12, scale: 2 }).default('0'),
-    
+
     // Assessment Details
     assessmentDate: timestamp('assessment_date').defaultNow(),
     lastUpdated: timestamp('last_updated').defaultNow(),
     isActive: boolean('is_active').default(true),
-    
+
     // Metadata
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
@@ -3796,39 +3802,39 @@ export const investmentRecommendations = pgTable('investment_recommendations', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }),
-    
+
     // Recommendation Details
     recommendationType: text('recommendation_type').notNull(), // buy, sell, hold, diversify, rebalance
     assetSymbol: text('asset_symbol'),
     assetName: text('asset_name'),
     assetType: text('asset_type'), // stock, etf, mutual_fund, bond, crypto
-    
+
     // Reasoning
     reasoning: text('reasoning').notNull(),
     reasoningFactors: jsonb('reasoning_factors').default([]),
-    
+
     // Metrics
     expectedReturn: numeric('expected_return', { precision: 8, scale: 4 }),
     riskLevel: text('risk_level').notNull(), // low, medium, high
     confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }), // 0-100
     timeHorizon: text('time_horizon'), // short, medium, long
-    
+
     // Priority and Status
     priority: text('priority').default('medium'), // low, medium, high
     status: text('status').default('active'), // active, dismissed, implemented
     expiresAt: timestamp('expires_at'),
-    
+
     // Financial Impact
     suggestedAmount: numeric('suggested_amount', { precision: 15, scale: 2 }),
     potentialGainLoss: numeric('potential_gain_loss', { precision: 15, scale: 2 }),
-    
+
     // AI Metadata
     modelVersion: text('model_version'),
     analysisData: jsonb('analysis_data').default({}),
-    
+
     isRead: boolean('is_read').default(false),
     readAt: timestamp('read_at'),
-    
+
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -3838,30 +3844,30 @@ export const portfolioRebalancing = pgTable('portfolio_rebalancing', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
-    
+
     // Rebalancing Details
     rebalanceType: text('rebalance_type').notNull(), // automatic, suggested, manual
     triggerReason: text('trigger_reason'), // threshold_exceeded, time_based, optimization, manual
-    
+
     // Before State
     beforeAllocation: jsonb('before_allocation').notNull(),
     beforeValue: numeric('before_value', { precision: 15, scale: 2 }).notNull(),
-    
+
     // After State
     afterAllocation: jsonb('after_allocation'),
     afterValue: numeric('after_value', { precision: 15, scale: 2 }),
-    
+
     // Actions Taken
     actions: jsonb('actions').default([]),
-    
+
     // Status
     status: text('status').default('pending'), // pending, completed, cancelled
     completedAt: timestamp('completed_at'),
-    
+
     // Metrics
     expectedImprovement: numeric('expected_improvement', { precision: 8, scale: 4 }),
     actualImprovement: numeric('actual_improvement', { precision: 8, scale: 4 }),
-    
+
     notes: text('notes'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
@@ -3897,6 +3903,17 @@ export const portfolioRebalancingRelations = relations(portfolioRebalancing, ({ 
     }),
 }));
 
+export const taxLossOpportunitiesRelations = relations(taxLossOpportunities, ({ one }) => ({
+    user: one(users, { fields: [taxLossOpportunities.userId], references: [users.id] }),
+    portfolio: one(portfolios, { fields: [taxLossOpportunities.portfolioId], references: [portfolios.id] }),
+    investment: one(investments, { fields: [taxLossOpportunities.investmentId], references: [investments.id] }),
+}));
+
+export const washSaleViolationsRelations = relations(washSaleViolations, ({ one }) => ({
+    user: one(users, { fields: [washSaleViolations.userId], references: [users.id] }),
+    investment: one(investments, { fields: [washSaleViolations.investmentId], references: [investments.id] }),
+}));
+
 // Update users relations to include new tables
 export const usersRelations = relations(users, ({ many }) => ({
     categories: many(categories),
@@ -3925,4 +3942,6 @@ export const usersRelations = relations(users, ({ many }) => ({
     negotiationAttempts: many(negotiationAttempts),
     investmentRiskProfiles: many(investmentRiskProfiles),
     investmentRecommendations: many(investmentRecommendations),
+    taxLossOpportunities: many(taxLossOpportunities),
+    washSaleViolations: many(washSaleViolations),
 }));

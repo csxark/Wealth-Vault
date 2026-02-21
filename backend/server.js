@@ -96,6 +96,8 @@ import arbitrageJob from "./jobs/arbitrageJob.js";
 import riskMonitorJob from "./jobs/riskMonitorJob.js";
 import clearingJob from "./jobs/clearingJob.js";
 import taxHarvestJob from "./jobs/taxHarvestJob.js";
+import scheduleTaxHarvestSync from "./jobs/taxHarvestSync.js";
+import { initializeTaxListeners } from "./events/taxListeners.js";
 import riskBaselineJob from "./jobs/riskBaselineJob.js";
 import yieldMonitorJob from "./jobs/yieldMonitorJob.js";
 import simulationJob from "./jobs/simulationJob.js";
@@ -378,6 +380,8 @@ if (process.env.NODE_ENV !== 'test') {
     riskMonitorJob.start();
     clearingJob.start();
     taxHarvestJob.start();
+    scheduleTaxHarvestSync();
+    initializeTaxListeners();
     riskBaselineJob.start();
     yieldMonitorJob.start();
     simulationJob.start();

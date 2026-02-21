@@ -101,7 +101,7 @@ export const calculateUnrealizedFxGainLoss = (originalAmount, currentFxRate, his
     const currentValue = convertCurrency(originalAmount, currentFxRate);
     const historicalValue = convertCurrency(originalAmount, historicalFxRate);
     const unrealizedGainLoss = currentValue - historicalValue;
-    
+
     return {
         originalAmount,
         currentValue,
@@ -109,8 +109,8 @@ export const calculateUnrealizedFxGainLoss = (originalAmount, currentFxRate, his
         currentFxRate,
         historicalFxRate,
         unrealizedGainLoss,
-        gainLossPercentage: historicalValue !== 0 
-            ? roundToPrecision((unrealizedGainLoss / historicalValue) * 100, 4) 
+        gainLossPercentage: historicalValue !== 0
+            ? roundToPrecision((unrealizedGainLoss / historicalValue) * 100, 4)
             : 0,
         isGain: unrealizedGainLoss > 0,
         isLoss: unrealizedGainLoss < 0
@@ -126,15 +126,15 @@ export const calculateRealizedFxGainLoss = (
     const acquisitionValueInBase = convertCurrency(originalAmount, acquisitionFxRate);
     const settlementValueInBase = convertCurrency(settlementAmount, settlementFxRate);
     const realizedGainLoss = settlementValueInBase - acquisitionValueInBase;
-    
+
     return {
         originalAmount,
         settlementAmount,
         acquisitionValueInBase,
         settlementValueInBase,
         realizedGainLoss,
-        gainLossPercentage: acquisitionValueInBase !== 0 
-            ? roundToPrecision((realizedGainLoss / acquisitionValueInBase) * 100, 4) 
+        gainLossPercentage: acquisitionValueInBase !== 0
+            ? roundToPrecision((realizedGainLoss / acquisitionValueInBase) * 100, 4)
             : 0
     };
 };
@@ -145,7 +145,7 @@ export const calculateRealizedFxGainLoss = (
 export const verifyDoubleEntryBalance = (entries) => {
     let totalDebits = 0;
     let totalCredits = 0;
-    
+
     for (const entry of entries) {
         const amount = parseFloat(entry.amount || 0);
         if (entry.entryType === 'debit') {
@@ -154,11 +154,11 @@ export const verifyDoubleEntryBalance = (entries) => {
             totalCredits += amount;
         }
     }
-    
+
     totalDebits = roundToPrecision(totalDebits, 2);
     totalCredits = roundToPrecision(totalCredits, 2);
     const difference = roundToPrecision(totalDebits - totalCredits, 2);
-    
+
     return {
         totalDebits,
         totalCredits,
@@ -172,17 +172,17 @@ export const verifyDoubleEntryBalance = (entries) => {
  */
 export const calculateAccountBalance = (entries, normalBalance) => {
     let balance = 0;
-    
+
     for (const entry of entries) {
         const amount = parseFloat(entry.amount || 0);
-        
+
         if (normalBalance === 'debit') {
             balance += entry.entryType === 'debit' ? amount : -amount;
         } else {
             balance += entry.entryType === 'credit' ? amount : -amount;
         }
     }
-    
+
     return roundToPrecision(balance, 2);
 };
 
@@ -193,11 +193,11 @@ export const calculateTrialBalance = (accounts) => {
     let totalDebits = 0;
     let totalCredits = 0;
     const accountBalances = [];
-    
+
     for (const account of accounts) {
         const balance = calculateAccountBalance(account.entries || [], account.normalBalance);
         const absBalance = Math.abs(balance);
-        
+
         accountBalances.push({
             accountId: account.id,
             accountCode: account.accountCode,
@@ -205,14 +205,14 @@ export const calculateTrialBalance = (accounts) => {
             balance: absBalance,
             normalBalance: account.normalBalance
         });
-        
+
         if (account.normalBalance === 'debit' && balance >= 0) {
             totalDebits += absBalance;
         } else if (account.normalBalance === 'credit' && balance >= 0) {
             totalCredits += absBalance;
         }
     }
-    
+
     return {
         totalDebits: roundToPrecision(totalDebits, 2),
         totalCredits: roundToPrecision(totalCredits, 2),
@@ -236,16 +236,16 @@ export const calculateNetWorth = (accountBalances) => {
 export const calculateFxRevaluationDelta = (currentSnapshots, previousSnapshots) => {
     const currentMap = new Map(currentSnapshots.map(s => [s.accountId, s]));
     const previousMap = new Map(previousSnapshots.map(s => [s.accountId, s]));
-    
+
     let totalDelta = 0;
-    
+
     for (const [accountId, current] of currentMap) {
         const previous = previousMap.get(accountId);
         const previousGainLoss = previous ? parseFloat(previous.unrealizedGainLoss || 0) : 0;
         const currentGainLoss = parseFloat(current.unrealizedGainLoss || 0);
         totalDelta += currentGainLoss - previousGainLoss;
     }
-    
+
     return roundToPrecision(totalDelta, 2);
 };
 
@@ -260,19 +260,71 @@ export const aggregateBalancesByType = (accounts) => {
         revenue: 0,
         expenses: 0
     };
-    
+
     for (const account of accounts) {
         const balance = parseFloat(account.balance || 0);
         const type = account.accountType.toLowerCase();
-        
+
         if (aggregated.hasOwnProperty(type)) {
             aggregated[type] += balance;
         }
     }
-    
+
     for (const key in aggregated) {
         aggregated[key] = roundToPrecision(aggregated[key], 2);
     }
-    
+
     return aggregated;
+};
+
+/**
+ * Calculate Pearson Correlation Coefficient (L3)
+ * Measures statistical relationship between two asset price series.
+ */
+export const calculatePearsonCorrelation = (seriesX, seriesY) => {
+    if (seriesX.length !== seriesY.length || seriesX.length === 0) return 0;
+
+    const n = seriesX.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+
+    for (let i = 0; i < n; i++) {
+        const x = parseFloat(seriesX[i]);
+        const y = parseFloat(seriesY[i]);
+        sumX += x;
+        sumY += y;
+        sumXY += (x * y);
+        sumX2 += (x * x);
+        sumY2 += (y * y);
+    }
+
+    const numerator = (n * sumXY) - (sumX * sumY);
+    const denominator = Math.sqrt((n * sumX2 - Math.pow(sumX, 2)) * (n * sumY2 - Math.pow(sumY, 2)));
+
+    if (denominator === 0) return 0;
+    return roundToPrecision(numerator / denominator, 4);
+};
+
+/**
+ * Calculate Beta of an asset relative to a benchmark (L3)
+ * Beta = Covariance(Asset, Benchmark) / Variance(Benchmark)
+ */
+export const calculateBeta = (assetReturns, benchmarkReturns) => {
+    if (assetReturns.length !== benchmarkReturns.length || assetReturns.length === 0) return 1.0;
+
+    const n = assetReturns.length;
+    const avgAsset = assetReturns.reduce((a, b) => a + parseFloat(b), 0) / n;
+    const avgBenchmark = benchmarkReturns.reduce((a, b) => a + parseFloat(b), 0) / n;
+
+    let covariance = 0;
+    let variance = 0;
+
+    for (let i = 0; i < n; i++) {
+        const assetDiff = parseFloat(assetReturns[i]) - avgAsset;
+        const benchmarkDiff = parseFloat(benchmarkReturns[i]) - avgBenchmark;
+        covariance += (assetDiff * benchmarkDiff);
+        variance += Math.pow(benchmarkDiff, 2);
+    }
+
+    if (variance === 0) return 1.0;
+    return roundToPrecision(covariance / variance, 4);
 };
