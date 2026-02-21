@@ -3,6 +3,7 @@ import { liquidityAlerts, transferSuggestions, users, vaults, balanceSnapshots }
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import forecastEngine from './forecastEngine.js';
 import notificationService from './notificationService.js';
+import eventBus from '../events/eventBus.js';
 
 class LiquidityMonitor {
     /**
@@ -139,7 +140,17 @@ class LiquidityMonitor {
         const zeroIndex = forecast.projections.findIndex(p => p.balance <= 0);
 
         if (zeroIndex === -1) return { days: 365, isStable: true };
-        return { days: zeroIndex, isStable: false, exhaustionDate: forecast.projections[zeroIndex].date };
+
+        const runwayDays = zeroIndex;
+        // Broadcast runway change for the autonomous workflow engine
+        eventBus.emit('LIQUIDITY_RUNWAY_CHANGE', {
+            userId,
+            variable: 'cash_reserve',
+            value: runwayDays,
+            metadata: { isStable: false, exhaustionDate: forecast.projections[zeroIndex].date }
+        });
+
+        return { days: runwayDays, isStable: false, exhaustionDate: forecast.projections[zeroIndex].date };
     }
 
     /**

@@ -3,6 +3,7 @@ import { debts, investments, capitalCostSnapshots, debtArbitrageLogs, users } fr
 import { eq, and, sql } from 'drizzle-orm';
 import { calculateNPV } from '../utils/financialMath.js';
 import { logInfo, logError } from '../utils/logger.js';
+import eventBus from '../events/eventBus.js';
 
 /**
  * Arbitrage Engine (L3)
@@ -102,6 +103,10 @@ class ArbitrageEngine {
         // Bulk insert proposals
         if (signals.length > 0) {
             await db.insert(debtArbitrageLogs).values(signals);
+            // Broadcast signals for the workflow engine to catch
+            for (const signal of signals) {
+                eventBus.emit('ARBITRAGE_SIGNAL_GENERATED', signal);
+            }
         }
 
         return signals;

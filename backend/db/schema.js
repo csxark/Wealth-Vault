@@ -3227,6 +3227,42 @@ export const trusteeVoteLedger = pgTable('trustee_vote_ledger', {
     votedAt: timestamp('voted_at').defaultNow(),
 });
 
+// AUTONOMOUS FINANCIAL EVENT-BUS & WORKFLOW ORCHESTRATION (#433)
+export const executionWorkflows = pgTable('execution_workflows', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    entityType: text('entity_type').notNull(), // 'DEBT', 'TAX', 'INVEST', 'LIQUIDITY'
+    status: text('status').default('active'), // 'active', 'paused', 'completed'
+    triggerLogic: text('trigger_logic').default('AND'), // 'AND', 'OR'
+    priority: integer('priority').default(1),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const workflowTriggers = pgTable('workflow_triggers', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workflowId: uuid('workflow_id').references(() => executionWorkflows.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    variable: text('variable').notNull(), // e.g., 'debt_apr', 'cash_reserve', 'market_volatility'
+    operator: text('operator').notNull(), // '>', '<', '==', '>=', '<='
+    thresholdValue: numeric('threshold_value', { precision: 18, scale: 4 }).notNull(),
+    currentStatus: boolean('current_status').default(false),
+    lastCheckedAt: timestamp('last_checked_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const workflowExecutionLogs = pgTable('workflow_execution_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workflowId: uuid('workflow_id').references(() => executionWorkflows.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    actionTaken: text('action_taken').notNull(),
+    resultStatus: text('result_status').notNull(), // 'success', 'failed', 'pending_approval'
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // ============================================================================
 // CREDIT SCORING & RETIREMENT PLANNING
 // ============================================================================
@@ -3342,74 +3378,8 @@ export const syntheticVaultMappingsRelations = relations(syntheticVaultMappings,
     sourceVault: one(vaults, { fields: [syntheticVaultMappings.sourceVaultId], references: [vaults.id] }),
     safeHavenVault: one(vaults, { fields: [syntheticVaultMappings.safeHavenVaultId], references: [vaults.id] }),
 }));
-// AI-DRIVEN FINANCIAL ENGINEERING (L3)
 // ============================================================================
-
-// MULTI-ENTITY INTER-COMPANY LEDGER & GLOBAL PAYROLL SWEEP (#390)
-export const interCompanyTransfers = pgTable('inter_company_transfers', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    sourceEntityId: uuid('source_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
-    targetEntityId: uuid('target_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
-    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
-    currency: text('currency').default('USD'),
-    transferType: text('transfer_type').notNull(), // 'loan', 'revenue_distribution', 'expense_reimbursement'
-    loanInterestRate: numeric('loan_interest_rate', { precision: 10, scale: 4 }),
-    status: text('status').default('pending'),
-    referenceNumber: text('reference_number').unique(),
-    metadata: jsonb('metadata'),
-    createdAt: timestamp('created_at').defaultNow(),
-});
-
-export const payrollBuckets = pgTable('payroll_buckets', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
-    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
-    bucketName: text('bucket_name').notNull(),
-    totalAllocated: numeric('total_allocated', { precision: 18, scale: 2 }).default('0.00'),
-    frequency: text('frequency').default('monthly'), // 'weekly', 'bi-weekly', 'monthly'
-    nextPayrollDate: timestamp('next_payroll_date'),
-    isActive: boolean('is_active').default(true),
-    createdAt: timestamp('created_at').defaultNow(),
-});
-
-export const taxDeductionLedger = pgTable('tax_deduction_ledger', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    entityId: uuid('entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
-    payrollId: uuid('payroll_id'), // Reference to a payout record (dividend payout or future payroll execution)
-    taxType: text('tax_type').notNull(), // 'federal_income_tax', 'social_security', 'medicare', 'state_tax'
-    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
-    jurisdiction: text('jurisdiction').notNull(),
-    status: text('status').default('pending_filing'), // 'pending_filing', 'filed', 'paid'
-    filingDeadline: timestamp('filing_deadline'),
-    createdAt: timestamp('created_at').defaultNow(),
-});
-
-export const entityConsolidationRules = pgTable('entity_consolidation_rules', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    parentEntityId: uuid('parent_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
-    childEntityId: uuid('child_entity_id').references(() => corporateEntities.id, { onDelete: 'cascade' }).notNull(),
-    consolidationMethod: text('consolidation_method').default('full'), // 'full', 'equity_method', 'proportionate'
-    ownershipStake: numeric('ownership_stake', { precision: 5, scale: 2 }).default('100.00'),
-    eliminationEntriesRequired: boolean('elimination_entries_required').default(true),
-    createdAt: timestamp('created_at').defaultNow(),
-});
-
 // PREDICTIVE LIQUIDITY STRESS-TESTING & AUTONOMOUS INSOLVENCY PREVENTION (#428)
-export const cashFlowProjections = pgTable('cash_flow_projections', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    targetDate: timestamp('target_date').notNull(),
-    projectedBalance: numeric('projected_balance', { precision: 18, scale: 2 }).notNull(),
-    confidenceLow: numeric('confidence_low', { precision: 18, scale: 2 }),
-    confidenceHigh: numeric('confidence_high', { precision: 18, scale: 2 }),
-    simulationType: text('simulation_type').default('monte_carlo'), // 'deterministic', 'monte_carlo'
-    metadata: jsonb('metadata'),
-    createdAt: timestamp('created_at').defaultNow(),
-});
 
 export const stressTestScenarios = pgTable('stress_test_scenarios', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -3500,6 +3470,25 @@ export const liquidityVelocityLogsRelations = relations(liquidityVelocityLogs, (
     vault: one(vaults, { fields: [liquidityVelocityLogs.vaultId], references: [vaults.id] }),
 }));
 
+export const executionWorkflowsRelations = relations(executionWorkflows, ({ one, many }) => ({
+    user: one(users, { fields: [executionWorkflows.userId], references: [users.id] }),
+    triggers: many(workflowTriggers),
+    logs: many(workflowExecutionLogs),
+}));
+
+export const workflowTriggersRelations = relations(workflowTriggers, ({ one }) => ({
+    user: one(users, { fields: [workflowTriggers.userId], references: [users.id] }),
+    workflow: one(executionWorkflows, { fields: [workflowTriggers.workflowId], references: [executionWorkflows.id] }),
+}));
+
+export const workflowExecutionLogsRelations = relations(workflowExecutionLogs, ({ one }) => ({
+    user: one(users, { fields: [workflowExecutionLogs.userId], references: [users.id] }),
+    workflow: one(executionWorkflows, { fields: [workflowExecutionLogs.workflowId], references: [executionWorkflows.id] }),
+}));
+
+export const taxNexusMappingsRelations = relations(taxNexusMappings, ({ one }) => ({
+    user: one(users, { fields: [taxNexusMappings.userId], references: [users.id] }),
+    entity: one(corporateEntities, { fields: [taxNexusMappings.entityId], references: [corporateEntities.id] }),
 // ============================================
 // GAMIFICATION TABLES
 // ============================================

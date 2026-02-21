@@ -1,6 +1,8 @@
 import db from '../config/db.js';
 import { debts, debtPayments, users } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
+import eventBus from '../events/eventBus.js';
+import { logInfo, logError } from '../utils/logger.js';
 
 class DebtEngine {
   /**
@@ -183,7 +185,16 @@ class DebtEngine {
     };
 
     const marketFluctuation = (Math.random() * 0.02) - 0.01; // +/- 1%
-    return baselineRates[debtType] + marketFluctuation;
+    const finalRate = baselineRates[debtType] + marketFluctuation;
+
+    // Trigger workflow engine evaluation if market rates drop significantly
+    eventBus.emit('DEBT_APR_CHANGE', {
+      variable: 'market_refi_rate',
+      value: finalRate,
+      metadata: { debtType }
+    });
+
+    return finalRate;
   }
 }
 

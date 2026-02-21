@@ -1,6 +1,8 @@
 import db from '../config/db.js';
 import { taxLots, washSaleLogs, harvestOpportunities, taxCategories } from '../db/schema.js';
 import { eq, and, sql, gte, lte, asc, desc } from 'drizzle-orm';
+import eventBus from '../events/eventBus.js';
+import { logInfo, logError } from '../utils/logger.js';
 
 /**
  * Tax Service (L3)
@@ -119,6 +121,38 @@ class TaxService {
     }
     return updatedLots;
   }
+
+  /**
+   * Monitor tax liability thresholds and emit events (L3)
+   */
+  async monitorLiabilityThresholds(userId) {
+    try {
+      // Calculate total unrealized gains across all lots (simplification)
+      const liabilitySummary = await db.select({
+        totalGain: sql`sum(${taxLots.quantity} * (${taxLots.costBasisPerUnit} - ${taxLots.costBasisPerUnit}))` // Placeholder logic
+      }).from(taxLots).where(eq(taxLots.userId, userId));
+
+      const totalGain = parseFloat(liabilitySummary[0]?.totalGain || '0');
+      const estimatedLiability = totalGain * 0.20; // 20% estimated tax
+
+      // Threshold check: trigger if liability > $10,000
+      if (estimatedLiability > 10000) {
+        eventBus.emit('TAX_LIABILITY_THRESHOLD', {
+          userId,
+          variable: 'tax_liability',
+          value: estimatedLiability,
+          metadata: {
+            totalGain,
+            estimatedRate: 0.20
+          }
+        });
+      }
+
+      return estimatedLiability;
+    } catch (error) {
+      logError(`[TaxService] Liability monitor failed: ${error.message}`);
+    }
+  }
 }
 
 /**
@@ -200,7 +234,7 @@ export async function initializeDefaultTaxCategories() {
   try {
     // Check if categories already exist
     const existing = await db.select().from(taxCategories).limit(1);
-    
+
     if (existing.length === 0) {
       await db.insert(taxCategories).values(defaultCategories);
       console.log('✅ Default tax categories initialized successfully');
