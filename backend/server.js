@@ -45,6 +45,7 @@ import reimbursementsRoutes from "./routes/reimbursements.js";
 import subscriptionRoutes from "./routes/subscriptions.js";
 import investmentRoutes from "./routes/investments.js";
 import investmentAdvice from "./routes/investments.js";
+import investmentAdvisorRoutes from "./routes/investmentAdvisor.js";
 import budgetAlertsRoutes from "./routes/budgetAlerts.js";
 import bankSyncRoutes from "./routes/bankSync.js";
 import savingsRoutes from "./routes/savings.js";
@@ -59,12 +60,8 @@ import creditScoreRoutes from "./routes/creditScores.js";
 import retirementPlanningRoutes from "./routes/retirementPlanning.js";
 import netWorthRoutes from "./routes/netWorth.js";
 import subscriptionTrackerRoutes from "./routes/subscriptionTracker.js";
-
 import achievementsRoutes from "./routes/achievements.js";
-
 import { scheduleMonthlyReports } from "./jobs/reportGenerator.js";
-
-
 
 // Load environment variables
 dotenv.config();
@@ -87,7 +84,7 @@ runImmediateSync().then(() => {
   console.warn('⚠️ Initial exchange rates sync failed:', err.message);
 });
 
-// Initiliz uplod directorys
+// Initialize upload directories
 initializeUploads().catch((err) => {
   console.error("❌ Failed to initialize upload directories:", err);
 });
@@ -159,7 +156,7 @@ app.use(sanitizeInput);
 app.use(responseWrapper);
 app.use(paginationMiddleware());
 
-// Logng and monitrng midlware
+// Logging and monitoring middleware
 app.use(requestIdMiddleware);
 app.use(requestLogger);
 app.use(performanceMiddleware);
@@ -188,7 +185,6 @@ app.use((req, res, next) => {
 
 // Import database configuration
 // Database configuration is handled via Drizzle in individual modules
-// import connectDB from './config/db.js';
 console.log("📦 Database initialized via Drizzle");
 
 // Apply general rate limiting to all API routes
@@ -221,6 +217,7 @@ app.use("/api/currencies", userLimiter, currenciesRoutes);
 app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
 app.use("/api/investments", userLimiter, investmentRoutes);
 app.use("/api/investment-advice", userLimiter, investmentAdvice);
+app.use("/api/investments/advisor", userLimiter, investmentAdvisorRoutes);
 app.use("/api/budget-alerts", userLimiter, budgetAlertsRoutes);
 app.use("/api/bank-sync", userLimiter, bankSyncRoutes);
 app.use("/api/savings", userLimiter, savingsRoutes);
@@ -238,11 +235,7 @@ app.use("/api/subscription-tracker", userLimiter, subscriptionTrackerRoutes);
 // Gamification routes
 app.use("/api/achievements", userLimiter, achievementsRoutes);
 
-// Secur fil servr for uploddd fils
-
-
-
-
+// Secure file server for uploaded files
 app.use("/uploads", createFileServerRoute());
 
 // Health check endpoint

@@ -17,6 +17,9 @@ import  Home  from '../components/Home/Home';
 import TaxCenter from '../pages/TaxCenter';
 import SubscriptionTracker from '../pages/SubscriptionTracker';
 import GamificationDashboard from '../components/Gamification/GamificationDashboard';
+import PortfolioDashboard from '../components/Investments/PortfolioDashboard';
+import InvestmentRecommendations from '../components/Investments/InvestmentRecommendations';
+import RiskProfileAnalyzer from '../components/Investments/RiskProfileAnalyzer';
 
 
 interface ProtectedRouteProps {
@@ -187,6 +190,30 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <GamificationDashboard />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments',
+    element: (
+      <ProtectedRoute>
+        <PortfolioDashboard />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments/recommendations',
+    element: (
+      <ProtectedRoute>
+        <InvestmentRecommendations />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments/risk-profile',
+    element: (
+      <ProtectedRoute>
+        <RiskProfileAnalyzer />
       </ProtectedRoute>
     )
   },
