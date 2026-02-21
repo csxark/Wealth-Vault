@@ -1,76 +1,133 @@
-import { eq, and, gte, lte, sql, desc, count } from 'drizzle-orm';
+import { eq, and, gte, lte, sql, desc, asc, not, isNull, or } from 'drizzle-orm';
 import db from '../config/db.js';
-import { expenses, categories, subscriptions } from '../db/schema.js';
-import subscriptionService from './subscriptionService.js';
+import { subscriptions, expenses, categories } from '../db/schema.js';
 
+/**
+ * Subscription Detection Service
+ * Automatically detects potential subscriptions from expense data
+ */
 class SubscriptionDetectionService {
   /**
-   * Common subscription keywords to look for in descriptions
+   * Known subscription service patterns
    */
-  getSubscriptionKeywords() {
-    return [
-      'netflix', 'spotify', 'amazon prime', 'hulu', 'disney+', 'apple music',
-      'microsoft', 'adobe', 'norton', 'mcafee', 'dropbox', 'google drive',
-      'onedrive', 'slack', 'zoom', 'grammarly', 'canva', 'figma', 'notion',
-      'trello', 'asana', 'monday.com', 'hubspot', 'salesforce', 'shopify',
-      'stripe', 'paypal', 'aws', 'digitalocean', 'heroku', 'vercel', 'netlify',
-      'github', 'gitlab', 'bitbucket', 'jetbrains', 'vscode', 'sublime',
-      'audible', 'kindle', 'playstation', 'xbox', 'nintendo', 'steam',
-      'epic games', 'ubisoft', 'ea games', 'blizzard', 'activision',
-      'subscription', 'monthly', 'annual', 'yearly', 'recurring'
-    ];
-  }
+  KNOWN_SUBSCRIPTIONS = {
+    'netflix': { category: 'Entertainment', frequency: 'monthly', confidence: 0.95 },
+    'spotify': { category: 'Entertainment', frequency: 'monthly', confidence: 0.95 },
+    'apple music': { category: 'Entertainment', frequency: 'monthly', confidence: 0.95 },
+    'amazon prime': { category: 'Shopping', frequency: 'monthly', confidence: 0.95 },
+    'amazon.com': { category: 'Shopping', frequency: 'monthly', confidence: 0.7 },
+    'disney+': { category: 'Entertainment', frequency: 'monthly', confidence: 0.95 },
+    'hulu': { category: 'Entertainment', frequency: 'monthly', confidence: 0.95 },
+    'hbo': { category: 'Entertainment', frequency: 'monthly', confidence: 0.95 },
+    'youtube': { category: 'Entertainment', frequency: 'monthly', confidence: 0.8 },
+    'youtube premium': { category: 'Entertainment', frequency: 'monthly', confidence: 0.95 },
+    'playstation': { category: 'Entertainment', frequency: 'monthly', confidence: 0.9 },
+    'xbox': { category: 'Entertainment', frequency: 'monthly', confidence: 0.9 },
+    'microsoft': { category: 'Software', frequency: 'monthly', confidence: 0.85 },
+    'adobe': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'dropbox': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'google drive': { category: 'Software', frequency: 'monthly', confidence: 0.9 },
+    'icloud': { category: 'Software', frequency: 'monthly', confidence: 0.9 },
+    'onedrive': { category: 'Software', frequency: 'monthly', confidence: 0.9 },
+    'office': { category: 'Software', frequency: 'monthly', confidence: 0.85 },
+    'slack': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'zoom': { category: 'Software', frequency: 'monthly', confidence: 0.9 },
+    'notion': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'figma': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'github': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'chatgpt': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'openai': { category: 'Software', frequency: 'monthly', confidence: 0.9 },
+    'nordvpn': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'expressvpn': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    '1password': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'lastpass': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'grammarly': { category: 'Software', frequency: 'monthly', confidence: 0.95 },
+    'linkedin': { category: 'Professional', frequency: 'monthly', confidence: 0.9 },
+    'gym': { category: 'Health', frequency: 'monthly', confidence: 0.85 },
+    'fitness': { category: 'Health', frequency: 'monthly', confidence: 0.85 },
+    'planet fitness': { category: 'Health', frequency: 'monthly', confidence: 0.95 },
+    'audible': { category: 'Entertainment', frequency: 'monthly', confidence: 0.95 },
+    'kindle': { category: 'Entertainment', frequency: 'monthly', confidence: 0.9 },
+    'patreon': { category: 'Entertainment', frequency: 'monthly', confidence: 0.9 },
+    'twitch': { category: 'Entertainment', frequency: 'monthly', confidence: 0.9 },
+    'medium': { category: 'News', frequency: 'monthly', confidence: 0.9 },
+    'new york times': { category: 'News', frequency: 'monthly', confidence: 0.9 },
+    'wall street journal': { category: 'News', frequency: 'monthly', confidence: 0.9 },
+    'subscription': { category: 'General', frequency: 'monthly', confidence: 0.7 },
+    'monthly': { category: 'General', frequency: 'monthly', confidence: 0.5 },
+    'annual': { category: 'General', frequency: 'yearly', confidence: 0.6 },
+    'membership': { category: 'General', frequency: 'monthly', confidence: 0.6 },
+    'rent': { category: 'Housing', frequency: 'monthly', confidence: 0.95 },
+    'insurance': { category: 'Insurance', frequency: 'monthly', confidence: 0.9 },
+    'electric': { category: 'Utilities', frequency: 'monthly', confidence: 0.8 },
+    'water': { category: 'Utilities', frequency: 'monthly', confidence: 0.8 },
+    'gas': { category: 'Utilities', frequency: 'monthly', confidence: 0.8 },
+    'internet': { category: 'Utilities', frequency: 'monthly', confidence: 0.9 },
+    'phone': { category: 'Utilities', frequency: 'monthly', confidence: 0.9 },
+    'mobile': { category: 'Utilities', frequency: 'monthly', confidence: 0.9 },
+    'verizon': { category: 'Utilities', frequency: 'monthly', confidence: 0.9 },
+    'at&t': { category: 'Utilities', frequency: 'monthly', confidence: 0.9 },
+    't-mobile': { category: 'Utilities', frequency: 'monthly', confidence: 0.9 },
+    'comcast': { category: 'Utilities', frequency: 'monthly', confidence: 0.9 },
+    'spectrum': { category: 'Utilities', frequency: 'monthly', confidence: 0.9 }
+  };
 
   /**
-   * Analyze expense patterns to detect potential subscriptions
+   * Detect potential subscriptions from expenses
    */
   async detectPotentialSubscriptions(userId, monthsToAnalyze = 6) {
     try {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - monthsToAnalyze);
+      const now = new Date();
+      const startDate = new Date(now.getFullYear(), now.getMonth() - monthsToAnalyze, 1);
 
-      // Get expenses in the analysis period
+      // Get all expenses for the user in the analysis period
       const userExpenses = await db.query.expenses.findMany({
         where: and(
           eq(expenses.userId, userId),
-          gte(expenses.date, startDate),
-          lte(expenses.date, endDate),
-          eq(expenses.status, 'completed')
+          gte(expenses.date, startDate)
         ),
-        with: {
-          category: {
-            columns: { name: true, type: true }
-          }
-        },
-        orderBy: [desc(expenses.date)]
+        orderBy: [asc(expenses.date)]
       });
 
-      const potentialSubscriptions = [];
-      const expenseGroups = this.groupExpensesByDescription(userExpenses);
+      // Get existing subscriptions to exclude
+      const existingSubscriptions = await db.query.subscriptions.findMany({
+        where: eq(subscriptions.userId, userId)
+      });
+      const existingNames = existingSubscriptions.map(s => s.serviceName.toLowerCase());
 
-      for (const [description, expenses] of Object.entries(expenseGroups)) {
-        const pattern = this.analyzeExpensePattern(expenses);
-        if (pattern.isPotentialSubscription) {
-          // Check if already exists as subscription
-          const existingSubscription = await db.query.subscriptions.findFirst({
-            where: and(
-              eq(subscriptions.userId, userId),
-              eq(subscriptions.serviceName, pattern.serviceName)
-            )
-          });
+      // Group expenses by description pattern
+      const expenseGroups = this.groupExpensesByPattern(userExpenses);
 
-          if (!existingSubscription) {
-            potentialSubscriptions.push({
-              ...pattern,
-              expenseIds: expenses.map(e => e.id),
-              confidence: this.calculateConfidence(pattern, expenses)
-            });
-          }
+      // Analyze each group for subscription patterns
+      const detections = [];
+
+      for (const [key, group] of Object.entries(expenseGroups)) {
+        if (group.length < 2) continue; // Need at least 2 occurrences
+
+        const analysis = this.analyzeExpenseGroup(group, existingNames);
+        
+        if (analysis.isSubscription) {
+          detections.push(analysis);
         }
       }
 
-      return potentialSubscriptions.sort((a, b) => b.confidence - a.confidence);
+      // Sort by confidence and potential savings
+      detections.sort((a, b) => {
+        if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+        return b.averageAmount - a.averageAmount;
+      });
+
+      return {
+        detections,
+        summary: {
+          totalDetections: detections.length,
+          highConfidence: detections.filter(d => d.confidence >= 0.8).length,
+          mediumConfidence: detections.filter(d => d.confidence >= 0.5 && d.confidence < 0.8).length,
+          lowConfidence: detections.filter(d => d.confidence < 0.5).length,
+          totalPotentialMonthly: detections.reduce((sum, d) => sum + d.averageAmount, 0),
+          totalPotentialAnnual: detections.reduce((sum, d) => sum + (d.averageAmount * 12), 0)
+        }
+      };
     } catch (error) {
       console.error('Error detecting potential subscriptions:', error);
       throw error;
@@ -80,226 +137,319 @@ class SubscriptionDetectionService {
   /**
    * Group expenses by similar descriptions
    */
-  groupExpensesByDescription(expenses) {
+  groupExpensesByPattern(expenses) {
     const groups = {};
 
     for (const expense of expenses) {
-      const normalizedDesc = this.normalizeDescription(expense.description);
-
+      const description = expense.description.toLowerCase().trim();
+      
+      // Try to find a common pattern
+      const normalizedDesc = this.normalizeDescription(description);
+      
       if (!groups[normalizedDesc]) {
         groups[normalizedDesc] = [];
       }
-
       groups[normalizedDesc].push(expense);
     }
 
-    // Filter groups with multiple expenses
-    return Object.fromEntries(
-      Object.entries(groups).filter(([_, expenses]) => expenses.length >= 2)
-    );
+    return groups;
   }
 
   /**
-   * Normalize expense descriptions for grouping
+   * Normalize expense description
    */
   normalizeDescription(description) {
-    return description
+    // Remove common variations
+    let normalized = description
       .toLowerCase()
-      .trim()
-      .replace(/[^\w\s]/g, ' ') // Remove special characters
+      .replace(/\d{1,2}\/\d{1,2}\/\d{2,4}/g, '') // Remove dates
+      .replace(/\*+\d+/g, '') // Remove card numbers
       .replace(/\s+/g, ' ') // Normalize spaces
-      .replace(/\b\d{4}\b/g, '') // Remove 4-digit numbers (like years)
-      .replace(/\b\d{2}\/\d{2}\/\d{4}\b/g, '') // Remove dates
       .trim();
+
+    // Check if it matches known subscriptions
+    for (const [key, pattern] of Object.entries(this.KNOWN_SUBSCRIPTIONS)) {
+      if (normalized.includes(key)) {
+        return key;
+      }
+    }
+
+    // Use first few words as key if no match
+    const words = normalized.split(' ');
+    if (words.length > 3) {
+      return words.slice(0, 3).join(' ');
+    }
+
+    return normalized.substring(0, 30);
   }
 
   /**
-   * Analyze expense pattern to determine if it's a subscription
+   * Analyze a group of expenses for subscription patterns
    */
-  analyzeExpensePattern(expenses) {
-    if (expenses.length < 2) return { isPotentialSubscription: false };
+  analyzeExpenseGroup(expenseGroup, existingNames) {
+    const amounts = expenseGroup.map(e => parseFloat(e.amount));
+    const dates = expenseGroup.map(e => new Date(e.date)).sort((a, b) => a - b);
+    
+    const averageAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+    const amountVariance = this.calculateVariance(amounts);
+    const amountStdDev = Math.sqrt(amountVariance);
 
-    const amounts = expenses.map(e => parseFloat(e.amount));
-    const dates = expenses.map(e => new Date(e.date)).sort((a, b) => a - b);
+    // Check if amounts are consistent (low variance)
+    const isConsistentAmount = amountStdDev < averageAmount * 0.1; // Less than 10% variation
 
-    // Check amount consistency (within 10% variance)
-    const avgAmount = amounts.reduce((sum, amt) => sum + amt, 0) / amounts.length;
-    const amountVariance = amounts.every(amt =>
-      Math.abs(amt - avgAmount) / avgAmount <= 0.1
-    );
+    // Check if dates follow a pattern
+    const frequency = this.detectFrequency(dates);
+    const isRecurring = frequency !== null;
 
-    if (!amountVariance) return { isPotentialSubscription: false };
+    // Check if it matches known subscription patterns
+    const description = expenseGroup[0].description.toLowerCase();
+    let knownMatch = null;
+    let knownConfidence = 0;
 
-    // Check for regular intervals
-    const intervals = [];
-    for (let i = 1; i < dates.length; i++) {
-      const diffDays = Math.round((dates[i] - dates[i-1]) / (1000 * 60 * 60 * 24));
-      intervals.push(diffDays);
+    for (const [key, pattern] of Object.entries(this.KNOWN_SUBSCRIPTIONS)) {
+      if (description.includes(key)) {
+        knownMatch = pattern;
+        knownConfidence = pattern.confidence;
+        break;
+      }
     }
 
-    const avgInterval = intervals.reduce((sum, int) => sum + int, 0) / intervals.length;
-    const intervalVariance = intervals.every(int =>
-      Math.abs(int - avgInterval) / avgInterval <= 0.3 // 30% variance allowed
+    // Calculate confidence score
+    let confidence = 0;
+
+    if (knownMatch) {
+      confidence += knownConfidence * 0.4;
+    }
+
+    if (isRecurring) {
+      confidence += 0.3;
+    }
+
+    if (isConsistentAmount) {
+      confidence += 0.2;
+    }
+
+    if (expenseGroup.length >= 3) {
+      confidence += 0.1;
+    }
+
+    // Check if already tracked
+    const firstDesc = description.substring(0, 30);
+    const isExisting = existingNames.some(name => 
+      firstDesc.includes(name.substring(0, 10)) || name.includes(firstDesc.substring(0, 10))
     );
-
-    // Determine frequency based on average interval
-    let frequency = 'monthly';
-    if (avgInterval <= 10) frequency = 'weekly';
-    else if (avgInterval <= 45) frequency = 'monthly';
-    else if (avgInterval <= 140) frequency = 'quarterly';
-    else frequency = 'yearly';
-
-    // Check if description contains subscription keywords
-    const description = expenses[0].description.toLowerCase();
-    const hasKeywords = this.getSubscriptionKeywords().some(keyword =>
-      description.includes(keyword)
-    );
-
-    // Check category type
-    const categoryType = expenses[0].category?.type;
-    const isSubscriptionCategory = ['entertainment', 'software', 'utilities'].includes(
-      expenses[0].category?.name?.toLowerCase()
-    );
-
-    const isPotentialSubscription = (
-      intervalVariance &&
-      (hasKeywords || isSubscriptionCategory || avgInterval <= 45) // Monthly or more frequent
-    );
-
-    if (!isPotentialSubscription) return { isPotentialSubscription: false };
-
-    // Extract service name
-    const serviceName = this.extractServiceName(expenses[0].description);
 
     return {
-      isPotentialSubscription: true,
-      serviceName,
-      cost: avgAmount.toString(),
-      frequency,
-      averageInterval: Math.round(avgInterval),
-      transactionCount: expenses.length,
+      serviceName: this.formatServiceName(expenseGroup[0].description),
+      description: expenseGroup[0].description,
+      isSubscription: confidence >= 0.5 && isRecurring && !isExisting,
+      confidence: Math.min(0.99, Math.round(confidence * 100) / 100),
+      averageAmount: Math.round(averageAmount * 100) / 100,
+      amountVariance: Math.round(amountStdDev * 100) / 100,
+      frequency: frequency || 'unknown',
+      occurrenceCount: expenseGroup.length,
       firstDate: dates[0],
       lastDate: dates[dates.length - 1],
-      categoryId: expenses[0].categoryId,
-      confidence: this.calculatePatternConfidence(intervals, amounts, hasKeywords)
+      expenseIds: expenseGroup.map(e => e.id),
+      isConsistentAmount,
+      isRecurring,
+      knownMatch: knownMatch?.category || null,
+      isExisting,
+      suggestedCategory: knownMatch?.category || 'General',
+      suggestedFrequency: knownMatch?.frequency || frequency || 'monthly'
     };
   }
 
   /**
-   * Extract service name from description
+   * Detect billing frequency from dates
    */
-  extractServiceName(description) {
-    // Try to find known service names
-    const keywords = this.getSubscriptionKeywords();
-    const lowerDesc = description.toLowerCase();
+  detectFrequency(dates) {
+    if (dates.length < 2) return null;
 
-    for (const keyword of keywords) {
-      if (lowerDesc.includes(keyword)) {
-        // Capitalize first letter of each word
-        return keyword.split(' ')
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-          .join(' ');
+    // Calculate intervals between consecutive dates
+    const intervals = [];
+    for (let i = 1; i < dates.length; i++) {
+      const diffTime = Math.abs(dates[i] - dates[i - 1]);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      intervals.push(diffDays);
+    }
+
+    const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+
+    // Check intervals against expected frequencies
+    const frequencies = {
+      weekly: { min: 5, max: 10 },
+      biweekly: { min: 12, max: 17 },
+      monthly: { min: 25, max: 35 },
+      quarterly: { min: 85, max: 105 },
+      yearly: { min: 350, max: 380 }
+    };
+
+    for (const [freq, range] of Object.entries(frequencies)) {
+      if (avgInterval >= range.min && avgInterval <= range.max) {
+        return freq;
       }
     }
 
-    // Fallback: use first few words of description
-    const words = description.split(' ').slice(0, 3);
-    return words.map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    ).join(' ');
+    // Check if all intervals are very similar (highly consistent)
+    const variance = this.calculateVariance(intervals);
+    const stdDev = Math.sqrt(variance);
+    
+    // If standard deviation is low and matches one of the ranges loosely
+    if (stdDev < 5) {
+      if (avgInterval > 20 && avgInterval < 40) return 'monthly';
+      if (avgInterval > 80 && avgInterval < 110) return 'quarterly';
+    }
+
+    return null;
   }
 
   /**
-   * Calculate confidence score for pattern detection
+   * Calculate variance
    */
-  calculatePatternConfidence(intervals, amounts, hasKeywords) {
-    let confidence = 0;
-
-    // Interval regularity (0-40 points)
-    const avgInterval = intervals.reduce((sum, int) => sum + int, 0) / intervals.length;
-    const intervalVariance = intervals.reduce((sum, int) =>
-      sum + Math.pow(int - avgInterval, 2), 0
-    ) / intervals.length;
-    const regularityScore = Math.max(0, 40 - (intervalVariance / avgInterval) * 100);
-    confidence += regularityScore;
-
-    // Amount consistency (0-30 points)
-    const avgAmount = amounts.reduce((sum, amt) => sum + amt, 0) / amounts.length;
-    const amountVariance = amounts.reduce((sum, amt) =>
-      sum + Math.pow(amt - avgAmount, 2), 0
-    ) / amounts.length;
-    const consistencyScore = Math.max(0, 30 - (amountVariance / avgAmount) * 100);
-    confidence += consistencyScore;
-
-    // Transaction count (0-20 points)
-    const countScore = Math.min(20, intervals.length * 2);
-    confidence += countScore;
-
-    // Keywords bonus (0-10 points)
-    if (hasKeywords) confidence += 10;
-
-    return Math.min(100, Math.round(confidence));
+  calculateVariance(values) {
+    if (values.length === 0) return 0;
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
   }
 
   /**
-   * Calculate overall confidence for potential subscription
+   * Format service name from description
    */
-  calculateConfidence(pattern, expenses) {
-    let confidence = pattern.confidence;
-
-    // Boost confidence for higher transaction counts
-    if (expenses.length >= 6) confidence += 10;
-    else if (expenses.length >= 3) confidence += 5;
-
-    // Boost for regular intervals
-    if (pattern.averageInterval <= 35 && pattern.averageInterval >= 25) confidence += 5; // Monthly
-    if (pattern.averageInterval <= 10 && pattern.averageInterval >= 5) confidence += 5; // Weekly
-
-    return Math.min(100, confidence);
+  formatServiceName(description) {
+    // Capitalize first letter of each word
+    return description
+      .toLowerCase()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+      .substring(0, 50);
   }
 
   /**
-   * Create subscription from detected pattern
+   * Get detection statistics
    */
-  async createSubscriptionFromDetection(userId, detectionData) {
+  async getDetectionStats(userId) {
     try {
-      // Calculate renewal date based on last transaction and frequency
-      const lastDate = new Date(detectionData.lastDate);
-      const renewalDate = this.calculateNextRenewalDate(lastDate, detectionData.frequency);
+      const now = new Date();
+      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
 
-      const subscriptionData = {
-        userId,
-        categoryId: detectionData.categoryId,
-        serviceName: detectionData.serviceName,
-        description: `Auto-detected from ${detectionData.transactionCount} transactions`,
-        cost: detectionData.cost,
-        currency: 'USD', // Assume USD, can be updated later
-        frequency: detectionData.frequency,
-        renewalDate,
-        autoRenewal: true,
-        status: 'active',
-        paymentMethod: 'credit_card', // Default
-        metadata: {
-          detectedFromExpense: true,
-          expenseIds: detectionData.expenseIds,
-          detectionConfidence: detectionData.confidence,
-          annualCost: subscriptionService.calculateAnnualCost(detectionData.cost, detectionData.frequency).toString(),
-          costTrend: [],
-          lastReminderSent: null
+      // Get all expenses in the period
+      const expenses = await db.query.expenses.findMany({
+        where: and(
+          eq(expenses.userId, userId),
+          gte(expenses.date, sixMonthsAgo)
+        )
+      });
+
+      // Get existing subscriptions
+      const existingSubscriptions = await db.query.subscriptions.findMany({
+        where: eq(subscriptions.userId, userId)
+      });
+
+      // Analyze patterns
+      const expenseGroups = this.groupExpensesByPattern(expenses);
+      let recurringPatterns = 0;
+      let knownSubscriptionMatches = 0;
+      let totalExpenseAmount = 0;
+
+      for (const [key, group] of Object.entries(expenseGroups)) {
+        if (group.length < 2) continue;
+        
+        const amounts = group.map(e => parseFloat(e.amount));
+        const dates = group.map(e => new Date(e.date)).sort((a, b) => a - b);
+        
+        if (this.detectFrequency(dates)) {
+          recurringPatterns++;
         }
-      };
 
-      const newSubscription = await subscriptionService.createSubscription(subscriptionData);
+        const desc = group[0].description.toLowerCase();
+        for (const key of Object.keys(this.KNOWN_SUBSCRIPTIONS)) {
+          if (desc.includes(key)) {
+            knownSubscriptionMatches++;
+            break;
+          }
+        }
 
-      // Update expenses to mark them as subscription-related
-      for (const expenseId of detectionData.expenseIds) {
-        await db
-          .update(expenses)
-          .set({
-            metadata: sql`${expenses.metadata} || '{"subscriptionId": "${newSubscription.id}"}'::jsonb`
-          })
-          .where(eq(expenses.id, expenseId));
+        totalExpenseAmount += amounts.reduce((a, b) => a + b, 0);
       }
+
+      return {
+        analysisPeriod: {
+          start: sixMonthsAgo.toISOString(),
+          end: now.toISOString(),
+          months: 6
+        },
+        expensesAnalyzed: expenses.length,
+        uniqueMerchants: Object.keys(expenseGroups).length,
+        recurringPatterns,
+        knownSubscriptionMatches,
+        totalExpenseAmount: Math.round(totalExpenseAmount * 100) / 100,
+        existingSubscriptions: existingSubscriptions.length,
+        potentialNewSubscriptions: recurringPatterns - existingSubscriptions.length
+      };
+    } catch (error) {
+      console.error('Error getting detection stats:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create subscription from detection
+   */
+  async createFromDetection(userId, detectionData) {
+    try {
+      const { 
+        serviceName, 
+        averageAmount, 
+        suggestedFrequency, 
+        categoryId,
+        expenseIds,
+        confidence 
+      } = detectionData;
+
+      // Get category ID if not provided
+      let finalCategoryId = categoryId;
+      if (!finalCategoryId) {
+        const categoryName = this.KNOWN_SUBSCRIPTIONS[serviceName.toLowerCase()]?.category || 'General';
+        const category = await db.query.categories.findFirst({
+          where: and(
+            eq(categories.userId, userId),
+            eq(categories.name, categoryName)
+          )
+        });
+        if (category) {
+          finalCategoryId = category.id;
+        }
+      }
+
+      // Calculate next charge date
+      const nextChargeDate = this.calculateNextChargeDate(new Date(), suggestedFrequency);
+
+      // Create the subscription
+      const [newSubscription] = await db
+        .insert(subscriptions)
+        .values({
+          userId,
+          categoryId: finalCategoryId,
+          serviceName,
+          description: `Auto-detected subscription (${Math.round(confidence * 100)}% confidence)`,
+          cost: averageAmount.toString(),
+          currency: 'USD',
+          frequency: suggestedFrequency,
+          renewalDate: nextChargeDate,
+          nextChargeDate,
+          autoRenewal: true,
+          status: 'active',
+          isTrial: false,
+          metadata: {
+            detectedFromExpense: true,
+            expenseIds,
+            confidence,
+            detectionDate: new Date().toISOString()
+          }
+        })
+        .returning();
 
       return newSubscription;
     } catch (error) {
@@ -309,14 +459,17 @@ class SubscriptionDetectionService {
   }
 
   /**
-   * Calculate next renewal date based on last transaction
+   * Calculate next charge date
    */
-  calculateNextRenewalDate(lastDate, frequency) {
-    const date = new Date(lastDate);
-
+  calculateNextChargeDate(startDate, frequency) {
+    const date = new Date(startDate);
+    
     switch (frequency) {
       case 'weekly':
         date.setDate(date.getDate() + 7);
+        break;
+      case 'biweekly':
+        date.setDate(date.getDate() + 14);
         break;
       case 'monthly':
         date.setMonth(date.getMonth() + 1);
@@ -335,33 +488,60 @@ class SubscriptionDetectionService {
   }
 
   /**
-   * Get subscription detection statistics
+   * Get recommended subscriptions to track
    */
-  async getDetectionStats(userId) {
+  async getRecommendations(userId) {
     try {
-      const [stats] = await db
-        .select({
-          totalDetections: sql`count(*)`,
-          highConfidence: sql`count(case when (${subscriptions.metadata}->>'detectionConfidence')::int >= 80 then 1 end)`,
-          mediumConfidence: sql`count(case when (${subscriptions.metadata}->>'detectionConfidence')::int >= 60 and (${subscriptions.metadata}->>'detectionConfidence')::int < 80 then 1 end)`,
-          lowConfidence: sql`count(case when (${subscriptions.metadata}->>'detectionConfidence')::int < 60 then 1 end)`
-        })
-        .from(subscriptions)
-        .where(and(
-          eq(subscriptions.userId, userId),
-          sql`${subscriptions.metadata}->>'detectedFromExpense' = 'true'`
-        ));
+      const detections = await this.detectPotentialSubscriptions(userId, 6);
+      
+      // Filter to high-confidence detections that aren't already tracked
+      const recommendations = detections.detections
+        .filter(d => d.confidence >= 0.6 && !d.isExisting)
+        .slice(0, 10);
 
       return {
-        totalDetections: Number(stats?.totalDetections || 0),
-        highConfidence: Number(stats?.highConfidence || 0),
-        mediumConfidence: Number(stats?.mediumConfidence || 0),
-        lowConfidence: Number(stats?.lowConfidence || 0)
+        recommendations: recommendations.map(r => ({
+          serviceName: r.serviceName,
+          confidence: r.confidence,
+          estimatedMonthly: r.averageAmount,
+          estimatedAnnual: r.averageAmount * 12,
+          frequency: r.frequency,
+          reason: this.getRecommendationReason(r)
+        })),
+        totalPotentialSavings: {
+          monthly: recommendations.reduce((sum, r) => sum + r.averageAmount, 0),
+          annual: recommendations.reduce((sum, r) => sum + (r.averageAmount * 12), 0)
+        }
       };
     } catch (error) {
-      console.error('Error getting detection stats:', error);
+      console.error('Error getting recommendations:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get reason for recommendation
+   */
+  getRecommendationReason(detection) {
+    const reasons = [];
+    
+    if (detection.knownMatch) {
+      reasons.push(`Known subscription service (${detection.knownMatch})`);
+    }
+    
+    if (detection.isRecurring) {
+      reasons.push('Recurring payment pattern detected');
+    }
+    
+    if (detection.isConsistentAmount) {
+      reasons.push('Consistent payment amounts');
+    }
+    
+    if (detection.occurrenceCount >= 3) {
+      reasons.push(`${detection.occurrenceCount} occurrences in past 6 months`);
+    }
+
+    return reasons.join('. ');
   }
 }
 
