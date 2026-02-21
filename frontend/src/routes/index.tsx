@@ -226,6 +226,30 @@ export const routes = [
     )
   },
   {
+    path: '/investments',
+    element: (
+      <ProtectedRoute>
+        <PortfolioDashboard />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments/recommendations',
+    element: (
+      <ProtectedRoute>
+        <InvestmentRecommendations />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments/risk-profile',
+    element: (
+      <ProtectedRoute>
+        <RiskProfileAnalyzer />
+      </ProtectedRoute>
+    )
+  },
+  {
     path: '*',
     element: <Navigate to="/" replace />
   }

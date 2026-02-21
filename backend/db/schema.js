@@ -3739,3 +3739,190 @@ export const userStreaksRelations = relations(userStreaks, ({ one }) => ({
         references: [users.id],
     }),
 }));
+
+// ============================================
+// INVESTMENT PORTFOLIO ANALYZER TABLES
+// ============================================
+
+// Investment Risk Profiles Table
+export const investmentRiskProfiles = pgTable('investment_risk_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Risk Assessment Answers
+    riskScore: integer('risk_score').notNull().default(50),
+    riskTolerance: text('risk_tolerance').notNull().default('moderate'), // conservative, moderate, aggressive
+    investmentHorizon: text('investment_horizon').notNull().default('medium'), // short, medium, long
+    investmentExperience: text('investment_experience').notNull().default('intermediate'), // beginner, intermediate, advanced
+    
+    // Financial Profile
+    annualIncome: numeric('annual_income', { precision: 15, scale: 2 }).default('0'),
+    netWorth: numeric('net_worth', { precision: 15, scale: 2 }).default('0'),
+    liquidAssets: numeric('liquid_assets', { precision: 15, scale: 2 }).default('0'),
+    emergencyFundMonths: integer('emergency_fund_months').default(3),
+    
+    // Investment Goals
+    primaryGoal: text('primary_goal').notNull().default('growth'), // growth, income, preservation, balanced
+    retirementAge: integer('retirement_age'),
+    targetRetirementAmount: numeric('target_retirement_amount', { precision: 15, scale: 2 }),
+    monthlyInvestmentCapacity: numeric('monthly_investment_capacity', { precision: 12, scale: 2 }).default('0'),
+    
+    // Risk Factors
+    hasDebt: boolean('has_debt').default(false),
+    debtAmount: numeric('debt_amount', { precision: 15, scale: 2 }).default('0'),
+    hasDependents: boolean('has_dependents').default(false),
+    dependentCount: integer('dependent_count').default(0),
+    hasOtherIncome: boolean('has_other_income').default(false),
+    otherIncomeMonthly: numeric('other_income_monthly', { precision: 12, scale: 2 }).default('0'),
+    
+    // Market Understanding
+    understandsMarketVolatility: boolean('understands_market_volatility').default(false),
+    canAffordLosses: boolean('can_afford_losses').default(false),
+    maxLossTolerance: numeric('max_loss_tolerance', { precision: 12, scale: 2 }).default('0'),
+    
+    // Assessment Details
+    assessmentDate: timestamp('assessment_date').defaultNow(),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+    isActive: boolean('is_active').default(true),
+    
+    // Metadata
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Investment Recommendations Table
+export const investmentRecommendations = pgTable('investment_recommendations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }),
+    
+    // Recommendation Details
+    recommendationType: text('recommendation_type').notNull(), // buy, sell, hold, diversify, rebalance
+    assetSymbol: text('asset_symbol'),
+    assetName: text('asset_name'),
+    assetType: text('asset_type'), // stock, etf, mutual_fund, bond, crypto
+    
+    // Reasoning
+    reasoning: text('reasoning').notNull(),
+    reasoningFactors: jsonb('reasoning_factors').default([]),
+    
+    // Metrics
+    expectedReturn: numeric('expected_return', { precision: 8, scale: 4 }),
+    riskLevel: text('risk_level').notNull(), // low, medium, high
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }), // 0-100
+    timeHorizon: text('time_horizon'), // short, medium, long
+    
+    // Priority and Status
+    priority: text('priority').default('medium'), // low, medium, high
+    status: text('status').default('active'), // active, dismissed, implemented
+    expiresAt: timestamp('expires_at'),
+    
+    // Financial Impact
+    suggestedAmount: numeric('suggested_amount', { precision: 15, scale: 2 }),
+    potentialGainLoss: numeric('potential_gain_loss', { precision: 15, scale: 2 }),
+    
+    // AI Metadata
+    modelVersion: text('model_version'),
+    analysisData: jsonb('analysis_data').default({}),
+    
+    isRead: boolean('is_read').default(false),
+    readAt: timestamp('read_at'),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Portfolio Rebalancing History Table
+export const portfolioRebalancing = pgTable('portfolio_rebalancing', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Rebalancing Details
+    rebalanceType: text('rebalance_type').notNull(), // automatic, suggested, manual
+    triggerReason: text('trigger_reason'), // threshold_exceeded, time_based, optimization, manual
+    
+    // Before State
+    beforeAllocation: jsonb('before_allocation').notNull(),
+    beforeValue: numeric('before_value', { precision: 15, scale: 2 }).notNull(),
+    
+    // After State
+    afterAllocation: jsonb('after_allocation'),
+    afterValue: numeric('after_value', { precision: 15, scale: 2 }),
+    
+    // Actions Taken
+    actions: jsonb('actions').default([]),
+    
+    // Status
+    status: text('status').default('pending'), // pending, completed, cancelled
+    completedAt: timestamp('completed_at'),
+    
+    // Metrics
+    expectedImprovement: numeric('expected_improvement', { precision: 8, scale: 4 }),
+    actualImprovement: numeric('actual_improvement', { precision: 8, scale: 4 }),
+    
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations for Investment Portfolio Analyzer Tables
+export const investmentRiskProfilesRelations = relations(investmentRiskProfiles, ({ one, many }) => ({
+    user: one(users, {
+        fields: [investmentRiskProfiles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const investmentRecommendationsRelations = relations(investmentRecommendations, ({ one }) => ({
+    user: one(users, {
+        fields: [investmentRecommendations.userId],
+        references: [users.id],
+    }),
+    portfolio: one(portfolios, {
+        fields: [investmentRecommendations.portfolioId],
+        references: [portfolios.id],
+    }),
+}));
+
+export const portfolioRebalancingRelations = relations(portfolioRebalancing, ({ one }) => ({
+    user: one(users, {
+        fields: [portfolioRebalancing.userId],
+        references: [users.id],
+    }),
+    portfolio: one(portfolios, {
+        fields: [portfolioRebalancing.portfolioId],
+        references: [portfolios.id],
+    }),
+}));
+
+// Update users relations to include new tables
+export const usersRelations = relations(users, ({ many }) => ({
+    categories: many(categories),
+    expenses: many(expenses),
+    goals: many(goals),
+    deviceSessions: many(deviceSessions),
+    vaultMemberships: many(vaultMembers),
+    ownedVaults: many(vaults),
+    securityEvents: many(securityEvents),
+    reports: many(reports),
+    budgetAlerts: many(budgetAlerts),
+    portfolios: many(portfolios),
+    subscriptions: many(subscriptions),
+    bills: many(bills),
+    debts: many(debts),
+    debtPayments: many(debtPayments),
+    expenseShares: many(expenseShares),
+    sentReimbursements: many(reimbursements, { relationName: 'reimbursements_from' }),
+    receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
+    bankAccounts: many(bankAccounts),
+    bankTransactions: many(bankTransactions),
+    emergencyFundGoals: many(emergencyFundGoals),
+    creditScores: many(creditScores),
+    creditScoreAlerts: many(creditScoreAlerts),
+    billNegotiations: many(billNegotiation),
+    negotiationAttempts: many(negotiationAttempts),
+    investmentRiskProfiles: many(investmentRiskProfiles),
+    investmentRecommendations: many(investmentRecommendations),
+}));
