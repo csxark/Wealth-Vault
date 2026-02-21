@@ -328,3 +328,36 @@ export const calculateBeta = (assetReturns, benchmarkReturns) => {
     if (variance === 0) return 1.0;
     return roundToPrecision(covariance / variance, 4);
 };
+
+/**
+ * Calculate Logistic Probability of Default (#441)
+ * @param {number} incomeVelocity - Monthly income / Monthly debt
+ * @param {number} liquidityRatio - Total assets / Total debt
+ * @param {number} macroRiskFactor - Adjusted for interest rate hikes
+ */
+export const calculateLogisticDefaultProbability = (incomeVelocity, liquidityRatio, macroRiskFactor) => {
+    // Coefficients derived from simulated historical defaults
+    const b0 = 1.5;   // Intercept
+    const b1 = -2.2;  // Higher income velocity reduces default
+    const b2 = -1.8;  // Higher liquidity reduces default
+    const b3 = 0.8;   // Higher macro risk (rates) increases default
+
+    const z = b0 + (b1 * incomeVelocity) + (b2 * liquidityRatio) + (b3 * macroRiskFactor);
+
+    // Logistic function: 1 / (1 + e^-z)
+    const probability = 1 / (1 + Math.exp(-z));
+    return Math.min(Math.max(probability, 0), 1);
+};
+
+/**
+ * Calculate Stress Test Survival Horizon (in days) (#441)
+ * Determines how long a user survives if all income stops.
+ */
+export const calculateSurvivalHorizon = (liquidAssets, monthlyFixedExpenses, macroVolatility) => {
+    if (monthlyFixedExpenses <= 0) return 3650; // Nearly infinite
+
+    const dailyBurn = (monthlyFixedExpenses / 30) * (1 + macroVolatility);
+    const horizon = liquidAssets / dailyBurn;
+
+    return Math.floor(horizon);
+};

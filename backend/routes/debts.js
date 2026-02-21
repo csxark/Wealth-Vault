@@ -11,10 +11,11 @@ import { eq, and, desc } from 'drizzle-orm';
 import arbitrageEngine from '../services/arbitrageEngine.js';
 import refinanceService from '../services/refinanceService.js';
 import { arbitrageGuard } from '../middleware/arbitrageGuard.js';
-import { debtArbitrageLogs, capitalCostSnapshots } from '../db/schema.js';
+import { debts, defaultPredictionScores, debtRestructuringPlans, debtArbitrageLogs, capitalCostSnapshots } from '../db/schema.js';
 import { body } from 'express-validator';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import defaultPredictorAI from '../services/defaultPredictorAI.js';
 
 const router = express.Router();
 
@@ -264,6 +265,70 @@ router.post('/arbitrage/execute', protect, arbitrageGuard, [
     await db.update(debtArbitrageLogs).set({ status: 'executed' }).where(eq(debtArbitrageLogs.id, signalId));
 
     return new ApiResponse(200, null, `Arbitrage action ${signal.actionType} executed successfully (Simulated)`).send(res);
+}));
+
+/**
+ * @route   GET /api/debts/prediction/risk
+ * @desc    Get latest default risk prediction (L3)
+ */
+router.get('/prediction/risk', protect, asyncHandler(async (req, res) => {
+    const risk = await defaultPredictorAI.calculateDefaultRisk(req.user.id);
+    return new ApiResponse(200, risk, "Probability of default calculated").send(res);
+}));
+
+/**
+ * @route   GET /api/debts/prediction/history
+ * @desc    Get historical prediction scores for graphing
+ */
+router.get('/prediction/history', protect, asyncHandler(async (req, res) => {
+    const history = await db.query.defaultPredictionScores.findMany({
+        where: eq(defaultPredictionScores.userId, req.user.id),
+        orderBy: [desc(defaultPredictionScores.predictionDate)],
+        limit: 30
+    });
+    return new ApiResponse(200, history).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/restructure/draft
+ * @desc    Trigger algorithmic restructuring draft
+ */
+router.post('/restructure/draft', protect, asyncHandler(async (req, res) => {
+    const prediction = await defaultPredictorAI.getLatestScore(req.user.id);
+    if (!prediction) return res.status(400).json(new ApiResponse(400, null, "Execute risk analysis first"));
+
+    const plan = await debtEngine.draftRestructuringPlan(req.user.id, prediction.id);
+    return new ApiResponse(200, plan, "Restructuring plan drafted").send(res);
+}));
+
+/**
+ * @route   GET /api/debts/restructure/plans
+ * @desc    Get all proposed restructuring plans
+ */
+router.get('/restructure/plans', protect, asyncHandler(async (req, res) => {
+    const plans = await db.query.debtRestructuringPlans.findMany({
+        where: eq(debtRestructuringPlans.userId, req.user.id),
+        orderBy: [desc(debtRestructuringPlans.createdAt)]
+    });
+    return new ApiResponse(200, plans).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/restructure/approve/:id
+ * @desc    Approve and execute a restructuring plan
+ */
+router.post('/restructure/approve/:id', protect, asyncHandler(async (req, res) => {
+    const [plan] = await db.select().from(debtRestructuringPlans)
+        .where(and(eq(debtRestructuringPlans.id, req.params.id), eq(debtRestructuringPlans.userId, req.user.id)));
+
+    if (!plan) return res.status(404).json(new ApiResponse(404, null, "Plan not found"));
+
+    // Execution logic: Update status and notify services
+    await db.update(debtRestructuringPlans)
+        .set({ status: 'approved', executedAt: new Date(), updatedAt: new Date() })
+        .where(eq(debtRestructuringPlans.id, req.params.id));
+
+    return new ApiResponse(200, null, "Plan approved and scheduled for execution").send(res);
 }));
 
 export default router;

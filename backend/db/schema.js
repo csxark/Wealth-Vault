@@ -953,6 +953,46 @@ export const refinanceOpportunities = pgTable('refinance_opportunities', {
 });
 
 // ============================================================================
+// ALGORITHMIC DEBT RESTRUCTURING & DEFAULT PREDICTION (#441)
+// ============================================================================
+
+export const defaultPredictionScores = pgTable('default_prediction_scores', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    predictionDate: timestamp('prediction_date').defaultNow(),
+    probabilityOfDefault: numeric('probability_of_default', { precision: 5, scale: 4 }).notNull(), // 0.0000 to 1.0000
+    horizonDays: integer('horizon_days').default(90),
+    riskLevel: text('risk_level').notNull(), // 'low', 'medium', 'high', 'critical'
+    factors: jsonb('factors').default({}), // Contributing factors (liquidity, cash flow, macro)
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const debtRestructuringPlans = pgTable('debt_restructuring_plans', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    predictionId: uuid('prediction_id').references(() => defaultPredictionScores.id),
+    planType: text('plan_type').notNull(), // 'snowball', 'avalanche', 'consolidation', 'emergency_diversion'
+    proposedAdjustments: jsonb('proposed_adjustments').notNull(), // Specific debt-payment shifts
+    estimatedInterestSavings: numeric('estimated_interest_savings', { precision: 12, scale: 2 }),
+    status: text('status').default('proposed'), // 'proposed', 'approved', 'executed', 'dismissed'
+    executedAt: timestamp('executed_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const macroEconomicIndicators = pgTable('macro_economic_indicators', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    indicatorName: text('indicator_name').notNull(), // 'fed_funds_rate', 'libor', 'inflation_rate'
+    value: numeric('value', { precision: 8, scale: 4 }).notNull(),
+    periodDate: timestamp('period_date').notNull(),
+    source: text('source').default('simulated'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================================================
 // TAX MODULE
 // ============================================================================
 
@@ -1280,6 +1320,18 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     securityEvents: many(securityEvents),
     budgetAlerts: many(budgetAlerts),
     subscriptions: many(subscriptions),
+    defaultPredictionScores: many(defaultPredictionScores),
+    debtRestructuringPlans: many(debtRestructuringPlans),
+}));
+
+export const defaultPredictionScoresRelations = relations(defaultPredictionScores, ({ one, many }) => ({
+    user: one(users, { fields: [defaultPredictionScores.userId], references: [users.id] }),
+    restructuringPlans: many(debtRestructuringPlans),
+}));
+
+export const debtRestructuringPlansRelations = relations(debtRestructuringPlans, ({ one }) => ({
+    user: one(users, { fields: [debtRestructuringPlans.userId], references: [users.id] }),
+    prediction: one(defaultPredictionScores, { fields: [debtRestructuringPlans.predictionId], references: [defaultPredictionScores.id] }),
 }));
 
 export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
