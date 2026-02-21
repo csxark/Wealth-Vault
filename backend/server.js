@@ -119,8 +119,6 @@ import { initializeAnalyticsListeners } from "./listeners/analyticsListeners.js"
 import { initializeSubscriptionListeners } from "./listeners/subscriptionListeners.js";
 import { initializeSavingsListeners } from "./listeners/savingsListeners.js";
 
-
-
 // Load environment variables
 dotenv.config();
 
@@ -224,7 +222,7 @@ app.use(sanitizeInput);
 app.use(responseWrapper);
 app.use(paginationMiddleware());
 
-// Logng and monitrng midlware
+// Logging and monitoring middleware
 app.use(requestIdMiddleware);
 app.use(auditRequestIdMiddleware); // Add audit request correlation
 app.use(requestLogger);
@@ -254,7 +252,6 @@ app.use((req, res, next) => {
 
 // Import database configuration
 // Database configuration is handled via Drizzle in individual modules
-// import connectDB from './config/db.js';
 console.log("📦 Database initialized via Drizzle");
 
 // Apply general rate limiting to all API routes
@@ -321,11 +318,7 @@ app.use("/api/compliance", userLimiter, complianceRoutes);
 
 
 
-// Secur fil servr for uploddd fils
-
-
-
-
+// Secure file server for uploaded files
 app.use("/uploads", createFileServerRoute());
 
 // Health check endpoint

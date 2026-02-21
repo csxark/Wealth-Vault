@@ -3622,24 +3622,122 @@ export const workflowExecutionLogsRelations = relations(workflowExecutionLogs, (
 export const taxNexusMappingsRelations = relations(taxNexusMappings, ({ one }) => ({
     user: one(users, { fields: [taxNexusMappings.userId], references: [users.id] }),
     entity: one(corporateEntities, { fields: [taxNexusMappings.entityId], references: [corporateEntities.id] }),
+// ============================================
+// GAMIFICATION TABLES
+// ============================================
+
+// Achievement Definitions Table (predefined achievements)
+export const achievementDefinitions = pgTable('achievement_definitions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    code: text('code').notNull().unique(),
+    name: text('name').notNull(),
+    description: text('description'),
+    category: text('category').notNull(), // 'savings', 'budgeting', 'goals', 'streaks', 'challenges', 'education'
+    icon: text('icon'),
+    tier: text('tier').notNull().default('bronze'), // 'bronze', 'silver', 'gold', 'platinum', 'diamond'
+    pointsRequired: integer('points_required').default(0),
+    criteria: jsonb('criteria').notNull(), // { type: 'action_count'|'milestone'|'streak'|'score', value: number, metric: string }
+    rewardPoints: integer('reward_points').notNull().default(0),
+    rewardBadge: boolean('reward_badge').default(true),
+    isActive: boolean('is_active').default(true),
+    displayOrder: integer('display_order').default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// User Achievements Table (tracks earned achievements)
+export const userAchievements = pgTable('user_achievements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    achievementId: uuid('achievement_id').references(() => achievementDefinitions.id, { onDelete: 'cascade' }).notNull(),
+    earnedAt: timestamp('earned_at').defaultNow(),
+    progress: integer('progress').default(0),
+    isCompleted: boolean('is_completed').default(false),
+    completedAt: timestamp('completed_at'),
+    metadata: jsonb('metadata').default({}),
+});
+
+// User Points System Table
+export const userPoints = pgTable('user_points', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    totalPoints: integer('total_points').notNull().default(0),
+    lifetimePoints: integer('lifetime_points').notNull().default(0),
+    currentLevel: integer('current_level').notNull().default(1),
+    totalBadges: integer('total_badges').notNull().default(0),
+    currentStreak: integer('current_streak').notNull().default(0),
+    longestStreak: integer('longest_streak').notNull().default(0),
+    lastActivityDate: timestamp('last_activity_date'),
+    weeklyPoints: integer('weekly_points').notNull().default(0),
+    monthlyPoints: integer('monthly_points').notNull().default(0),
+    pointsToNextLevel: integer('points_to_next_level').notNull().default(100),
+    levelProgress: integer('level_progress').notNull().default(0),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Points History Table (transaction log)
+export const pointsHistory = pgTable('points_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    points: integer('points').notNull(),
+    actionType: text('action_type').notNull(), // 'achievement_earned', 'challenge_completed', 'goal_reached', 'daily_login', etc.
+    description: text('description'),
+    referenceId: uuid('reference_id'), // Optional reference to related entity
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// User Streaks Table
+export const userStreaks = pgTable('user_streaks', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    streakType: text('streak_type').notNull(), // 'daily_login', 'budget_adherence', 'savings_contribution', 'expense_log'
+    currentCount: integer('current_count').notNull().default(0),
+    longestCount: integer('longest_count').notNull().default(0),
+    startDate: timestamp('start_date'),
+    lastActivityDate: timestamp('last_activity_date'),
+    isActive: boolean('is_active').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations for Gamification Tables
+export const achievementDefinitionsRelations = relations(achievementDefinitions, ({ many }) => ({
+    userAchievements: many(userAchievements),
 }));
 
-export const ledgerAccountsRelations = relations(ledgerAccounts, ({ one, many }) => ({
-    user: one(users, { fields: [ledgerAccounts.userId], references: [users.id] }),
-    vault: one(vaults, { fields: [ledgerAccounts.vaultId], references: [vaults.id] }),
-    investment: one(investments, { fields: [ledgerAccounts.investmentId], references: [investments.id] }),
-    entries: many(ledgerEntries),
-    snapshots: many(fxValuationSnapshots),
+export const userAchievementsRelations = relations(userAchievements, ({ one }) => ({
+    user: one(users, {
+        fields: [userAchievements.userId],
+        references: [users.id],
+    }),
+    achievement: one(achievementDefinitions, {
+        fields: [userAchievements.achievementId],
+        references: [achievementDefinitions.id],
+    }),
 }));
 
-export const ledgerEntriesRelations = relations(ledgerEntries, ({ one }) => ({
-    user: one(users, { fields: [ledgerEntries.userId], references: [users.id] }),
-    account: one(ledgerAccounts, { fields: [ledgerEntries.accountId], references: [ledgerAccounts.id] }),
+export const userPointsRelations = relations(userPoints, ({ one }) => ({
+    user: one(users, {
+        fields: [userPoints.userId],
+        references: [users.id],
+    }),
 }));
 
-export const fxValuationSnapshotsRelations = relations(fxValuationSnapshots, ({ one }) => ({
-    user: one(users, { fields: [fxValuationSnapshots.userId], references: [users.id] }),
-    account: one(ledgerAccounts, { fields: [fxValuationSnapshots.accountId], references: [ledgerAccounts.id] }),
+export const pointsHistoryRelations = relations(pointsHistory, ({ one }) => ({
+    user: one(users, {
+        fields: [pointsHistory.userId],
+        references: [users.id],
+    }),
+}));
+
+export const userStreaksRelations = relations(userStreaks, ({ one }) => ({
+    user: one(users, {
+        fields: [userStreaks.userId],
+        references: [users.id],
+    }),
 }));
 
 // ============================================================================
@@ -3660,6 +3758,52 @@ export const escrowContracts = pgTable('escrow_contracts', {
     releaseConditions: jsonb('release_conditions').notNull(), // e.g., { type: 'oracle_event', eventId: '...', requiredSignatures: 2 }
     disputeResolution: text('dispute_resolution').default('arbitration'),
     expiresAt: timestamp('expires_at'),
+// ============================================
+// INVESTMENT PORTFOLIO ANALYZER TABLES
+// ============================================
+
+// Investment Risk Profiles Table
+export const investmentRiskProfiles = pgTable('investment_risk_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Risk Assessment Answers
+    riskScore: integer('risk_score').notNull().default(50),
+    riskTolerance: text('risk_tolerance').notNull().default('moderate'), // conservative, moderate, aggressive
+    investmentHorizon: text('investment_horizon').notNull().default('medium'), // short, medium, long
+    investmentExperience: text('investment_experience').notNull().default('intermediate'), // beginner, intermediate, advanced
+    
+    // Financial Profile
+    annualIncome: numeric('annual_income', { precision: 15, scale: 2 }).default('0'),
+    netWorth: numeric('net_worth', { precision: 15, scale: 2 }).default('0'),
+    liquidAssets: numeric('liquid_assets', { precision: 15, scale: 2 }).default('0'),
+    emergencyFundMonths: integer('emergency_fund_months').default(3),
+    
+    // Investment Goals
+    primaryGoal: text('primary_goal').notNull().default('growth'), // growth, income, preservation, balanced
+    retirementAge: integer('retirement_age'),
+    targetRetirementAmount: numeric('target_retirement_amount', { precision: 15, scale: 2 }),
+    monthlyInvestmentCapacity: numeric('monthly_investment_capacity', { precision: 12, scale: 2 }).default('0'),
+    
+    // Risk Factors
+    hasDebt: boolean('has_debt').default(false),
+    debtAmount: numeric('debt_amount', { precision: 15, scale: 2 }).default('0'),
+    hasDependents: boolean('has_dependents').default(false),
+    dependentCount: integer('dependent_count').default(0),
+    hasOtherIncome: boolean('has_other_income').default(false),
+    otherIncomeMonthly: numeric('other_income_monthly', { precision: 12, scale: 2 }).default('0'),
+    
+    // Market Understanding
+    understandsMarketVolatility: boolean('understands_market_volatility').default(false),
+    canAffordLosses: boolean('can_afford_losses').default(false),
+    maxLossTolerance: numeric('max_loss_tolerance', { precision: 12, scale: 2 }).default('0'),
+    
+    // Assessment Details
+    assessmentDate: timestamp('assessment_date').defaultNow(),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+    isActive: boolean('is_active').default(true),
+    
+    // Metadata
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
@@ -3699,6 +3843,78 @@ export const vaultLocks = pgTable('vault_locks', {
     status: text('status').default('active'), // 'active', 'released', 'void'
     expiresAt: timestamp('expires_at'),
     metadata: jsonb('metadata'),
+// Investment Recommendations Table
+export const investmentRecommendations = pgTable('investment_recommendations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }),
+    
+    // Recommendation Details
+    recommendationType: text('recommendation_type').notNull(), // buy, sell, hold, diversify, rebalance
+    assetSymbol: text('asset_symbol'),
+    assetName: text('asset_name'),
+    assetType: text('asset_type'), // stock, etf, mutual_fund, bond, crypto
+    
+    // Reasoning
+    reasoning: text('reasoning').notNull(),
+    reasoningFactors: jsonb('reasoning_factors').default([]),
+    
+    // Metrics
+    expectedReturn: numeric('expected_return', { precision: 8, scale: 4 }),
+    riskLevel: text('risk_level').notNull(), // low, medium, high
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }), // 0-100
+    timeHorizon: text('time_horizon'), // short, medium, long
+    
+    // Priority and Status
+    priority: text('priority').default('medium'), // low, medium, high
+    status: text('status').default('active'), // active, dismissed, implemented
+    expiresAt: timestamp('expires_at'),
+    
+    // Financial Impact
+    suggestedAmount: numeric('suggested_amount', { precision: 15, scale: 2 }),
+    potentialGainLoss: numeric('potential_gain_loss', { precision: 15, scale: 2 }),
+    
+    // AI Metadata
+    modelVersion: text('model_version'),
+    analysisData: jsonb('analysis_data').default({}),
+    
+    isRead: boolean('is_read').default(false),
+    readAt: timestamp('read_at'),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Portfolio Rebalancing History Table
+export const portfolioRebalancing = pgTable('portfolio_rebalancing', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Rebalancing Details
+    rebalanceType: text('rebalance_type').notNull(), // automatic, suggested, manual
+    triggerReason: text('trigger_reason'), // threshold_exceeded, time_based, optimization, manual
+    
+    // Before State
+    beforeAllocation: jsonb('before_allocation').notNull(),
+    beforeValue: numeric('before_value', { precision: 15, scale: 2 }).notNull(),
+    
+    // After State
+    afterAllocation: jsonb('after_allocation'),
+    afterValue: numeric('after_value', { precision: 15, scale: 2 }),
+    
+    // Actions Taken
+    actions: jsonb('actions').default([]),
+    
+    // Status
+    status: text('status').default('pending'), // pending, completed, cancelled
+    completedAt: timestamp('completed_at'),
+    
+    // Metrics
+    expectedImprovement: numeric('expected_improvement', { precision: 8, scale: 4 }),
+    actualImprovement: numeric('actual_improvement', { precision: 8, scale: 4 }),
+    
+    notes: text('notes'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -3744,4 +3960,62 @@ export const escrowDisputes = pgTable('escrow_disputes', {
 export const escrowDisputesRelations = relations(escrowDisputes, ({ one }) => ({
     escrow: one(escrowContracts, { fields: [escrowDisputes.escrowId], references: [escrowContracts.id] }),
     initiator: one(users, { fields: [escrowDisputes.initiatorId], references: [users.id] }),
+// Relations for Investment Portfolio Analyzer Tables
+export const investmentRiskProfilesRelations = relations(investmentRiskProfiles, ({ one, many }) => ({
+    user: one(users, {
+        fields: [investmentRiskProfiles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const investmentRecommendationsRelations = relations(investmentRecommendations, ({ one }) => ({
+    user: one(users, {
+        fields: [investmentRecommendations.userId],
+        references: [users.id],
+    }),
+    portfolio: one(portfolios, {
+        fields: [investmentRecommendations.portfolioId],
+        references: [portfolios.id],
+    }),
+}));
+
+export const portfolioRebalancingRelations = relations(portfolioRebalancing, ({ one }) => ({
+    user: one(users, {
+        fields: [portfolioRebalancing.userId],
+        references: [users.id],
+    }),
+    portfolio: one(portfolios, {
+        fields: [portfolioRebalancing.portfolioId],
+        references: [portfolios.id],
+    }),
+}));
+
+// Update users relations to include new tables
+export const usersRelations = relations(users, ({ many }) => ({
+    categories: many(categories),
+    expenses: many(expenses),
+    goals: many(goals),
+    deviceSessions: many(deviceSessions),
+    vaultMemberships: many(vaultMembers),
+    ownedVaults: many(vaults),
+    securityEvents: many(securityEvents),
+    reports: many(reports),
+    budgetAlerts: many(budgetAlerts),
+    portfolios: many(portfolios),
+    subscriptions: many(subscriptions),
+    bills: many(bills),
+    debts: many(debts),
+    debtPayments: many(debtPayments),
+    expenseShares: many(expenseShares),
+    sentReimbursements: many(reimbursements, { relationName: 'reimbursements_from' }),
+    receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
+    bankAccounts: many(bankAccounts),
+    bankTransactions: many(bankTransactions),
+    emergencyFundGoals: many(emergencyFundGoals),
+    creditScores: many(creditScores),
+    creditScoreAlerts: many(creditScoreAlerts),
+    billNegotiations: many(billNegotiation),
+    negotiationAttempts: many(negotiationAttempts),
+    investmentRiskProfiles: many(investmentRiskProfiles),
+    investmentRecommendations: many(investmentRecommendations),
 }));

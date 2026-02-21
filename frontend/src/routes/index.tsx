@@ -162,6 +162,14 @@ export const routes = [
     )
   },
   {
+    path: '/subscription-tracker',
+    element: (
+      <ProtectedRoute>
+        <SubscriptionTracker />
+      </ProtectedRoute>
+    )
+  },
+  {
     path: '/forecasting',
     element: (
       <ProtectedRoute>
@@ -214,6 +222,30 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <AcceptInvite />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments',
+    element: (
+      <ProtectedRoute>
+        <PortfolioDashboard />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments/recommendations',
+    element: (
+      <ProtectedRoute>
+        <InvestmentRecommendations />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments/risk-profile',
+    element: (
+      <ProtectedRoute>
+        <RiskProfileAnalyzer />
       </ProtectedRoute>
     )
   },
