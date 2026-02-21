@@ -162,6 +162,14 @@ export const routes = [
     )
   },
   {
+    path: '/subscription-tracker',
+    element: (
+      <ProtectedRoute>
+        <SubscriptionTracker />
+      </ProtectedRoute>
+    )
+  },
+  {
     path: '/forecasting',
     element: (
       <ProtectedRoute>
