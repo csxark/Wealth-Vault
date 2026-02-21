@@ -310,6 +310,72 @@ export const debtTransactions = pgTable('debt_transactions', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// ============================================================================
+// DOUBLE-ENTRY LEDGER SYSTEM
+// ============================================================================
+
+// Ledger Accounts Table (Chart of Accounts)
+export const ledgerAccounts = pgTable('ledger_accounts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    accountCode: text('account_code').notNull(), // e.g., "1000", "2000", "3000"
+    accountName: text('account_name').notNull(), // e.g., "Cash", "Accounts Payable", "Revenue"
+    accountType: text('account_type').notNull(), // asset, liability, equity, revenue, expense
+    category: text('category'), // subcategory like "current_asset", "fixed_asset", etc.
+    normalBalance: text('normal_balance').notNull(), // debit or credit
+    currency: text('currency').default('USD'),
+    parentAccountId: uuid('parent_account_id').references(() => ledgerAccounts.id, { onDelete: 'set null' }),
+    isActive: boolean('is_active').default(true),
+    isSystem: boolean('is_system').default(false), // System-generated accounts
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Ledger Entries Table (Double-Entry Journal)
+export const ledgerEntries = pgTable('ledger_entries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    journalId: uuid('journal_id').notNull(), // Groups debit/credit pairs
+    accountId: uuid('account_id').references(() => ledgerAccounts.id, { onDelete: 'restrict' }).notNull(),
+    entryType: text('entry_type').notNull(), // debit or credit
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    baseCurrencyAmount: numeric('base_currency_amount', { precision: 15, scale: 2 }), // Normalized to user's base currency
+    fxRate: doublePrecision('fx_rate').default(1.0),
+    description: text('description'),
+    referenceType: text('reference_type'), // expense, vault, investment, etc.
+    referenceId: uuid('reference_id'), // ID of related entity
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'set null' }),
+    transactionDate: timestamp('transaction_date').defaultNow(),
+    isReversed: boolean('is_reversed').default(false),
+    reversedBy: uuid('reversed_by'), // Reference to reversing entry
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// FX Valuation Snapshots Table (Track unrealized gains/losses)
+export const fxValuationSnapshots = pgTable('fx_valuation_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    accountId: uuid('account_id').references(() => ledgerAccounts.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: timestamp('snapshot_date').defaultNow(),
+    originalCurrency: text('original_currency').notNull(),
+    baseCurrency: text('base_currency').notNull(),
+    originalAmount: numeric('original_amount', { precision: 15, scale: 2 }).notNull(),
+    valuationAmount: numeric('valuation_amount', { precision: 15, scale: 2 }).notNull(), // Revalued amount
+    fxRate: doublePrecision('fx_rate').notNull(),
+    previousFxRate: doublePrecision('previous_fx_rate'),
+    unrealizedGainLoss: numeric('unrealized_gain_loss', { precision: 15, scale: 2 }).default('0'),
+    realizedGainLoss: numeric('realized_gain_loss', { precision: 15, scale: 2 }).default('0'),
+    isRealized: boolean('is_realized').default(false),
+    ledgerEntryId: uuid('ledger_entry_id').references(() => ledgerEntries.id, { onDelete: 'set null' }),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Goals Module
 export const goals = pgTable('goals', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -1282,6 +1348,31 @@ export const debtPaymentsRelations = relations(debtPayments, ({ one }) => ({
 
 export const goalsRelations = relations(goals, ({ one }) => ({
     user: one(users, { fields: [goals.userId], references: [users.id] }),
+}));
+
+// Ledger System Relations
+export const ledgerAccountsRelations = relations(ledgerAccounts, ({ one, many }) => ({
+    user: one(users, { fields: [ledgerAccounts.userId], references: [users.id] }),
+    parentAccount: one(ledgerAccounts, { 
+        fields: [ledgerAccounts.parentAccountId], 
+        references: [ledgerAccounts.id],
+        relationName: 'account_hierarchy'
+    }),
+    childAccounts: many(ledgerAccounts, { relationName: 'account_hierarchy' }),
+    entries: many(ledgerEntries),
+    valuationSnapshots: many(fxValuationSnapshots),
+}));
+
+export const ledgerEntriesRelations = relations(ledgerEntries, ({ one }) => ({
+    user: one(users, { fields: [ledgerEntries.userId], references: [users.id] }),
+    account: one(ledgerAccounts, { fields: [ledgerEntries.accountId], references: [ledgerAccounts.id] }),
+    vault: one(vaults, { fields: [ledgerEntries.vaultId], references: [vaults.id] }),
+}));
+
+export const fxValuationSnapshotsRelations = relations(fxValuationSnapshots, ({ one }) => ({
+    user: one(users, { fields: [fxValuationSnapshots.userId], references: [users.id] }),
+    account: one(ledgerAccounts, { fields: [fxValuationSnapshots.accountId], references: [ledgerAccounts.id] }),
+    ledgerEntry: one(ledgerEntries, { fields: [fxValuationSnapshots.ledgerEntryId], references: [ledgerEntries.id] }),
 }));
 
 export const portfoliosRelations = relations(portfolios, ({ one, many }) => ({
@@ -3401,6 +3492,48 @@ export const liquidityVelocityLogs = pgTable('liquidity_velocity_logs', {
     currency: text('currency').default('USD'),
     measuredAt: timestamp('measured_at').defaultNow(),
 });
+
+// DOUBLE-ENTRY LEDGER SYSTEM & REAL-TIME FX REVALUATION (#432)
+export const ledgerAccounts = pgTable('ledger_accounts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }), // Map to specific vault if applicable
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }), // Map to investment
+    name: text('name').notNull(),
+    accountType: text('account_type').notNull(), // 'asset', 'liability', 'equity', 'income', 'expense'
+    currency: text('currency').default('USD'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const ledgerEntries = pgTable('ledger_entries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    accountId: uuid('account_id').references(() => ledgerAccounts.id, { onDelete: 'cascade' }).notNull(),
+    transactionId: uuid('transaction_id'), // Link to external transaction logic
+    debit: numeric('debit', { precision: 18, scale: 2 }).default('0.00'),
+    credit: numeric('credit', { precision: 18, scale: 2 }).default('0.00'),
+    currency: text('currency').notNull(),
+    fxRateBase: numeric('fx_rate_base', { precision: 18, scale: 6 }).notNull(), // Rate to USD at time of entry
+    baseAmount: numeric('base_amount', { precision: 18, scale: 2 }).notNull(), // Value in USD at time of entry
+    description: text('description'),
+    entryDate: timestamp('entry_date').defaultNow(),
+    metadata: jsonb('metadata'),
+});
+
+export const fxValuationSnapshots = pgTable('fx_valuation_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    accountId: uuid('account_id').references(() => ledgerAccounts.id, { onDelete: 'cascade' }).notNull(),
+    valuationDate: timestamp('valuation_date').defaultNow(),
+    bookValueBase: numeric('book_value_base', { precision: 18, scale: 2 }).notNull(), // Cost basis in USD
+    marketValueBase: numeric('market_value_base', { precision: 18, scale: 2 }).notNull(), // Current value in USD
+    unrealizedGainLoss: numeric('unrealized_gain_loss', { precision: 18, scale: 2 }).notNull(),
+    realizedGainLoss: numeric('realized_gain_loss', { precision: 18, scale: 2 }).default('0.00'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 
 // ============================================================================
 // RELATIONS

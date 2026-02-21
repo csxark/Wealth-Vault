@@ -2,6 +2,8 @@ import db from '../config/db.js';
 import { vaults, vaultBalances, cashDragMetrics } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { logInfo, logError } from '../utils/logger.js';
+import ledgerService from './ledgerService.js';
+import { ledgerAccounts } from '../db/schema.js';
 
 /**
  * Vault Service (L3)
@@ -92,6 +94,28 @@ class VaultService {
     }
 
     /**
+     * Get reconstructed balance for a vault using the Double-Entry Ledger (L3)
+     */
+    async getVaultLedgerBalance(vaultId, userId) {
+        let account = await db.query.ledgerAccounts.findFirst({
+            where: and(eq(ledgerAccounts.vaultId, vaultId), eq(ledgerAccounts.userId, userId))
+        });
+
+        if (!account) {
+            // Lazy-init ledger account if missing
+            const vault = await db.query.vaults.findFirst({ where: eq(vaults.id, vaultId) });
+            account = await ledgerService.createLedgerAccount(userId, {
+                name: vault.name,
+                accountType: 'asset',
+                currency: vault.currency,
+                vaultId: vault.id
+            });
+        }
+
+        return await ledgerService.getReconstructedBalance(account.id, userId);
+    }
+
+    /**
      * Calculate cash drag for a vault (L3)
      * Measures opportunity cost of holding idle cash
      */
@@ -162,6 +186,24 @@ class VaultService {
                 `);
 
                 logInfo(`[Vault Service] Swept $${amount} from staging to vault ${targetVaultId}`);
+
+                // Post Ledger Entries for Double-Entry Integrity
+                const stagingReval = await this.getVaultLedgerBalance(stagingVaultId, userId);
+                const targetReval = await this.getVaultLedgerBalance(targetVaultId, userId);
+
+                await ledgerService.postLedgerEntry(userId, {
+                    accountId: stagingReval.accountId,
+                    credit: amount.toString(),
+                    currency: 'USD',
+                    description: `Cash sweep to ${targetVaultId}`
+                });
+
+                await ledgerService.postLedgerEntry(userId, {
+                    accountId: targetReval.accountId,
+                    debit: amount.toString(),
+                    currency: 'USD',
+                    description: `Cash sweep from ${stagingVaultId}`
+                });
 
                 return {
                     success: true,

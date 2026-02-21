@@ -56,3 +56,223 @@ export const calculateRemainingBalance = (principal, annualRate, totalMonths, pa
     const p = passedMonths;
     return principal * (Math.pow(1 + r, n) - Math.pow(1 + r, p)) / (Math.pow(1 + r, n) - 1);
 };
+
+/**
+ * Normalize currency amount to base (usually USD)
+ */
+export const normalizeToBase = (amount, rate) => {
+    return parseFloat(amount) * parseFloat(rate);
+};
+
+/**
+ * Calculate FX Gains (Realized/Unrealized)  
+ * Delta = Market Value - Cost Basis
+ */
+export const calculateFXGain = (localAmount, acquisitionRate, currentRate) => {
+    const costBasis = parseFloat(localAmount) * parseFloat(acquisitionRate);
+    const marketValue = parseFloat(localAmount) * parseFloat(currentRate);
+    return marketValue - costBasis;
+};
+
+// ============================================================================
+// DOUBLE-ENTRY LEDGER & FX REVALUATION UTILITIES
+// ============================================================================
+
+/**
+ * Round number to specified precision
+ */
+export const roundToPrecision = (value, precision = 2) => {
+    const multiplier = Math.pow(10, precision);
+    return Math.round(value * multiplier) / multiplier;
+};
+
+/**
+ * Convert amount using FX rate
+ */
+export const convertCurrency = (amount, fxRate, precision = 2) => {
+    if (!amount || !fxRate || fxRate === 0) return 0;
+    return roundToPrecision(amount * fxRate, precision);
+};
+
+/**
+ * Calculate unrealized FX gain/loss
+ */
+export const calculateUnrealizedFxGainLoss = (originalAmount, currentFxRate, historicalFxRate) => {
+    const currentValue = convertCurrency(originalAmount, currentFxRate);
+    const historicalValue = convertCurrency(originalAmount, historicalFxRate);
+    const unrealizedGainLoss = currentValue - historicalValue;
+    
+    return {
+        originalAmount,
+        currentValue,
+        historicalValue,
+        currentFxRate,
+        historicalFxRate,
+        unrealizedGainLoss,
+        gainLossPercentage: historicalValue !== 0 
+            ? roundToPrecision((unrealizedGainLoss / historicalValue) * 100, 4) 
+            : 0,
+        isGain: unrealizedGainLoss > 0,
+        isLoss: unrealizedGainLoss < 0
+    };
+};
+
+/**
+ * Calculate realized FX gain/loss on settlement
+ */
+export const calculateRealizedFxGainLoss = (
+    originalAmount, settlementAmount, acquisitionFxRate, settlementFxRate
+) => {
+    const acquisitionValueInBase = convertCurrency(originalAmount, acquisitionFxRate);
+    const settlementValueInBase = convertCurrency(settlementAmount, settlementFxRate);
+    const realizedGainLoss = settlementValueInBase - acquisitionValueInBase;
+    
+    return {
+        originalAmount,
+        settlementAmount,
+        acquisitionValueInBase,
+        settlementValueInBase,
+        realizedGainLoss,
+        gainLossPercentage: acquisitionValueInBase !== 0 
+            ? roundToPrecision((realizedGainLoss / acquisitionValueInBase) * 100, 4) 
+            : 0
+    };
+};
+
+/**
+ * Verify double-entry balance (debits === credits)
+ */
+export const verifyDoubleEntryBalance = (entries) => {
+    let totalDebits = 0;
+    let totalCredits = 0;
+    
+    for (const entry of entries) {
+        const amount = parseFloat(entry.amount || 0);
+        if (entry.entryType === 'debit') {
+            totalDebits += amount;
+        } else if (entry.entryType === 'credit') {
+            totalCredits += amount;
+        }
+    }
+    
+    totalDebits = roundToPrecision(totalDebits, 2);
+    totalCredits = roundToPrecision(totalCredits, 2);
+    const difference = roundToPrecision(totalDebits - totalCredits, 2);
+    
+    return {
+        totalDebits,
+        totalCredits,
+        difference,
+        isBalanced: Math.abs(difference) < 0.01
+    };
+};
+
+/**
+ * Calculate account balance from ledger entries
+ */
+export const calculateAccountBalance = (entries, normalBalance) => {
+    let balance = 0;
+    
+    for (const entry of entries) {
+        const amount = parseFloat(entry.amount || 0);
+        
+        if (normalBalance === 'debit') {
+            balance += entry.entryType === 'debit' ? amount : -amount;
+        } else {
+            balance += entry.entryType === 'credit' ? amount : -amount;
+        }
+    }
+    
+    return roundToPrecision(balance, 2);
+};
+
+/**
+ * Calculate trial balance
+ */
+export const calculateTrialBalance = (accounts) => {
+    let totalDebits = 0;
+    let totalCredits = 0;
+    const accountBalances = [];
+    
+    for (const account of accounts) {
+        const balance = calculateAccountBalance(account.entries || [], account.normalBalance);
+        const absBalance = Math.abs(balance);
+        
+        accountBalances.push({
+            accountId: account.id,
+            accountCode: account.accountCode,
+            accountName: account.accountName,
+            balance: absBalance,
+            normalBalance: account.normalBalance
+        });
+        
+        if (account.normalBalance === 'debit' && balance >= 0) {
+            totalDebits += absBalance;
+        } else if (account.normalBalance === 'credit' && balance >= 0) {
+            totalCredits += absBalance;
+        }
+    }
+    
+    return {
+        totalDebits: roundToPrecision(totalDebits, 2),
+        totalCredits: roundToPrecision(totalCredits, 2),
+        difference: roundToPrecision(totalDebits - totalCredits, 2),
+        isBalanced: Math.abs(totalDebits - totalCredits) < 0.01,
+        accountBalances
+    };
+};
+
+/**
+ * Calculate net worth from account balances
+ */
+export const calculateNetWorth = (accountBalances) => {
+    const { assets = 0, liabilities = 0 } = accountBalances;
+    return roundToPrecision(assets - liabilities, 2);
+};
+
+/**
+ * Calculate FX revaluation delta
+ */
+export const calculateFxRevaluationDelta = (currentSnapshots, previousSnapshots) => {
+    const currentMap = new Map(currentSnapshots.map(s => [s.accountId, s]));
+    const previousMap = new Map(previousSnapshots.map(s => [s.accountId, s]));
+    
+    let totalDelta = 0;
+    
+    for (const [accountId, current] of currentMap) {
+        const previous = previousMap.get(accountId);
+        const previousGainLoss = previous ? parseFloat(previous.unrealizedGainLoss || 0) : 0;
+        const currentGainLoss = parseFloat(current.unrealizedGainLoss || 0);
+        totalDelta += currentGainLoss - previousGainLoss;
+    }
+    
+    return roundToPrecision(totalDelta, 2);
+};
+
+/**
+ * Aggregate balances by account type
+ */
+export const aggregateBalancesByType = (accounts) => {
+    const aggregated = {
+        assets: 0,
+        liabilities: 0,
+        equity: 0,
+        revenue: 0,
+        expenses: 0
+    };
+    
+    for (const account of accounts) {
+        const balance = parseFloat(account.balance || 0);
+        const type = account.accountType.toLowerCase();
+        
+        if (aggregated.hasOwnProperty(type)) {
+            aggregated[type] += balance;
+        }
+    }
+    
+    for (const key in aggregated) {
+        aggregated[key] = roundToPrecision(aggregated[key], 2);
+    }
+    
+    return aggregated;
+};
