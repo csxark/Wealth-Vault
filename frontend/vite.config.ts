@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import path from "path"
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -28,7 +29,11 @@ export default defineConfig({
       },
     },
   },
-  define: {
-    "process.env.VITE_API_URL": JSON.stringify("http://localhost:5001/api"),
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
   },
+  // Allow environment variables to define API URL
+  // Falls back to proxy if not set
 });

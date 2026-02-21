@@ -15,11 +15,11 @@ import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
 import TaxCenter from '../pages/TaxCenter';
-import SubscriptionTracker from '../pages/SubscriptionTracker';
-import GamificationDashboard from '../components/Gamification/GamificationDashboard';
-import PortfolioDashboard from '../components/Investments/PortfolioDashboard';
-import InvestmentRecommendations from '../components/Investments/InvestmentRecommendations';
-import RiskProfileAnalyzer from '../components/Investments/RiskProfileAnalyzer';
+import Vaults from '../pages/Vaults/Vaults';
+import CreateVault from '../pages/Vaults/CreateVault';
+import VaultDetails from '../pages/Vaults/VaultDetails';
+import VaultMembers from '../pages/Vaults/VaultMembers';
+import AcceptInvite from '../pages/Vaults/AcceptInvite';
 
 
 interface ProtectedRouteProps {
@@ -186,10 +186,42 @@ export const routes = [
     )
   },
   {
-    path: '/achievements',
+    path: '/vaults',
     element: (
       <ProtectedRoute>
-        <GamificationDashboard />
+        <Vaults />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/create',
+    element: (
+      <ProtectedRoute>
+        <CreateVault />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/:vaultId',
+    element: (
+      <ProtectedRoute>
+        <VaultDetails />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/:vaultId/members',
+    element: (
+      <ProtectedRoute>
+        <VaultMembers />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/invite/:token',
+    element: (
+      <ProtectedRoute>
+        <AcceptInvite />
       </ProtectedRoute>
     )
   },
