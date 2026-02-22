@@ -3950,6 +3950,24 @@ export const userStreaksRelations = relations(userStreaks, ({ one }) => ({
     }),
 }));
 
+// ============================================================================
+// REAL-TIME MULTI-PARTY TRUST & ESCROW SETTLEMENT PROTOCOL (#443)
+// ============================================================================
+
+export const escrowContracts = pgTable('escrow_contracts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    creatorId: uuid('creator_id').references(() => users.id).notNull(),
+    payerId: uuid('payer_id').references(() => users.id).notNull(),
+    payeeId: uuid('payee_id').references(() => users.id).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    status: text('status').default('draft'), // 'draft', 'active', 'locked', 'released', 'refunded', 'disputed'
+    escrowType: text('escrow_type').notNull(), // 'p2p_lending', 'real_estate', 'succession', 'service_delivery'
+    releaseConditions: jsonb('release_conditions').notNull(), // e.g., { type: 'oracle_event', eventId: '...', requiredSignatures: 2 }
+    disputeResolution: text('dispute_resolution').default('arbitration'),
+    expiresAt: timestamp('expires_at'),
 // ============================================
 // INVESTMENT PORTFOLIO ANALYZER TABLES
 // ============================================
@@ -4001,6 +4019,40 @@ export const investmentRiskProfiles = pgTable('investment_risk_profiles', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+export const oracleEvents = pgTable('oracle_events', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    eventType: text('event_type').notNull(), // 'property_registration', 'death_certificate', 'loan_repayment_external'
+    eventSource: text('event_source').notNull(), // 'county_clerk', 'vital_statistics', 'plaid_webhook'
+    externalId: text('external_id').notNull(), // Reference ID from source
+    eventData: jsonb('event_data'),
+    status: text('status').default('detected'), // 'detected', 'verified', 'processed', 'ignored'
+    verifiedAt: timestamp('verified_at'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const escrowSignatures = pgTable('escrow_signatures', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    escrowId: uuid('escrow_id').references(() => escrowContracts.id, { onDelete: 'cascade' }).notNull(),
+    signerId: uuid('signer_id').references(() => users.id).notNull(),
+    signature: text('signature').notNull(), // Cryptographic signature
+    publicKey: text('public_key'),
+    signedData: text('signed_data'), // The payload that was signed
+    status: text('status').default('valid'),
+    signedAt: timestamp('signed_at').defaultNow(),
+});
+
+export const vaultLocks = pgTable('vault_locks', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    lockType: text('lock_type').notNull(), // 'escrow', 'lien', 'security_deposit'
+    referenceType: text('reference_type'), // 'escrow_contract', 'loan'
+    referenceId: uuid('reference_id'),
+    status: text('status').default('active'), // 'active', 'released', 'void'
+    expiresAt: timestamp('expires_at'),
+    metadata: jsonb('metadata'),
 // Investment Recommendations Table
 export const investmentRecommendations = pgTable('investment_recommendations', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -4077,6 +4129,47 @@ export const portfolioRebalancing = pgTable('portfolio_rebalancing', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// ESCROW PROTOCOL RELATIONS
+export const escrowContractsRelations = relations(escrowContracts, ({ one, many }) => ({
+    user: one(users, { fields: [escrowContracts.userId], references: [users.id] }),
+    creator: one(users, { fields: [escrowContracts.creatorId], references: [users.id] }),
+    payer: one(users, { fields: [escrowContracts.payerId], references: [users.id] }),
+    payee: one(users, { fields: [escrowContracts.payeeId], references: [users.id] }),
+    vault: one(vaults, { fields: [escrowContracts.vaultId], references: [vaults.id] }),
+    signatures: many(escrowSignatures),
+}));
+
+export const oracleEventsRelations = relations(oracleEvents, ({ many }) => ({
+    linkedContracts: many(escrowContracts),
+}));
+
+export const escrowSignaturesRelations = relations(escrowSignatures, ({ one }) => ({
+    escrow: one(escrowContracts, { fields: [escrowSignatures.escrowId], references: [escrowContracts.id] }),
+    signer: one(users, { fields: [escrowSignatures.signerId], references: [users.id] }),
+}));
+
+export const vaultLocksRelations = relations(vaultLocks, ({ one }) => ({
+    vault: one(vaults, { fields: [vaultLocks.vaultId], references: [vaults.id] }),
+    user: one(users, { fields: [vaultLocks.userId], references: [users.id] }),
+}));
+
+export const escrowDisputes = pgTable('escrow_disputes', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    escrowId: uuid('escrow_id').references(() => escrowContracts.id, { onDelete: 'cascade' }).notNull(),
+    initiatorId: uuid('initiator_id').references(() => users.id).notNull(),
+    reason: text('reason').notNull(),
+    evidence: jsonb('evidence'),
+    status: text('status').default('open'), // 'open', 'resolved', 'arbitration_pending'
+    resolution: text('resolution'), // 'refund_to_payer', 'release_to_payee', 'split'
+    resolvedAt: timestamp('resolved_at'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const escrowDisputesRelations = relations(escrowDisputes, ({ one }) => ({
+    escrow: one(escrowContracts, { fields: [escrowDisputes.escrowId], references: [escrowContracts.id] }),
+    initiator: one(users, { fields: [escrowDisputes.initiatorId], references: [users.id] }),
 // Relations for Investment Portfolio Analyzer Tables
 export const investmentRiskProfilesRelations = relations(investmentRiskProfiles, ({ one, many }) => ({
     user: one(users, {
