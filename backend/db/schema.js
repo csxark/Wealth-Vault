@@ -1375,6 +1375,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     vaultConsolidationLogs: many(vaultConsolidationLogs),
     taxLotInventory: many(taxLotInventory),
     liquidationQueues: many(liquidationQueues),
+    marginRequirements: many(marginRequirements),
+    collateralSnapshots: many(collateralSnapshots),
 }));
 
 export const targetAllocationsRelations = relations(targetAllocations, ({ one }) => ({
@@ -2798,6 +2800,43 @@ export const liquidationQueues = pgTable('liquidation_queues', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// ============================================================================
+// REAL-TIME MARGIN MONITORING & LIQUIDITY STRESS TESTING (#447)
+// ============================================================================
+
+export const marginRequirements = pgTable('margin_requirements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    assetType: text('asset_type').notNull(), // 'equity', 'crypto', 'commodity', 'real_estate'
+    initialMargin: numeric('initial_margin', { precision: 5, scale: 2 }).notNull(), // e.g., 50.00%
+    maintenanceMargin: numeric('maintenance_margin', { precision: 5, scale: 2 }).notNull(), // e.g., 25.00%
+    liquidationThreshold: numeric('liquidation_threshold', { precision: 5, scale: 2 }).notNull(), // e.g., 15.00%
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const collateralSnapshots = pgTable('collateral_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    timestamp: timestamp('timestamp').defaultNow(),
+    totalCollateralValue: numeric('total_collateral_value', { precision: 18, scale: 2 }).notNull(),
+    totalOutstandingDebt: numeric('total_outstanding_debt', { precision: 18, scale: 2 }).notNull(),
+    currentLtv: numeric('current_ltv', { precision: 5, scale: 2 }).notNull(),
+    marginStatus: text('margin_status').notNull(), // 'safe', 'warning', 'danger', 'margin_call'
+    excessLiquidity: numeric('excess_liquidity', { precision: 18, scale: 2 }),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const stressTestScenarios = pgTable('stress_test_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    scenarioName: text('scenario_name').notNull(), // 'Market Crash - 20%', 'Crypto Winter', 'High Inflation'
+    dropPercentages: jsonb('drop_percentages').notNull(), // e.g., { 'equity': -0.20, 'crypto': -0.50 }
+    description: text('description'),
+    riskLevel: text('risk_level').notNull(), // 'high', 'extreme', 'catastrophic'
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations for Tax Optimization
 export const taxLotsRelations = relations(taxLots, ({ one }) => ({
     user: one(users, { fields: [taxLots.userId], references: [users.id] }),
@@ -4185,7 +4224,15 @@ export const costBasisAdjustmentsRelations = relations(costBasisAdjustments, ({ 
     lot: one(taxLotInventory, { fields: [costBasisAdjustments.lotId], references: [taxLotInventory.id] }),
 }));
 
-export const liquidationQueuesRelations = relations(liquidationQueues, ({ one }) => ({
+export const liquidationQueuesRelations = relations(liquidationQueues, ({ many, one }) => ({
     user: one(users, { fields: [liquidationQueues.userId], references: [users.id] }),
     investment: one(investments, { fields: [liquidationQueues.investmentId], references: [investments.id] }),
+}));
+
+export const marginRequirementsRelations = relations(marginRequirements, ({ one }) => ({
+    user: one(users, { fields: [marginRequirements.userId], references: [users.id] }),
+}));
+
+export const collateralSnapshotsRelations = relations(collateralSnapshots, ({ one }) => ({
+    user: one(users, { fields: [collateralSnapshots.userId], references: [users.id] }),
 }));
