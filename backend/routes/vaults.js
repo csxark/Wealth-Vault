@@ -15,6 +15,7 @@ import { complianceGuard } from "../middleware/complianceGuard.js";
 import { getSimplifiedDebts } from "../services/settlementService.js";
 import vaultService from "../services/vaultService.js";
 import fxService from "../services/fxService.js";
+import { enforceInstitutionalGovernance } from "../middleware/govGuard.js";
 import { ledgerEntries, ledgerAccounts, fxValuationSnapshots } from "../db/schema.js";
 
 const router = express.Router();
@@ -468,9 +469,9 @@ router.get("/:vaultId/fx-deltas", protect, checkVaultAccess(), asyncHandler(asyn
  */
 router.get('/:id/ledger/balance', protect, asyncWrapper(async (req, res) => {
     const { id: vaultId } = req.params;
-    
+
     const balance = await vaultService.getVaultLedgerBalance(vaultId, req.user.id);
-    
+
     return new ApiResponse(200, balance, "Ledger-based balance retrieved successfully").send(res);
 }));
 
@@ -481,25 +482,25 @@ router.get('/:id/ledger/balance', protect, asyncWrapper(async (req, res) => {
 router.get('/:id/ledger/history', protect, asyncWrapper(async (req, res) => {
     const { id: vaultId } = req.params;
     const { startDate, endDate, limit = 50 } = req.query;
-    
+
     const account = await db.query.ledgerAccounts.findFirst({
         where: and(
             eq(ledgerAccounts.vaultId, vaultId),
             eq(ledgerAccounts.userId, req.user.id)
         )
     });
-    
+
     if (!account) {
         return new ApiResponse(404, null, "Vault ledger account not found").send(res);
     }
-    
+
     let query = db.select().from(ledgerEntries)
         .where(eq(ledgerEntries.accountId, account.id))
         .orderBy(desc(ledgerEntries.createdAt))
         .limit(parseInt(limit));
-    
+
     const entries = await query;
-    
+
     return new ApiResponse(200, {
         accountId: account.id,
         accountName: account.name,
@@ -514,7 +515,7 @@ router.get('/:id/ledger/history', protect, asyncWrapper(async (req, res) => {
  */
 router.get('/ledger/trial-balance', protect, asyncWrapper(async (req, res) => {
     const trialBalance = await ledgerService.getTrialBalance(req.user.id);
-    
+
     return new ApiResponse(200, trialBalance, "Trial balance retrieved successfully").send(res);
 }));
 
@@ -524,13 +525,13 @@ router.get('/ledger/trial-balance', protect, asyncWrapper(async (req, res) => {
  */
 router.post('/ledger/revalue', protect, asyncWrapper(async (req, res) => {
     const { fxRates } = req.body;
-    
+
     if (!fxRates) {
         return new ApiResponse(400, null, "FX rates are required").send(res);
     }
-    
+
     const result = await ledgerService.revalueAllAccounts(req.user.id, fxRates);
-    
+
     return new ApiResponse(200, result, "FX revaluation completed successfully").send(res);
 }));
 
