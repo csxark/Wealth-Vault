@@ -1,60 +1,40 @@
 import cron from 'node-cron';
-import rebalanceEngine from '../services/rebalanceEngine.js';
 import db from '../config/db.js';
-import { targetAllocations, users } from '../db/schema.js';
-import { eq, sql } from 'drizzle-orm';
+import { users, targetAllocations } from '../db/schema.js';
+import rebalanceEngine from '../services/rebalanceEngine.js';
 import { logInfo, logError } from '../utils/logger.js';
 
 /**
- * Drift Monitor Job - Runs every hour
- * Scans portfolios with active target allocations to check for breaches
+ * Drift Monitor Job (#449)
+ * Periodically checks all users for portfolio drift and triggers rebalance proposals.
  */
-class DriftMonitorJob {
-    constructor() {
-        this.schedule = '0 * * * *'; // Top of every hour
-    }
+const scheduleDriftMonitor = () => {
+    // Run hourly
+    cron.schedule('0 * * * *', async () => {
+        logInfo('[Drift Monitor] Initiating hourly portfolio drift audit...');
 
-    start() {
-        logInfo('Initializing Portfolio Drift Monitor Job...');
-        cron.schedule(this.schedule, async () => {
-            logInfo('Running Hourly Asset Drift Scan...');
+        try {
+            // 1. Get all active users with target allocations
+            const activeUsers = await db.selectDistinct({ userId: targetAllocations.userId })
+                .from(targetAllocations)
+                .where(eq(targetAllocations.isActive, true));
 
-            try {
-                // Find all portfolios that have targets set
-                // We group by portfolioId to avoid duplicate processing
-                const portfoliosToScan = await db.execute(sql`
-                    SELECT DISTINCT portfolio_id, user_id FROM target_allocations
-                `);
+            logInfo(`[Drift Monitor] Auditing ${activeUsers.length} users for drift.`);
 
-                logInfo(`Identified ${portfoliosToScan.length} portfolios for drift analysis.`);
+            for (const user of activeUsers) {
+                // 2. Run rebalance engine check
+                const result = await rebalanceEngine.generateProposal(user.userId);
 
-                for (const p of portfoliosToScan) {
-                    try {
-                        const result = await rebalanceEngine.calculatePortfolioDrift(p.user_id, p.portfolio_id);
-                        if (result.isBreached) {
-                            logInfo(`Drift Breach Detected for Portfolio ${p.portfolio_id} (Max Drift: ${result.maxDrift}%)`);
-                            // Here we could trigger a push notification to the user
-                        }
-                    } catch (pError) {
-                        logError(`Failed drift scan for portfolio ${p.portfolio_id}:`, pError);
-                    }
+                if (result.status === 'rebalance_required') {
+                    logInfo(`[Drift Monitor] User ${user.userId} requires rebalancing. Drift: ${result.drift}`);
                 }
-
-                logInfo('Hourly Drift Scan Completed.');
-            } catch (error) {
-                logError('Global Drift Monitor Job Failure:', error);
             }
-        });
-    }
 
-    /**
-     * Diagnostic tool to run a scan immediately
-     */
-    async scanAllNow() {
-        logInfo('Manual Drift Scan Triggered...');
-        // Repeat logic from start() or call a shared private method
-        logInfo('Manual Drift Scan Finished.');
-    }
-}
+            logInfo('[Drift Monitor] Drift audit complete.');
+        } catch (error) {
+            logError('[Drift Monitor] Audit failed:', error);
+        }
+    });
+};
 
-export default new DriftMonitorJob();
+export default scheduleDriftMonitor;

@@ -361,3 +361,79 @@ export const calculateSurvivalHorizon = (liquidAssets, monthlyFixedExpenses, mac
 
     return Math.floor(horizon);
 };
+
+/**
+ * Calculate Portfolio Drift Variance (#449)
+ * Measures the sum of squared differences between target and actual weights.
+ */
+export const calculateDriftVariance = (actualWeights, targetWeights) => {
+    let variance = 0;
+    const assets = Object.keys(targetWeights);
+
+    for (const asset of assets) {
+        const actual = actualWeights[asset] || 0;
+        const target = targetWeights[asset] || 0;
+        variance += Math.pow(actual - target, 2);
+    }
+
+    return roundToPrecision(variance, 6);
+};
+
+/**
+ * Calculate Covariance Matrix between Asset Returns (#449)
+ */
+export const calculateCovarianceMatrix = (assetReturns) => {
+    const assets = Object.keys(assetReturns);
+    const n = assets.length;
+    const matrix = {};
+
+    for (let i = 0; i < n; i++) {
+        const assetI = assets[i];
+        matrix[assetI] = {};
+        for (let j = 0; j < n; j++) {
+            const assetJ = assets[j];
+            matrix[assetI][assetJ] = calculateCovariance(assetReturns[assetI], assetReturns[assetJ]);
+        }
+    }
+
+    return matrix;
+};
+
+/**
+ * Helper to calculate covariance between two arrays of returns
+ */
+const calculateCovariance = (returnsA, returnsB) => {
+    if (returnsA.length !== returnsB.length || returnsA.length === 0) return 0;
+
+    const n = returnsA.length;
+    const avgA = returnsA.reduce((a, b) => a + parseFloat(b), 0) / n;
+    const avgB = returnsB.reduce((a, b) => a + parseFloat(b), 0) / n;
+
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+        sum += (parseFloat(returnsA[i]) - avgA) * (parseFloat(returnsB[i]) - avgB);
+    }
+
+    return roundToPrecision(sum / (n - 1), 6);
+};
+
+/**
+ * Estimate Rebalancing Spread Cost (#449)
+ * Estimate the slippage/fee impact of executing rebalance trades.
+ */
+export const estimateSpreadCost = (trades, volatilityMatrix) => {
+    let totalCost = 0;
+
+    for (const trade of trades) {
+        const amount = parseFloat(trade.amount);
+        const volatility = volatilityMatrix[trade.symbol] || 0.01; // Default 1% vol
+
+        // Simple impact model: fixed fee + linear slippage based on volatility
+        const fixedFee = 5.00;
+        const slippage = amount * (volatility * 0.1); // 10% of vol as slippage
+
+        totalCost += fixedFee + slippage;
+    }
+
+    return roundToPrecision(totalCost, 2);
+};

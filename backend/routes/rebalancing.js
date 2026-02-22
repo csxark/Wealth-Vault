@@ -2,10 +2,13 @@ import express from 'express';
 import { protect } from '../middleware/auth.js';
 import rebalanceEngine from '../services/rebalanceEngine.js';
 import db from '../config/db.js';
-import { targetAllocations, rebalanceHistory, driftLogs } from '../db/schema.js';
-import { eq, desc, and } from 'drizzle-orm';
+import { targetAllocations, rebalanceHistory, driftLogs, vaultConsolidationLogs, rebalancingOrders } from '../db/schema.js';
+import { eq, desc, and, inArray } from 'drizzle-orm';
 import { body, validationResult } from 'express-validator';
 import asyncHandler from 'express-async-handler';
+import { validateRebalanceBatch } from '../middleware/rebalanceValidator.js';
+import ledgerConsolidator from '../services/ledgerConsolidator.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
 
 const router = express.Router();
 
@@ -124,6 +127,41 @@ router.get('/yield/logs', protect, asyncHandler(async (req, res) => {
         .where(eq(rebalanceExecutionLogs.userId, req.user.id))
         .orderBy(desc(rebalanceExecutionLogs.createdAt));
     res.json({ success: true, data: logs });
+}));
+
+/**
+ * @desc Get global consolidated allocation across all vaults
+ * @route GET /api/rebalancing/global/consolidation
+ */
+router.get('/global/consolidation', protect, asyncHandler(async (req, res) => {
+    const summary = await ledgerConsolidator.getGlobalAllocation(req.user.id);
+    return new ApiResponse(200, summary, "Global ledger consolidated successfully").send(res);
+}));
+
+/**
+ * @desc Generate global rebalancing proposal (#449)
+ * @route POST /api/rebalancing/global/proposal
+ */
+router.post('/global/proposal', protect, asyncHandler(async (req, res) => {
+    const proposal = await rebalanceEngine.generateProposal(req.user.id);
+    return new ApiResponse(200, proposal, "Global rebalancing proposal generated").send(res);
+}));
+
+/**
+ * @desc Approve and execute rebalance batch (#449)
+ * @route POST /api/rebalancing/global/approve
+ */
+router.post('/global/approve', protect, validateRebalanceBatch, asyncHandler(async (req, res) => {
+    const { orderIds } = req.body;
+
+    await db.update(rebalancingOrders)
+        .set({ status: 'approved', executedAt: new Date() })
+        .where(and(
+            inArray(rebalancingOrders.id, orderIds),
+            eq(rebalancingOrders.userId, req.user.id)
+        ));
+
+    return new ApiResponse(200, null, "Rebalance batch approved and queued for execution").send(res);
 }));
 
 export default router;
