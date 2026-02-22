@@ -1373,6 +1373,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     targetAllocations: many(targetAllocations),
     rebalancingOrders: many(rebalancingOrders),
     vaultConsolidationLogs: many(vaultConsolidationLogs),
+    taxLotInventory: many(taxLotInventory),
+    liquidationQueues: many(liquidationQueues),
 }));
 
 export const targetAllocationsRelations = relations(targetAllocations, ({ one }) => ({
@@ -2752,6 +2754,50 @@ export const washSaleLogs = pgTable('wash_sale_logs', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// ============================================================================
+// AUTOMATED TAX-LOT ACCOUNTING & HIFO INVENTORY VALUATION (#448)
+// ============================================================================
+
+export const taxLotInventory = pgTable('tax_lot_inventory', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    lotStatus: text('lot_status').default('open'), // 'open', 'closed', 'adjusted', 'split'
+    originalQuantity: numeric('original_quantity', { precision: 18, scale: 8 }).notNull(),
+    remainingQuantity: numeric('remaining_quantity', { precision: 18, scale: 8 }).notNull(),
+    purchasePrice: numeric('purchase_price', { precision: 18, scale: 2 }).notNull(),
+    costBasisPerUnit: numeric('cost_basis_per_unit', { precision: 18, scale: 2 }).notNull(),
+    purchaseDate: timestamp('purchase_date').notNull(),
+    disposalDate: timestamp('disposal_date'),
+    holdingPeriodType: text('holding_period_type'), // 'short_term', 'long_term'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const costBasisAdjustments = pgTable('cost_basis_adjustments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    lotId: uuid('lot_id').references(() => taxLotInventory.id, { onDelete: 'cascade' }).notNull(),
+    adjustmentAmount: numeric('adjustment_amount', { precision: 18, scale: 2 }).notNull(),
+    adjustmentType: text('adjustment_type').notNull(), // 'wash_sale', 'dividend_reinvest', 'corporate_action', 'manual'
+    description: text('description'),
+    adjustedAt: timestamp('adjusted_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+});
+
+export const liquidationQueues = pgTable('liquidation_queues', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    investmentId: uuid('investment_id').references(() => investments.id, { onDelete: 'cascade' }).notNull(),
+    totalQuantityToLiquidate: numeric('total_quantity_to_liquidate', { precision: 18, scale: 8 }).notNull(),
+    method: text('method').default('HIFO'), // 'FIFO', 'LIFO', 'HIFO', 'SpecificID'
+    status: text('status').default('pending'), // 'pending', 'processing', 'completed', 'failed'
+    priority: integer('priority').default(1),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Relations for Tax Optimization
 export const taxLotsRelations = relations(taxLots, ({ one }) => ({
     user: one(users, { fields: [taxLots.userId], references: [users.id] }),
@@ -4034,3 +4080,19 @@ export const washSaleViolationsRelations = relations(washSaleViolations, ({ one 
 }));
 
 // Update users relations to include new tables - DELETED DUPLICATE
+
+export const taxLotInventoryRelations = relations(taxLotInventory, ({ one, many }) => ({
+    user: one(users, { fields: [taxLotInventory.userId], references: [users.id] }),
+    portfolio: one(portfolios, { fields: [taxLotInventory.portfolioId], references: [portfolios.id] }),
+    investment: one(investments, { fields: [taxLotInventory.investmentId], references: [investments.id] }),
+    adjustments: many(costBasisAdjustments),
+}));
+
+export const costBasisAdjustmentsRelations = relations(costBasisAdjustments, ({ one }) => ({
+    lot: one(taxLotInventory, { fields: [costBasisAdjustments.lotId], references: [taxLotInventory.id] }),
+}));
+
+export const liquidationQueuesRelations = relations(liquidationQueues, ({ one }) => ({
+    user: one(users, { fields: [liquidationQueues.userId], references: [users.id] }),
+    investment: one(investments, { fields: [liquidationQueues.investmentId], references: [investments.id] }),
+}));
