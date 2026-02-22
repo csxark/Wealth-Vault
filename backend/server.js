@@ -392,6 +392,7 @@ if (process.env.NODE_ENV !== 'test') {
     marketRateSyncJob.start();
     velocityJob.start();
     scheduleMacroDataSync();
+    driftMonitor();
     marketMonitor.start();
     volatilityMonitor.start();
     payrollCycleJob.start();

@@ -993,6 +993,35 @@ export const macroEconomicIndicators = pgTable('macro_economic_indicators', {
 });
 
 // ============================================================================
+// DYNAMIC REBALANCING ORDERS & VAULT CONSOLIDATION (#449)
+// ============================================================================
+
+export const rebalancingOrders = pgTable('rebalancing_orders', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    portfolioId: uuid('portfolio_id').references(() => portfolios.id, { onDelete: 'cascade' }),
+    orderType: text('order_type').notNull(), // 'buy', 'sell'
+    assetSymbol: text('asset_symbol').notNull(),
+    quantity: numeric('quantity', { precision: 18, scale: 8 }).notNull(),
+    estimatedPrice: numeric('estimated_price', { precision: 18, scale: 2 }).notNull(),
+    status: text('status').default('proposed'), // 'proposed', 'approved', 'executed', 'cancelled'
+    driftDelta: numeric('drift_delta', { precision: 5, scale: 4 }),
+    metadata: jsonb('metadata').default({}),
+    executedAt: timestamp('executed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const vaultConsolidationLogs = pgTable('vault_consolidation_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    consolidationDate: timestamp('consolidation_date').defaultNow(),
+    consolidatedBalance: numeric('consolidated_balance', { precision: 18, scale: 2 }).notNull(),
+    vaultIds: jsonb('vault_ids').notNull(), // Array of vault IDs consolidated
+    assetDistribution: jsonb('asset_distribution').notNull(), // { 'equity': 0.6, 'crypto': 0.4 }
+    metadata: jsonb('metadata').default({}),
+});
+
+// ============================================================================
 // TAX MODULE
 // ============================================================================
 
@@ -1310,6 +1339,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     categories: many(categories),
     expenses: many(expenses),
     goals: many(goals),
+    deviceSessions: many(deviceSessions),
     vaultMemberships: many(vaultMembers),
     ownedVaults: many(vaults),
     debts: many(debts),
@@ -1318,10 +1348,45 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     corporateEntities: many(corporateEntities),
     dividendPayouts: many(dividendPayouts),
     securityEvents: many(securityEvents),
+    reports: many(reports),
     budgetAlerts: many(budgetAlerts),
+    portfolios: many(portfolios),
     subscriptions: many(subscriptions),
+    bills: many(bills),
+    debtPayments: many(debtPayments),
+    expenseShares: many(expenseShares),
+    sentReimbursements: many(reimbursements, { relationName: 'reimbursements_from' }),
+    receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
+    bankAccounts: many(bankAccounts),
+    bankTransactions: many(bankTransactions),
+    emergencyFundGoals: many(emergencyFundGoals),
+    creditScores: many(creditScores),
+    creditScoreAlerts: many(creditScoreAlerts),
+    billNegotiations: many(billNegotiation),
+    negotiationAttempts: many(negotiationAttempts),
+    investmentRiskProfiles: many(investmentRiskProfiles),
+    investmentRecommendations: many(investmentRecommendations),
+    taxLossOpportunities: many(taxLossOpportunities),
+    washSaleViolations: many(washSaleViolations),
     defaultPredictionScores: many(defaultPredictionScores),
     debtRestructuringPlans: many(debtRestructuringPlans),
+    targetAllocations: many(targetAllocations),
+    rebalancingOrders: many(rebalancingOrders),
+    vaultConsolidationLogs: many(vaultConsolidationLogs),
+}));
+
+export const targetAllocationsRelations = relations(targetAllocations, ({ one }) => ({
+    user: one(users, { fields: [targetAllocations.userId], references: [users.id] }),
+    portfolio: one(portfolios, { fields: [targetAllocations.portfolioId], references: [portfolios.id] }),
+}));
+
+export const rebalancingOrdersRelations = relations(rebalancingOrders, ({ one }) => ({
+    user: one(users, { fields: [rebalancingOrders.userId], references: [users.id] }),
+    portfolio: one(portfolios, { fields: [rebalancingOrders.portfolioId], references: [portfolios.id] }),
+}));
+
+export const vaultConsolidationLogsRelations = relations(vaultConsolidationLogs, ({ one }) => ({
+    user: one(users, { fields: [vaultConsolidationLogs.userId], references: [users.id] }),
 }));
 
 export const defaultPredictionScoresRelations = relations(defaultPredictionScores, ({ one, many }) => ({
@@ -1910,10 +1975,12 @@ export const targetAllocations = pgTable('target_allocations', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     portfolioId: uuid('portfolio_id').notNull(), // Links to portfolios table
+    assetType: text('asset_type').default('equity'), // 'equity', 'fixed_income', 'commodity', 'cash', 'crypto'
     symbol: text('symbol').notNull(), // Asset symbol (BTC, AAPL, etc)
     targetPercentage: numeric('target_percentage', { precision: 5, scale: 2 }).notNull(), // e.g. 20.00 for 20%
     toleranceBand: numeric('tolerance_band', { precision: 5, scale: 2 }).default('5.00'), // e.g. 5% drift allowed
     rebalanceFrequency: text('rebalance_frequency').default('monthly'), // monthly, quarterly, yearly
+    isActive: boolean('is_active').default(true),
     lastRebalancedAt: timestamp('last_rebalanced_at'),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
@@ -3966,34 +4033,4 @@ export const washSaleViolationsRelations = relations(washSaleViolations, ({ one 
     investment: one(investments, { fields: [washSaleViolations.investmentId], references: [investments.id] }),
 }));
 
-// Update users relations to include new tables
-export const usersRelations = relations(users, ({ many }) => ({
-    categories: many(categories),
-    expenses: many(expenses),
-    goals: many(goals),
-    deviceSessions: many(deviceSessions),
-    vaultMemberships: many(vaultMembers),
-    ownedVaults: many(vaults),
-    securityEvents: many(securityEvents),
-    reports: many(reports),
-    budgetAlerts: many(budgetAlerts),
-    portfolios: many(portfolios),
-    subscriptions: many(subscriptions),
-    bills: many(bills),
-    debts: many(debts),
-    debtPayments: many(debtPayments),
-    expenseShares: many(expenseShares),
-    sentReimbursements: many(reimbursements, { relationName: 'reimbursements_from' }),
-    receivedReimbursements: many(reimbursements, { relationName: 'reimbursements_to' }),
-    bankAccounts: many(bankAccounts),
-    bankTransactions: many(bankTransactions),
-    emergencyFundGoals: many(emergencyFundGoals),
-    creditScores: many(creditScores),
-    creditScoreAlerts: many(creditScoreAlerts),
-    billNegotiations: many(billNegotiation),
-    negotiationAttempts: many(negotiationAttempts),
-    investmentRiskProfiles: many(investmentRiskProfiles),
-    investmentRecommendations: many(investmentRecommendations),
-    taxLossOpportunities: many(taxLossOpportunities),
-    washSaleViolations: many(washSaleViolations),
-}));
+// Update users relations to include new tables - DELETED DUPLICATE
