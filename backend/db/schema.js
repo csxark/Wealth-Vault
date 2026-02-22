@@ -1377,6 +1377,11 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     liquidationQueues: many(liquidationQueues),
     marginRequirements: many(marginRequirements),
     collateralSnapshots: many(collateralSnapshots),
+    liquidityPools: many(liquidityPools),
+    internalClearingLogs: many(internalClearingLogs),
+    fxSettlementInstructions: many(fxSettlementInstructions),
+    simulationScenarios: many(simulationScenarios),
+    simulationResults: many(simulationResults),
 }));
 
 export const targetAllocationsRelations = relations(targetAllocations, ({ one }) => ({
@@ -1859,6 +1864,66 @@ export const exchangeRateHistory = pgTable('exchange_rate_history', {
     dateIdx: index('idx_fx_date').on(table.rateTimestamp),
 }));
 
+// ============================================================================
+// SELF-ADJUSTING LIQUIDITY BRIDGE & FX SETTLEMENT LAYER (#455)
+// ============================================================================
+
+export const liquidityPools = pgTable('liquidity_pools', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    currencyCode: text('currency_code').notNull(),
+    totalBalance: numeric('total_balance', { precision: 24, scale: 8 }).default('0'),
+    lockedLiquidity: numeric('locked_liquidity', { precision: 24, scale: 8 }).default('0'),
+    minThreshold: numeric('min_threshold', { precision: 24, scale: 8 }).default('1000'), // Trigger external rail if below
+    lastRebalancedAt: timestamp('last_rebalanced_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const internalClearingLogs = pgTable('internal_clearing_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    fromVaultId: uuid('from_vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    toVaultId: uuid('to_vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    fromCurrency: text('from_currency').notNull(),
+    toCurrency: text('to_currency').notNull(),
+    amountOrig: numeric('amount_orig', { precision: 24, scale: 8 }).notNull(),
+    amountSettled: numeric('amount_settled', { precision: 24, scale: 8 }).notNull(),
+    appliedExchangeRate: numeric('applied_exchange_rate', { precision: 18, scale: 6 }).notNull(),
+    savingsVsMarket: numeric('savings_vs_market', { precision: 18, scale: 2 }).default('0'),
+    settlementStatus: text('settlement_status').default('completed'), // 'completed', 'pending', 'offset'
+    clearingMethod: text('clearing_method').default('ledger_offset'), // 'ledger_offset', 'bridge_pool'
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const fxSettlementInstructions = pgTable('fx_settlement_instructions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    instructionType: text('instruction_type').notNull(), // 'instant', 'limit', 'scheduled'
+    priority: text('priority').default('medium'), // 'high', 'medium', 'low'
+    sourceCurrency: text('source_currency').notNull(),
+    targetCurrency: text('target_currency').notNull(),
+    amount: numeric('amount', { precision: 24, scale: 8 }).notNull(),
+    limitRate: numeric('limit_rate', { precision: 18, scale: 6 }),
+    status: text('status').default('queued'), // 'queued', 'executing', 'fulfilled', 'cancelled'
+    metadata: jsonb('metadata').default({}),
+    executedAt: timestamp('executed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const marketRatesOracle = pgTable('market_rates_oracle', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    baseCurrency: text('base_currency').notNull(),
+    quoteCurrency: text('quote_currency').notNull(),
+    midRate: numeric('mid_rate', { precision: 18, scale: 6 }).notNull(),
+    bidRate: numeric('bid_rate', { precision: 18, scale: 6 }),
+    askRate: numeric('ask_rate', { precision: 18, scale: 6 }),
+    volatility24h: numeric('volatility_24h', { precision: 5, scale: 4 }),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+    source: text('source').default('interbank_direct'),
+});
+
 // Currency Hedging Positions - Tracking hedges against FX volatility
 export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -1879,6 +1944,36 @@ export const currencyHedgingPositions = pgTable('currency_hedging_positions', {
     userIdx: index('idx_hedge_user').on(table.userId),
     statusIdx: index('idx_hedge_status').on(table.status),
 }));
+
+// ============================================================================
+// PREDICTIVE "FINANCIAL BUTTERFLY" MONTE CARLO ENGINE (#454)
+// ============================================================================
+
+export const simulationScenarios = pgTable('simulation_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    baseYearlyGrowth: numeric('base_yearly_growth', { precision: 5, scale: 2 }).default('7.00'),
+    marketVolatility: numeric('market_volatility', { precision: 5, scale: 2 }).default('15.00'),
+    inflationRate: numeric('inflation_rate', { precision: 5, scale: 2 }).default('3.00'),
+    timeHorizonYears: integer('time_horizon_years').default(30),
+    iterationCount: integer('iteration_count').default(10000),
+    configuration: jsonb('configuration').default({}), // Custom parameters like spending habits
+    isDefault: boolean('is_default').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const economicVolatilityIndices = pgTable('economic_volatility_indices', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    indexName: text('index_name').notNull(), // 'VIX', 'CPI', 'FedRates', 'RealEstateIndex'
+    currentValue: numeric('current_value', { precision: 12, scale: 4 }).notNull(),
+    standardDeviation: numeric('standard_deviation', { precision: 12, scale: 4 }),
+    observationDate: timestamp('observation_date').notNull(),
+    source: text('source').default('macro_feed'),
+    metadata: jsonb('metadata').default({}),
+});
 
 // ============================================================================
 // GOVERNANCE & INHERITANCE (ESTATE MANAGEMENT)
@@ -2632,8 +2727,9 @@ export const goalRiskProfiles = pgTable('goal_risk_profiles', {
 export const simulationResults = pgTable('simulation_results', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-    resourceId: uuid('resource_id').notNull(), // Goal ID or Portfolio ID
-    resourceType: text('resource_type').notNull(), // 'goal', 'portfolio'
+    scenarioId: uuid('scenario_id').references(() => simulationScenarios.id, { onDelete: 'cascade' }), // For Butterfly Engine
+    resourceId: uuid('resource_id'), // Goal ID or Portfolio ID
+    resourceType: text('resource_type').default('goal'), // 'goal', 'portfolio', 'butterfly'
     simulatedOn: timestamp('simulated_on').defaultNow(),
     p10Value: numeric('p10_value', { precision: 18, scale: 2 }), // Worst case (10th percentile)
     p50Value: numeric('p50_value', { precision: 18, scale: 2 }), // Median (50th percentile)
@@ -3720,7 +3816,7 @@ export const syntheticVaultMappingsRelations = relations(syntheticVaultMappings,
 // ============================================================================
 // PREDICTIVE LIQUIDITY STRESS-TESTING & AUTONOMOUS INSOLVENCY PREVENTION (#428)
 
-export const stressTestScenarios = pgTable('stress_test_scenarios', {
+export const userStressTestScenarios = pgTable('user_stress_test_scenarios', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     scenarioName: text('scenario_name').notNull(), // '50% Income Drop', 'Flash-Crash', 'Medical Emergency'
@@ -4235,4 +4331,18 @@ export const marginRequirementsRelations = relations(marginRequirements, ({ one 
 
 export const collateralSnapshotsRelations = relations(collateralSnapshots, ({ one }) => ({
     user: one(users, { fields: [collateralSnapshots.userId], references: [users.id] }),
+}));
+
+export const liquidityPoolsRelations = relations(liquidityPools, ({ one }) => ({
+    user: one(users, { fields: [liquidityPools.userId], references: [users.id] }),
+}));
+
+export const internalClearingLogsRelations = relations(internalClearingLogs, ({ one }) => ({
+    user: one(users, { fields: [internalClearingLogs.userId], references: [users.id] }),
+    fromVault: one(vaults, { fields: [internalClearingLogs.fromVaultId], references: [vaults.id] }),
+    toVault: one(vaults, { fields: [internalClearingLogs.toVaultId], references: [vaults.id] }),
+}));
+
+export const fxSettlementInstructionsRelations = relations(fxSettlementInstructions, ({ one }) => ({
+    user: one(users, { fields: [fxSettlementInstructions.userId], references: [users.id] }),
 }));
