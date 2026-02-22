@@ -71,6 +71,7 @@ import inventoryRoutes from "./routes/inventory.js";
 import marginRoutes from "./routes/margin.js";
 import clearingRoutes from "./routes/clearing.js";
 import scheduleMarketOracle from "./jobs/marketOracleSync.js";
+import schedulePrecomputePaths from "./jobs/precomputePaths.js";
 import { presenceTracker } from "./middleware/successionMiddleware.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
@@ -405,6 +406,7 @@ if (process.env.NODE_ENV !== 'test') {
     scheduleLotReconciliation();
     scheduleStressTests();
     scheduleMarketOracle();
+    schedulePrecomputePaths();
     marketMonitor.start();
     volatilityMonitor.start();
     payrollCycleJob.start();
