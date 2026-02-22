@@ -1382,6 +1382,9 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     fxSettlementInstructions: many(fxSettlementInstructions),
     simulationScenarios: many(simulationScenarios),
     simulationResults: many(simulationResults),
+    shadowEntities: many(shadowEntities),
+    governanceResolutions: many(governanceResolutions),
+    votingRecords: many(votingRecords),
 }));
 
 export const targetAllocationsRelations = relations(targetAllocations, ({ one }) => ({
@@ -1997,6 +2000,58 @@ export const familyRoles = pgTable('family_roles', {
     assignedAt: timestamp('assigned_at').defaultNow(),
     expiresAt: timestamp('expires_at'),
     isActive: boolean('is_active').default(true),
+});
+
+// ============================================================================
+// INSTITUTIONAL GOVERNANCE & MULTI-RESOLUTION PROTOCOL (#453)
+// ============================================================================
+
+export const shadowEntities = pgTable('shadow_entities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(), // e.g., "Family Trust", "Wealth LLC"
+    entityType: text('entity_type').notNull(), // 'trust', 'llc', 'family_office'
+    taxId: text('tax_id'),
+    legalAddress: text('legal_address'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const bylawDefinitions = pgTable('bylaw_definitions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    entityId: uuid('entity_id').references(() => shadowEntities.id, { onDelete: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    thresholdAmount: numeric('threshold_amount', { precision: 24, scale: 8 }).notNull(),
+    requiredQuorum: doublePrecision('required_quorum').notNull(), // e.g., 0.66 for 2/3
+    votingPeriodHours: integer('voting_period_hours').default(48),
+    autoExecute: boolean('auto_execute').default(true),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const governanceResolutions = pgTable('governance_resolutions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    bylawId: uuid('bylaw_id').references(() => bylawDefinitions.id, { onDelete: 'cascade' }).notNull(),
+    resolutionType: text('resolution_type').notNull(), // 'spend', 'transfer', 'bylaw_change'
+    status: text('status').default('open'), // 'open', 'passed', 'failed', 'executed'
+    payload: jsonb('payload').notNull(), // The transaction details being proposed
+    votesFor: integer('votes_for').default(0),
+    votesAgainst: integer('votes_against').default(0),
+    totalEligibleVotes: integer('total_eligible_votes').notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+    executedAt: timestamp('executed_at'),
+});
+
+export const votingRecords = pgTable('voting_records', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    resolutionId: uuid('resolution_id').references(() => governanceResolutions.id, { onDelete: 'cascade' }).notNull(),
+    vote: text('vote').notNull(), // 'yes', 'no'
+    votedAt: timestamp('voted_at').defaultNow(),
+    reason: text('reason'),
 });
 
 export const familySettings = pgTable('family_settings', {
@@ -4252,4 +4307,26 @@ export const internalClearingLogsRelations = relations(internalClearingLogs, ({ 
 
 export const fxSettlementInstructionsRelations = relations(fxSettlementInstructions, ({ one }) => ({
     user: one(users, { fields: [fxSettlementInstructions.userId], references: [users.id] }),
+}));
+
+export const shadowEntitiesRelations = relations(shadowEntities, ({ one, many }) => ({
+    user: one(users, { fields: [shadowEntities.userId], references: [users.id] }),
+    bylaws: many(bylawDefinitions),
+}));
+
+export const bylawDefinitionsRelations = relations(bylawDefinitions, ({ one, many }) => ({
+    entity: one(shadowEntities, { fields: [bylawDefinitions.entityId], references: [shadowEntities.id] }),
+    vault: one(vaults, { fields: [bylawDefinitions.vaultId], references: [vaults.id] }),
+    resolutions: many(governanceResolutions),
+}));
+
+export const governanceResolutionsRelations = relations(governanceResolutions, ({ one, many }) => ({
+    user: one(users, { fields: [governanceResolutions.userId], references: [users.id] }),
+    bylaw: one(bylawDefinitions, { fields: [governanceResolutions.bylawId], references: [bylawDefinitions.id] }),
+    votes: many(votingRecords),
+}));
+
+export const votingRecordsRelations = relations(votingRecords, ({ one }) => ({
+    user: one(users, { fields: [votingRecords.userId], references: [users.id] }),
+    resolution: one(governanceResolutions, { fields: [votingRecords.resolutionId], references: [governanceResolutions.id] }),
 }));

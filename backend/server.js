@@ -114,6 +114,7 @@ import velocityJob from "./jobs/velocityJob.js";
 import scheduleMacroDataSync from "./jobs/macroDataSync.js";
 import scheduleLotReconciliation from "./jobs/lotReconciliation.js";
 import scheduleStressTests from "./jobs/stressTestSync.js";
+import scheduleResolutionCleanup from "./jobs/resolutionCleanup.js";
 import marketMonitor from "./jobs/marketMonitor.js";
 import { securityGuard } from "./middleware/securityGuard.js";
 import { auditRequestIdMiddleware } from "./middleware/auditMiddleware.js";
@@ -407,6 +408,7 @@ if (process.env.NODE_ENV !== 'test') {
     scheduleStressTests();
     scheduleMarketOracle();
     schedulePrecomputePaths();
+    scheduleResolutionCleanup();
     marketMonitor.start();
     volatilityMonitor.start();
     payrollCycleJob.start();

@@ -267,6 +267,29 @@ class NotificationService {
   }
 
   /**
+   * GOVERNANCE RESOLUTION NOTIFICATIONS (#453)
+   */
+  async sendGovernanceResolutionNotification(userId, resolution, vaultName) {
+    const subject = `⚖️ Governance Resolution Required in "${vaultName}"`;
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f1f5f9; border-left: 4px solid #6366f1;">
+        <h2>Action Required: Spending Resolution</h2>
+        <p>A new resolution has been proposed in <strong>"${vaultName}"</strong> that requires your vote.</p>
+        <p><strong>Proposed Action:</strong> Spend of ${resolution.payload.amount} ${resolution.payload.currency || ''}</p>
+        <p><strong>Expiry:</strong> ${new Date(resolution.expiresAt).toLocaleString()}</p>
+        <p>Please log in to vote on this resolution.</p>
+      </div>
+    `;
+
+    await this.sendNotification(userId, {
+      title: subject,
+      message: `Resolution required for proposed spend in "${vaultName}"`,
+      type: 'governance_resolution',
+      data: { resolutionId: resolution.id }
+    });
+  }
+
+  /**
    * Notify beneficiaries of inheritance trigger
    */
   async sendInheritanceTriggeredNotification(beneficiaryUser, deceasedName, assetDescription) {
@@ -363,7 +386,7 @@ class NotificationService {
    */
   async scheduleNotification(options) {
     const { userId, type, title, message, scheduledFor, data } = options;
-    
+
     try {
       // Store the scheduled notification in securityEvents with scheduled time
       // The actual sending will be handled by a cron job
@@ -406,7 +429,7 @@ class NotificationService {
 
       for (const notification of scheduledNotifications) {
         const scheduledFor = new Date(notification.details?.scheduledFor);
-        
+
         if (scheduledFor <= now) {
           // Send the notification
           await this.sendNotification(notification.userId, {

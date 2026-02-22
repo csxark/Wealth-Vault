@@ -577,6 +577,7 @@ router.get("/me", protect, asyncHandler(async (req, res, next) => {
     where: eq(users.id, userId),
     with: {
       categories: true,
+      shadowEntities: true,
     },
   });
 
