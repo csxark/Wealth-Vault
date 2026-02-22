@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { vaults, vaultBalances, cashDragMetrics } from '../db/schema.js';
+import { vaults, vaultBalances, cashDragMetrics, vaultLocks } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { logInfo, logError } from '../utils/logger.js';
 import ledgerService from './ledgerService.js';
@@ -244,6 +244,81 @@ class VaultService {
         }
 
         return vaultsWithExcess;
+    }
+
+    /**
+     * Lock a portion of vault balance for escrow/liens (L3)
+     */
+    async lockBalance(userId, vaultId, amount, lockType, referenceType, referenceId) {
+        return await db.transaction(async (tx) => {
+            const currentBalance = await this.getVaultCashBalance(vaultId);
+            const activeLocks = await tx.select()
+                .from(vaultLocks)
+                .where(and(eq(vaultLocks.vaultId, vaultId), eq(vaultLocks.status, 'active')));
+
+            const totalLocked = activeLocks.reduce((sum, lock) => sum + parseFloat(lock.amount), 0);
+            const availableBalance = currentBalance - totalLocked;
+
+            if (availableBalance < parseFloat(amount)) {
+                throw new Error(`Insufficient available balance. Required: ${amount}, Available: ${availableBalance.toFixed(2)}`);
+            }
+
+            const [lock] = await tx.insert(vaultLocks).values({
+                vaultId,
+                userId,
+                amount: amount.toString(),
+                lockType,
+                referenceType,
+                referenceId,
+                status: 'active'
+            }).returning();
+
+            logInfo(`[Vault Service] Locked ${amount} in vault ${vaultId} for ${lockType}`);
+            return lock;
+        });
+    }
+
+    /**
+     * Release a balance lock (L3)
+     */
+    async releaseLock(lockId, userId) {
+        const [lock] = await db.update(vaultLocks)
+            .set({ status: 'released', updatedAt: new Date() })
+            .where(and(eq(vaultLocks.id, lockId), eq(vaultLocks.userId, userId)))
+            .returning();
+
+        if (!lock) throw new Error('Lock not found or unauthorized');
+
+        logInfo(`[Vault Service] Released lock ${lockId} for vault ${lock.vaultId}`);
+        return lock;
+    }
+
+    /**
+     * Void a balance lock (L3)
+     */
+    async voidLock(lockId, userId) {
+        const [lock] = await db.update(vaultLocks)
+            .set({ status: 'void', updatedAt: new Date() })
+            .where(and(eq(vaultLocks.id, lockId), eq(vaultLocks.userId, userId)))
+            .returning();
+
+        if (!lock) throw new Error('Lock not found or unauthorized');
+
+        logInfo(`[Vault Service] Voided lock ${lockId} for vault ${lock.vaultId}`);
+        return lock;
+    }
+
+    /**
+     * Get available balance net of locks (L3)
+     */
+    async getAvailableBalance(vaultId) {
+        const currentBalance = await this.getVaultCashBalance(vaultId);
+        const activeLocks = await db.query.vaultLocks.findMany({
+            where: and(eq(vaultLocks.vaultId, vaultId), eq(vaultLocks.status, 'active'))
+        });
+
+        const totalLocked = activeLocks.reduce((sum, lock) => sum + parseFloat(lock.amount), 0);
+        return currentBalance - totalLocked;
     }
 }
 
