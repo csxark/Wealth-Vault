@@ -171,7 +171,18 @@ import { initializeLiquidityListeners } from "./listeners/liquidityListeners.js"
 import workflowEngine from "./services/workflowEngine.js"; // Bootstrap event hooks
 import healthRoutes from "./routes/health.js";
 import performanceRoutes from "./routes/performance.js";
-import budgetAlertsRoutes from "./routes/budgetAlerts.js";
+import tenantRoutes from "./routes/tenants.js";
+import auditRoutes from "./routes/audit.js";
+import servicesRoutes from "./routes/services.js";
+import dbRouterRoutes from "./routes/dbRouter.js";
+import authorizationRoutes from "./routes/authorization.js";
+import outboxRoutes from "./routes/outbox.js";
+import softDeleteRoutes from "./routes/softDelete.js";
+
+// Import DB Router
+import { initializeDBRouter } from "./services/dbRouterService.js";
+import { attachDBConnection, dbRoutingErrorHandler } from "./middleware/dbRouting.js";
+import policyEngineService from "./services/policyEngineService.js";
 
 // Load environment variables
 dotenv.config();
@@ -644,17 +655,34 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/users", userLimiter, userRoutes);
     app.use("/api/expenses", userLimiter, expenseRoutes);
     app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
+    app.use("/api/outbox", userLimiter, outboxRoutes);
+    app.use("/api/soft-delete", userLimiter, softDeleteRoutes);
+    app.use("/api/integrity", userLimiter, softDeleteRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
-    app.use("/api/health", healthRoutes);
-    app.use("/api/performance", userLimiter, performanceRoutes);
-    app.use("/api/tenants", userLimiter, tenantRoutes);
-    app.use("/api/audit", userLimiter, auditRoutes);
-    app.use("/api/db-router", userLimiter, dbRouterRoutes);
-    app.use("/api/authorization", userLimiter, authorizationRoutes);
-    app.use("/api/notifications", userLimiter, notificationRoutes);
-
+    app.use("/api/transactions", userLimiter, softDeleteRoutes);
+    app.use("/api/health", async (req, res) => {
+      const redisState = getConnectionState();
+      const dbState = getDatabaseState();
+      const dbHealthy = await isDatabaseHealthy();
+      
+      const overallHealthy = dbHealthy && dbState.isConnected;
+      
+      res.status(overallHealthy ? 200 : 503).json({
+        status: overallHealthy ? "OK" : "DEGRADED",
+        message: overallHealthy 
+          ? "Wealth Vault API is running" 
+          : "API running with degraded services",
+        timestamp: new Date().toISOString(),
+        services: {
+          database: {
+            state: dbState.state,
+            isConnected: dbState.isConnected,
+            healthy: dbHealthy,
+            attempts: dbState.attempts,
+            ...(dbState.lastError && { lastError: dbState.lastError })
+          },
     // Secur fil servr for uploddd fils
     app.use("/uploads", createFileServerRoute());
 
