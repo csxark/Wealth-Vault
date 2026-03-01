@@ -71,6 +71,7 @@ import recurringPaymentsRoutes from "./routes/recurring-payments.js";
 import categorizationRoutes from "./routes/categorization.js";
 import currencyPortfolioRoutes from "./routes/currency-portfolio.js";
 import budgetRoutes from "./routes/budgets.js";
+import smartAlerts from "./routes/smartAlerts.js";
 import expenseSharesRoutes from "./routes/expenseShares.js";
 import reimbursementsRoutes from "./routes/reimbursements.js";
 import interlockRoutes from "./routes/interlock.js";
@@ -186,8 +187,6 @@ import forecastRoutes from "./routes/forecasts.js";
 import goalSharingRoutes from "./routes/goalSharing.js";
 import anomalyRoutes from "./routes/anomalies.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
-import auditRetentionRoutes from "./routes/auditRetention.js";
-import bulkImportRoutes from "./routes/bulkImport.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -484,6 +483,7 @@ app.use("/api/interlock", userLimiter, interlockRoutes);
 app.use("/api", presenceTracker);
 app.use("/api/vaults", userLimiter, vaultRoutes);
 app.use("/api/budgets", userLimiter, budgetRoutes);
+app.use("/api/smart-alerts", userLimiter, smartAlerts);
 app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
 app.use("/api/reimbursements", userLimiter, reimbursementsRoutes);
 app.use("/api/interlock", userLimiter, interlockRoutes);
@@ -686,8 +686,6 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
     app.use("/api/anomalies", userLimiter, anomalyRoutes);
     app.use("/api/portfolio", userLimiter, rebalancingRoutes);
-    app.use("/api/audit-retention", userLimiter, auditRetentionRoutes);
-    app.use("/api/bulk-import", userLimiter, bulkImportRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
