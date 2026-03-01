@@ -923,6 +923,8 @@ router.post("/refresh",
       return next(new AppError(400, "Validation failed", errors.array()));
     }
 
+    const { refreshToken } = req.body;
+
     const ipAddress = req.ip || req.connection.remoteAddress;
 
     const tokens = await refreshAccessToken(refreshToken, ipAddress);
