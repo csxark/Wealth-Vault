@@ -5505,3 +5505,6 @@ export const alertDeduplicationRelations = relations(alertDeduplication, ({ one 
         references: [budgetAlerts.id],
     }),
 }));
+
+// Export forecast schema tables
+export * from './schema-forecast.js';

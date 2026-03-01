@@ -1,164 +1,570 @@
+/**
+ * Budget Forecasting API Routes
+ * 
+ * Provides endpoints for category budget forecasting with confidence intervals
+ * Implements predictive analytics to prevent overspending before month-end
+ * 
+ * Issue #609: Category Budget Forecasting with Confidence Intervals
+ */
+
 import express from 'express';
-import { protect } from '../middleware/auth.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import { ApiResponse } from '../utils/ApiResponse.js';
-import projectionEngine from '../services/projectionEngine.js';
-import scenarioRunner from '../services/scenarioRunner.js';
-import liquidityReportService from '../services/liquidityReportService.js';
+import { body, param, query, validationResult } from 'express-validator';
+import { eq, and } from 'drizzle-orm';
 import db from '../config/db.js';
-import { stressTestScenarios, liquidityVelocityLogs, cashFlowProjections, simulationScenarios, simulationResults } from '../db/schema.js';
-import simulationAI from '../services/simulationAI.js';
-import { eq, desc } from 'drizzle-orm';
+import { protect } from '../middleware/auth.js';
+import { categoryForecasts, forecastAlerts, categories } from '../db/schema.js';
+import forecastService from '../services/forecastService.js';
+import logger from '../utils/logger.js';
 
 const router = express.Router();
 
 /**
- * @route   GET /api/forecasts/projections/summary
- * @desc    Get 12-month Monte Carlo liquidity projections
+ * @swagger
+ * /forecasts/generate:
+ *   post:
+ *     summary: Generate forecast for a category
+ *     tags: [Forecasts]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - categoryId
+ *             properties:
+ *               categoryId:
+ *                 type: string
+ *                 format: uuid
+ *               periodType:
+ *                 type: string
+ *                 enum: [daily, weekly, monthly]
+ *                 default: monthly
+ *               periodsAhead:
+ *                 type: integer
+ *                 default: 1
+ *                 minimum: 1
+ *                 maximum: 12
+ *     responses:
+ *       200:
+ *         description: Forecast generated successfully
+ *       400:
+ *         description: Invalid parameters or insufficient historical data
+ *       500:
+ *         description: Server error
  */
-router.get('/projections/summary', protect, asyncHandler(async (req, res) => {
-  const summary = await projectionEngine.getForecastSummary(req.user.id);
+router.post(
+    '/generate',
+    protect,
+    [
+        body('categoryId').isUUID().withMessage('Valid category ID is required'),
+        body('periodType').optional().isIn(['daily', 'weekly', 'monthly']).withMessage('Invalid period type'),
+        body('periodsAhead').optional().isInt({ min: 1, max: 12 }).withMessage('Periods ahead must be between 1 and 12')
+    ],
+    async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
 
-  // If no summary exists, trigger an immediate generation (L3 proactiveness)
-  if (!summary || summary.length === 0) {
-    const freshForecast = await projectionEngine.generateForecast(req.user.id);
-    return new ApiResponse(200, freshForecast).send(res);
-  }
+            const { categoryId, periodType = 'monthly', periodsAhead = 1 } = req.body;
+            const userId = req.user.id;
+            const tenantId = req.user.tenantId;
 
-  new ApiResponse(200, summary).send(res);
-}));
+            // Verify category exists and belongs to user
+            const category = await db.query.categories.findFirst({
+                where: and(
+                    eq(categories.id, categoryId),
+                    eq(categories.userId, userId),
+                    eq(categories.tenantId, tenantId)
+                )
+            });
+
+            if (!category) {
+                return res.status(404).json({
+                    error: 'Category not found or access denied'
+                });
+            }
+
+            // Generate forecast
+            const forecast = await forecastService.generateForecast(
+                userId,
+                categoryId,
+                tenantId,
+                periodType,
+                periodsAhead
+            );
+
+            res.json({
+                success: true,
+                data: forecast,
+                message: 'Forecast generated successfully'
+            });
+
+        } catch (error) {
+            logger.error('Error generating forecast', {
+                error: error.message,
+                userId: req.user.id,
+                stack: error.stack
+            });
+
+            const statusCode = error.message.includes('Insufficient historical data') ? 400 : 500;
+
+            res.status(statusCode).json({
+                error: 'Failed to generate forecast',
+                message: error.message
+            });
+        }
+    }
+);
 
 /**
- * @route   POST /api/forecasts/projections/generate
- * @desc    Trigger a fresh Monte Carlo simulation
+ * @swagger
+ * /forecasts/category/{categoryId}:
+ *   get:
+ *     summary: Get latest forecast for a category
+ *     tags: [Forecasts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: categoryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - in: query
+ *         name: periodType
+ *         schema:
+ *           type: string
+ *           enum: [daily, weekly, monthly]
+ *           default: monthly
+ *     responses:
+ *       200:
+ *         description: Latest forecast for the category
+ *       404:
+ *         description: No forecast found
  */
-router.post('/projections/generate', protect, asyncHandler(async (req, res) => {
-  const forecast = await projectionEngine.generateForecast(req.user.id);
-  new ApiResponse(200, forecast).send(res);
-}));
+router.get(
+    '/category/:categoryId',
+    protect,
+    [
+        param('categoryId').isUUID().withMessage('Valid category ID is required'),
+        query('periodType').optional().isIn(['daily', 'weekly', 'monthly']).withMessage('Invalid period type')
+    ],
+    async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+
+            const { categoryId } = req.params;
+            const { periodType = 'monthly' } = req.query;
+            const userId = req.user.id;
+            const tenantId = req.user.tenantId;
+
+            const forecast = await forecastService.getLatestForecast(
+                userId,
+                categoryId,
+                tenantId,
+                periodType
+            );
+
+            if (!forecast) {
+                return res.status(404).json({
+                    error: 'No forecast found for this category',
+                    message: 'Try generating a forecast first'
+                });
+            }
+
+            res.json({
+                success: true,
+                data: forecast
+            });
+
+        } catch (error) {
+            logger.error('Error getting forecast', {
+                error: error.message,
+                userId: req.user.id
+            });
+
+            res.status(500).json({
+                error: 'Failed to get forecast',
+                message: error.message
+            });
+        }
+    }
+);
 
 /**
- * @route   GET /api/forecasts/scenarios
- * @desc    Get available stress test scenarios
+ * @swagger
+ * /forecasts/alerts:
+ *   get:
+ *     summary: Get active forecast alerts
+ *     tags: [Forecasts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of active forecast alerts
  */
-router.get('/scenarios', protect, asyncHandler(async (req, res) => {
-  let scenarios = await db.query.stressTestScenarios.findMany({
-    where: eq(stressTestScenarios.userId, req.user.id)
-  });
+router.get('/alerts', protect, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const tenantId = req.user.tenantId;
 
-  if (scenarios.length === 0) {
-    await scenarioRunner.seedScenarios(req.user.id);
-    scenarios = await db.query.stressTestScenarios.findMany({
-      where: eq(stressTestScenarios.userId, req.user.id)
-    });
-  }
+        const alerts = await forecastService.getActiveForecastAlerts(userId, tenantId);
 
-  new ApiResponse(200, scenarios).send(res);
-}));
+        res.json({
+            success: true,
+            data: alerts,
+            count: alerts.length
+        });
+
+    } catch (error) {
+        logger.error('Error getting forecast alerts', {
+            error: error.message,
+            userId: req.user.id
+        });
+
+        res.status(500).json({
+            error: 'Failed to get forecast alerts',
+            message: error.message
+        });
+    }
+});
 
 /**
- * @route   POST /api/forecasts/scenarios/run/:id
- * @desc    Run a specific stress test scenario
+ * @swagger
+ * /forecasts/alerts/{alertId}/dismiss:
+ *   post:
+ *     summary: Dismiss a forecast alert
+ *     tags: [Forecasts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: alertId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Alert dismissed successfully
+ *       404:
+ *         description: Alert not found
  */
-router.post('/scenarios/run/:id', protect, asyncHandler(async (req, res) => {
-  const result = await scenarioRunner.runStressTest(req.user.id, req.params.id);
-  new ApiResponse(200, result).send(res);
-}));
+router.post(
+    '/alerts/:alertId/dismiss',
+    protect,
+    [
+        param('alertId').isUUID().withMessage('Valid alert ID is required')
+    ],
+    async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+
+            const { alertId } = req.params;
+            const userId = req.user.id;
+            const tenantId = req.user.tenantId;
+
+            const alert = await forecastService.dismissForecastAlert(alertId, userId, tenantId);
+
+            if (!alert) {
+                return res.status(404).json({
+                    error: 'Alert not found or access denied'
+                });
+            }
+
+            res.json({
+                success: true,
+                data: alert,
+                message: 'Alert dismissed successfully'
+            });
+
+        } catch (error) {
+            logger.error('Error dismissing alert', {
+                error: error.message,
+                userId: req.user.id
+            });
+
+            res.status(500).json({
+                error: 'Failed to dismiss alert',
+                message: error.message
+            });
+        }
+    }
+);
 
 /**
- * @route   GET /api/forecasts/health/velocity
- * @desc    Get real-time liquidity velocity and burn rates
+ * @swagger
+ * /forecasts/historical/{categoryId}:
+ *   post:
+ *     summary: Collect and store historical data for a category
+ *     tags: [Forecasts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: categoryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               periodType:
+ *                 type: string
+ *                 enum: [daily, weekly, monthly]
+ *                 default: daily
+ *               lookbackDays:
+ *                 type: integer
+ *                 default: 90
+ *                 minimum: 7
+ *                 maximum: 365
+ *     responses:
+ *       200:
+ *         description: Historical data collected successfully
  */
-router.get('/health/velocity', protect, asyncHandler(async (req, res) => {
-  const history = await db.query.liquidityVelocityLogs.findMany({
-    where: eq(liquidityVelocityLogs.userId, req.user.id),
-    orderBy: [desc(liquidityVelocityLogs.measuredAt)],
-    limit: 20
-  });
-  new ApiResponse(200, history).send(res);
-}));
+router.post(
+    '/historical/:categoryId',
+    protect,
+    [
+        param('categoryId').isUUID().withMessage('Valid category ID is required'),
+        body('periodType').optional().isIn(['daily', 'weekly', 'monthly']),
+        body('lookbackDays').optional().isInt({ min: 7, max: 365 })
+    ],
+    async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+
+            const { categoryId } = req.params;
+            const { periodType = 'daily', lookbackDays = 90 } = req.body;
+            const userId = req.user.id;
+            const tenantId = req.user.tenantId;
+
+            // Verify category exists
+            const category = await db.query.categories.findFirst({
+                where: and(
+                    eq(categories.id, categoryId),
+                    eq(categories.userId, userId),
+                    eq(categories.tenantId, tenantId)
+                )
+            });
+
+            if (!category) {
+                return res.status(404).json({
+                    error: 'Category not found or access denied'
+                });
+            }
+
+            const dataPointsCollected = await forecastService.collectHistoricalData(
+                userId,
+                categoryId,
+                tenantId,
+                periodType,
+                lookbackDays
+            );
+
+            res.json({
+                success: true,
+                message: 'Historical data collected successfully',
+                dataPointsCollected
+            });
+
+        } catch (error) {
+            logger.error('Error collecting historical data', {
+                error: error.message,
+                userId: req.user.id
+            });
+
+            res.status(500).json({
+                error: 'Failed to collect historical data',
+                message: error.message
+            });
+        }
+    }
+);
 
 /**
- * @route   GET /api/forecasts/health/report
- * @desc    Generate a comprehensive liquidity health audit
+ * @swagger
+ * /forecasts/validate/{forecastId}:
+ *   post:
+ *     summary: Validate forecast accuracy after period ends
+ *     tags: [Forecasts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: forecastId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Forecast accuracy validated
+ *       400:
+ *         description: Forecast period has not ended
+ *       404:
+ *         description: Forecast not found
  */
-router.get('/health/report', protect, asyncHandler(async (req, res) => {
-  const report = await liquidityReportService.generateReport(req.user.id);
-  new ApiResponse(200, report).send(res);
-}));
+router.post(
+    '/validate/:forecastId',
+    protect,
+    [
+        param('forecastId').isUUID().withMessage('Valid forecast ID is required')
+    ],
+    async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+
+            const { forecastId } = req.params;
+
+            // Verify forecast belongs to user
+            const forecast = await db.query.categoryForecasts.findFirst({
+                where: and(
+                    eq(categoryForecasts.id, forecastId),
+                    eq(categoryForecasts.userId, req.user.id),
+                    eq(categoryForecasts.tenantId, req.user.tenantId)
+                )
+            });
+
+            if (!forecast) {
+                return res.status(404).json({
+                    error: 'Forecast not found or access denied'
+                });
+            }
+
+            const metric = await forecastService.validateForecastAccuracy(forecastId);
+
+            if (!metric) {
+                return res.status(400).json({
+                    error: 'Forecast period has not ended yet'
+                });
+            }
+
+            res.json({
+                success: true,
+                data: metric,
+                message: 'Forecast accuracy validated'
+            });
+
+        } catch (error) {
+            logger.error('Error validating forecast', {
+                error: error.message,
+                userId: req.user.id
+            });
+
+            res.status(500).json({
+                error: 'Failed to validate forecast',
+                message: error.message
+            });
+        }
+    }
+);
 
 /**
- * @desc Get the "Probability Cloud" for 30-year wealth projections
- * @route GET /api/forecasts/butterfly/global
+ * @swagger
+ * /forecasts/categories:
+ *   get:
+ *     summary: Get forecasts for all user categories
+ *     tags: [Forecasts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: periodType
+ *         schema:
+ *           type: string
+ *           enum: [daily, weekly, monthly]
+ *           default: monthly
+ *     responses:
+ *       200:
+ *         description: List of forecasts for all categories
  */
-router.get('/butterfly/global', protect, asyncHandler(async (req, res) => {
-  const [latest] = await db.select().from(simulationResults)
-    .where(eq(simulationResults.userId, req.user.id))
-    .orderBy(desc(simulationResults.simulatedOn))
-    .limit(1);
+router.get(
+    '/categories',
+    protect,
+    [
+        query('periodType').optional().isIn(['daily', 'weekly', 'monthly'])
+    ],
+    async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
 
-  if (!latest) {
-    const fresh = await simulationAI.runGlobalSimulation(req.user.id);
-    return new ApiResponse(200, fresh, "Generated fresh simulation probability cloud").send(res);
-  }
+            const { periodType = 'monthly' } = req.query;
+            const userId = req.user.id;
+            const tenantId = req.user.tenantId;
 
-  new ApiResponse(200, latest).send(res);
-}));
+            // Get all user categories
+            const userCategories = await db.query.categories.findMany({
+                where: and(
+                    eq(categories.userId, userId),
+                    eq(categories.tenantId, tenantId)
+                )
+            });
 
-/**
- * @desc Evaluate the opportunity cost of a recurring expense (Butterfly Effect)
- * @route POST /api/forecasts/butterfly/habit
- */
-router.post('/butterfly/habit', protect, asyncHandler(async (req, res) => {
-  const { habitName, dailyCost } = req.body;
-  const impact = await simulationAI.evaluateHabitImpact(req.user.id, habitName, dailyCost);
-  new ApiResponse(200, impact, "Habit opportunity cost evaluated").send(res);
-}));
+            // Get latest forecast for each category
+            const forecasts = await Promise.all(
+                userCategories.map(async (category) => {
+                    const forecast = await forecastService.getLatestForecast(
+                        userId,
+                        category.id,
+                        tenantId,
+                        periodType
+                    );
 
-/**
- * @desc Manage simulation scenarios
- * @route GET /api/forecasts/butterfly/scenarios
- */
-router.get('/butterfly/scenarios', protect, asyncHandler(async (req, res) => {
-  const scenarios = await db.select().from(simulationScenarios)
-    .where(eq(simulationScenarios.userId, req.user.id));
-  new ApiResponse(200, scenarios).send(res);
-}));
+                    return {
+                        category: {
+                            id: category.id,
+                            name: category.name,
+                            monthlyBudget: category.monthlyBudget
+                        },
+                        forecast
+                    };
+                })
+            );
 
-import { monteCarloRuns } from '../db/schema.js';
-import chartDataAggregator from '../utils/chartDataAggregator.js';
+            res.json({
+                success: true,
+                data: forecasts,
+                count: forecasts.length
+            });
 
-/**
- * @desc Get the aggressive probabilistic 10k monte carlo runs (#480)
- * @route GET /api/forecasts/monte-carlo/curves
- */
-router.get('/monte-carlo/curves', protect, asyncHandler(async (req, res) => {
-  // Return latest simulation job output
-  const [latest] = await db.select().from(monteCarloRuns)
-    .where(eq(monteCarloRuns.userId, req.user.id))
-    .orderBy(desc(monteCarloRuns.createdAt))
-    .limit(1);
+        } catch (error) {
+            logger.error('Error getting category forecasts', {
+                error: error.message,
+                userId: req.user.id
+            });
 
-  if (!latest) {
-    return res.status(404).json(new ApiResponse(404, null, 'No Monte Carlo simulations found for this user. Wait for the overnight batch job.'));
-  }
-
-  const { currentAge, expectedDeathAge } = latest.simulationParams;
-  const currentYear = new Date().getFullYear();
-
-  const chartData = chartDataAggregator.formatMonteCarloForUI(
-    latest.percentiles,
-    currentYear,
-    currentAge,
-    expectedDeathAge
-  );
-
-  new ApiResponse(200, {
-    longevityRiskScore: latest.longevityRiskScore,
-    successRate: latest.successRate,
-    estateTaxBreachYear: latest.estateTaxBreachYear,
-    curves: chartData
-  }).send(res);
-}));
+            res.status(500).json({
+                error: 'Failed to get category forecasts',
+                message: error.message
+            });
+        }
+    }
+);
 
 export default router;

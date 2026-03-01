@@ -20,6 +20,7 @@ import financialReconciliation from "./jobs/financialReconciliation.js";
 import budgetRollupReconciliation from "./jobs/budgetRollupReconciliation.js";
 import RecurringPaymentScheduler from "./jobs/recurringPaymentScheduler.js";
 import fxReconciliation from "./jobs/fxReconciliation.js";
+import forecastReconciliation from "./jobs/forecastReconciliation.js";
 import integrityService from "./services/integrityService.js";
 import milestoneReconciliation from "./jobs/milestoneReconciliation.js";
 import "./services/sagaDefinitions.js"; // Register saga definitions
@@ -181,6 +182,7 @@ import authorizationRoutes from "./routes/authorization.js";
 import outboxRoutes from "./routes/outbox.js";
 import softDeleteRoutes from "./routes/softDelete.js";
 import milestoneRoutes from "./routes/milestones.js";
+import forecastRoutes from "./routes/forecasts.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -267,6 +269,10 @@ const startServer = async () => {
     // Start milestone reconciliation job
     milestoneReconciliation.schedule(60); // Run every 60 minutes
     console.log('🎯 Milestone reconciliation job started');
+
+    // Start forecast reconciliation job
+    forecastReconciliation.start(120); // Run every 2 hours
+    console.log('📊 Forecast reconciliation job started');
 
     // Initialize upload directories
     try {
@@ -671,6 +677,7 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/soft-delete", userLimiter, softDeleteRoutes);
     app.use("/api/integrity", userLimiter, softDeleteRoutes);
     app.use("/api/milestones", userLimiter, milestoneRoutes);
+    app.use("/api/forecasts", userLimiter, forecastRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
