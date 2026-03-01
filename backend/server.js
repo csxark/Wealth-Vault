@@ -47,6 +47,7 @@ import auditRoutes from "./routes/audit.js";
 import servicesRoutes from "./routes/services.js";
 import dbRouterRoutes from "./routes/dbRouter.js";
 import authorizationRoutes from "./routes/authorization.js";
+import outboxRoutes from "./routes/outbox.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -269,6 +270,7 @@ const startServer = async () => {
     app.use("/api/users", userLimiter, userRoutes);
     app.use("/api/expenses", userLimiter, expenseRoutes);
     app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
+    app.use("/api/outbox", userLimiter, outboxRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);

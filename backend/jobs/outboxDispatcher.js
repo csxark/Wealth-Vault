@@ -2,6 +2,8 @@ import outboxService from '../services/outboxService.js';
 import logger from '../utils/logger.js';
 import EventEmitter from 'events';
 import ConcurrencyLimiter from '../utils/ConcurrencyLimiter.js';
+import outboxSequenceService from '../services/outboxSequenceService.js';
+import projectionService from '../services/projectionService.js';
 
 /**
  * Outbox Dispatcher - Background job for processing and publishing outbox events
@@ -222,6 +224,71 @@ class OutboxDispatcher extends EventEmitter {
         try {
             // Mark as processing (atomic claim with row locking)
             await outboxService.markAsProcessing(event.id);
+
+            // Issue #571: Enforce event ordering and consumer idempotency
+            // Extract aggregate info from event payload
+            const aggregateId = event.aggregateId || event.payload?.aggregateId;
+            const aggregateType = event.aggregateType || event.payload?.aggregateType;
+            const tenantId = event.tenantId || event.payload?.tenantId;
+
+            if (aggregateId && aggregateType && tenantId) {
+              // Assign sequence number to this event
+              const eventSequence = await outboxSequenceService.assignEventSequence({
+                tenantId,
+                aggregateId,
+                aggregateType,
+                eventId: event.id,
+              });
+
+              // Check for ordering violations (gaps, duplicates, out-of-order)
+              const violation = await outboxSequenceService.detectViolation({
+                tenantId,
+                aggregateId,
+                aggregateType,
+                eventSequence,
+              });
+
+              if (violation.violated) {
+                logger.warn("Event sequence violation detected", {
+                  eventId: event.id,
+                  violationType: violation.violationType,
+                  expectedSequence: violation.expectedSequence,
+                  actualSequence: violation.actualSequence,
+                  gapSize: violation.gapSize,
+                });
+
+                // Log violation for alerting and analysis
+                await outboxSequenceService.logViolation({
+                  tenantId,
+                  aggregateId,
+                  aggregateType,
+                  violationType: violation.violationType,
+                  expectedSequence: violation.expectedSequence,
+                  actualSequence: violation.actualSequence,
+                  gapSize: violation.gapSize,
+                  eventIds: [event.id],
+                  autoBackfilled: false,
+                  rootCause: `Event arrival out of sequence (detected during dispatch)`,
+                });
+
+                // Emit violation alert
+                this.emit("event:violation", {
+                  eventId: event.id,
+                  violationType: violation.violationType,
+                  severity: violation.gapSize > 10 ? "high" : "medium",
+                });
+              }
+
+              // Always record this event was processed by dispatcher if sequence was assigned
+              await outboxSequenceService.recordConsumerProcessing({
+                tenantId,
+                eventId: event.id,
+                consumerName: "outbox-dispatcher",
+                aggregateId,
+                aggregateType,
+                eventSequence,
+              });
+            }
 
             // Start heartbeat mechanism every 30 seconds
             // This prevents the event from being considered stuck if processing takes a long time
