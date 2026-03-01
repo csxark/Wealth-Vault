@@ -141,7 +141,7 @@ router.post(
       .withMessage("Please provide a valid email")
       .normalizeEmail(),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return next(new AppError(400, "Invalid email format", errors.array()));
@@ -242,7 +242,7 @@ router.post(
       .isLength({ min: 1, max: 50 })
       .withMessage("Last name is required and must be less than 50 characters"),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return next(new AppError(400, "Validation failed", errors.array()));
