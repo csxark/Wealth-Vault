@@ -13,6 +13,15 @@ import { deviceSessions, tokenBlacklist } from '../db/schema.js';
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
 
+// Cookie options for refresh tokens
+export const REFRESH_TOKEN_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+  path: '/api/auth'
+};
+
 export const generateAccessToken = (userId, sessionId = null) => {
   return jwt.sign(
     { 
