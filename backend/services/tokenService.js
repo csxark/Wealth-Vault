@@ -217,20 +217,23 @@ export const cleanupExpiredTokens = async () => {
   };
 };
 
-export const revokeDeviceSession = async (sessionId) => {
+export const revokeDeviceSession = async (sessionId, userId, reason = 'logout') => {
   // First get the session to blacklist the tokens
   const [session] = await dbRouter.primaryDb
     .select()
     .from(deviceSessions)
-    .where(eq(deviceSessions.id, sessionId));
+    .where(and(
+      eq(deviceSessions.id, sessionId),
+      eq(deviceSessions.userId, userId)
+    ));
 
   if (session) {
     // Blacklist the current tokens
     if (session.accessToken) {
-      await blacklistToken(session.accessToken, 'access', session.userId, 'logout');
+      await blacklistToken(session.accessToken, 'access', session.userId, reason);
     }
     if (session.refreshToken) {
-      await blacklistToken(session.refreshToken, 'refresh', session.userId, 'logout');
+      await blacklistToken(session.refreshToken, 'refresh', session.userId, reason);
     }
   }
 
@@ -243,10 +246,53 @@ export const revokeDeviceSession = async (sessionId) => {
   return { success: result.rowCount > 0 };
 };
 
-export const revokeAllUserSessions = async (userId) => {
-  return { success: true };
+export const revokeAllUserSessions = async (userId, reason = 'logout_all') => {
+  // Get all active sessions for the user
+  const sessions = await dbRouter.primaryDb
+    .select()
+    .from(deviceSessions)
+    .where(and(
+      eq(deviceSessions.userId, userId),
+      eq(deviceSessions.isActive, true)
+    ));
+
+  // Blacklist all tokens from active sessions
+  for (const session of sessions) {
+    if (session.accessToken) {
+      await blacklistToken(session.accessToken, 'access', userId, reason);
+    }
+    if (session.refreshToken) {
+      await blacklistToken(session.refreshToken, 'refresh', userId, reason);
+    }
+  }
+
+  // Deactivate all sessions
+  const result = await dbRouter.primaryDb
+    .update(deviceSessions)
+    .set({ isActive: false })
+    .where(eq(deviceSessions.userId, userId));
+
+  return { success: true, revokedCount: sessions.length };
 };
 
 export const getUserSessions = async (userId) => {
-  return [];
+  return await dbRouter.primaryDb
+    .select({
+      id: deviceSessions.id,
+      deviceId: deviceSessions.deviceId,
+      deviceName: deviceSessions.deviceName,
+      deviceType: deviceSessions.deviceType,
+      ipAddress: deviceSessions.ipAddress,
+      userAgent: deviceSessions.userAgent,
+      lastActivity: deviceSessions.lastActivity,
+      createdAt: deviceSessions.createdAt,
+      expiresAt: deviceSessions.expiresAt,
+      isActive: deviceSessions.isActive
+    })
+    .from(deviceSessions)
+    .where(and(
+      eq(deviceSessions.userId, userId),
+      eq(deviceSessions.isActive, true)
+    ))
+    .orderBy(deviceSessions.lastActivity);
 };
