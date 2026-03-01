@@ -398,34 +398,10 @@ const dispatcher = new OutboxDispatcher();
 dispatcher.on('tenant.created', async (event) => {
     logger.info('Handling tenant.created event', {
         eventId: event.id,
-        tenantId: event.aggregateId,
-        homeRegion: event.payload?.homeRegion || null
+        tenantId: event.aggregateId
     });
     // Add your tenant creation side effects here
     // e.g., send welcome email, create default categories, etc.
-});
-
-dispatcher.on('tenant.region_policy.updated', async (event) => {
-    logger.info('Handling tenant.region_policy.updated event', {
-        eventId: event.id,
-        tenantId: event.aggregateId,
-        homeRegion: event.payload?.homeRegion || null,
-        residencyMode: event.payload?.residencyPolicy?.mode || null
-    });
-});
-
-dispatcher.on('replication.*', async (event) => {
-    logger.info('Handling replication event', {
-        eventId: event.id,
-        eventType: event.eventType,
-        tenantId: event.tenantId,
-        sourceRegion: event.payload?.sourceRegion || null,
-        targetRegion: event.payload?.targetRegion || null,
-        dataClass: event.payload?.dataClass || null
-    });
-
-    // Placeholder for async cross-region publish.
-    // Integrate message bus / CDC / region-specific worker here.
 });
 
 dispatcher.on('tenant.member.invited', async (event) => {

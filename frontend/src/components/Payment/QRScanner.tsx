@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import QrScanner from 'qr-scanner';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 
 interface QRScannerProps {
   onScanSuccess: (upiData: UPIData) => void;
@@ -17,59 +17,91 @@ export interface UPIData {
 
 const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, onScanError }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const scannerRef = useRef<QrScanner | null>(null);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null); // null = not requested yet
+  const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   // Request permission on button click
-  const requestPermission = () => {
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-      .then(() => {
-        setHasPermission(true);
-      })
-      .catch(() => {
-        setHasPermission(false);
-        if (onScanError) {
-          onScanError('Camera permission denied. Please allow camera access to scan QR codes.');
-        }
+  const requestPermission = async () => {
+    try {
+      await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
       });
+      setHasPermission(true);
+    } catch (error) {
+      setHasPermission(false);
+      if (onScanError) {
+        onScanError('Camera permission denied. Please allow camera access to scan QR codes.');
+      }
+    }
   };
 
-  useEffect(() => {
+  const startScanning = useCallback(async () => {
     if (!videoRef.current || hasPermission !== true) return;
 
-    // Initialize and start scanner
-    if (!scannerRef.current) {
-      scannerRef.current = new QrScanner(
+    try {
+      setIsScanning(true);
+
+      // Initialize ZXing reader
+      const codeReader = new BrowserMultiFormatReader();
+      codeReaderRef.current = codeReader;
+
+      // Get available video devices
+      const videoDevices = await codeReader.listVideoInputDevices();
+      const selectedDevice = videoDevices.find(device =>
+        device.label.toLowerCase().includes('back') ||
+        device.label.toLowerCase().includes('environment')
+      ) || videoDevices[0];
+
+      if (!selectedDevice) {
+        throw new Error('No camera device found');
+      }
+
+      // Start decoding
+      await codeReader.decodeFromVideoDevice(
+        selectedDevice.deviceId,
         videoRef.current,
-        (result) => {
-          handleQRCode(result.data);
-        },
-        {
-          preferredCamera: 'environment',
-          highlightScanRegion: true,
-          highlightCodeOutline: true,
-          maxScansPerSecond: 5,
-          returnDetailedScanResult: true,
+        (result, error) => {
+          if (result) {
+            handleQRCode(result.getText());
+          }
+          if (error) {
+            console.warn('QR scan error:', error);
+          }
         }
       );
+    } catch (error) {
+      console.error('Error starting QR scanner:', error);
+      if (onScanError) {
+        onScanError('Failed to start camera. Please try again.');
+      }
+      setIsScanning(false);
     }
+  }, [hasPermission, onScanError]);
 
-    if (scannerRef.current) {
-      // QrScanner does not have isScanning() in all versions; just call start safely
-      scannerRef.current.start().catch((err) => {
-        if (onScanError) onScanError(err.message || 'Failed to start camera');
-      });
+  const stopScanning = useCallback(async () => {
+    if (codeReaderRef.current) {
+      try {
+        await codeReaderRef.current.reset();
+        codeReaderRef.current = null;
+      } catch (error) {
+        console.error('Error stopping scanner:', error);
+      }
+    }
+    setIsScanning(false);
+  }, []);
+
+  useEffect(() => {
+    if (hasPermission === true && !isScanning) {
+      startScanning();
     }
 
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.destroy();
-        scannerRef.current = null;
-      }
+      stopScanning();
     };
-  }, [hasPermission, onScanError]);
+  }, [hasPermission, isScanning, startScanning, stopScanning]);
 
-  const handleQRCode = (decodedText: string) => {
+  const handleQRCode = useCallback((decodedText: string) => {
     // Parse UPI QR code (format: upi://pay?pa=...&pn=...&am=...&tn=...)
     try {
       if (!decodedText.startsWith('upi://pay?')) {
@@ -87,13 +119,15 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, onScanError }) => 
       if (!upiData.pa || !upiData.pn) {
         throw new Error('Missing UPI ID or Payee Name');
       }
+      // Stop scanning after successful scan
+      stopScanning();
       onScanSuccess(upiData);
     } catch (error) {
       if (onScanError) {
         onScanError((error as Error).message);
       }
     }
-  };
+  }, [onScanSuccess, onScanError, stopScanning]);
 
   if (hasPermission === null) {
     // Permission not requested yet

@@ -25,6 +25,13 @@ services:
       PORT: 5000
       JWT_SECRET: your-secret-key-change-in-production
       JWT_EXPIRE: 7d
+      NODE_ENV: development
+      FRONTEND_URL: http://localhost:3000
+    volumes:
+      # Bind mount for hot-reloading
+      - ./backend:/app
+      # Anonymous volume to prevent node_modules from being overwritten
+      - /app/node_modules
     depends_on:
       - db
 
@@ -36,8 +43,16 @@ services:
     container_name: wealth-vault-frontend
     ports:
       - "3000:3002"
+    environment:
+      VITE_API_URL: http://localhost:5000
+    volumes:
+      # Bind mount for hot-reloading
+      - ./frontend:/app
+      # Anonymous volume to prevent node_modules from being overwritten
+      - /app/node_modules
     depends_on:
       - backend
 
 volumes:
   postgres_data:
+
