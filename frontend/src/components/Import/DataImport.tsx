@@ -1,14 +1,69 @@
-import React, { useState } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle, Download } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Upload, FileText, AlertCircle, CheckCircle, Download, Brain } from 'lucide-react';
 import Papa from 'papaparse';
-import type { Transaction } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
+// import { useToast } from '../../context/ToastContext';
+// import { expensesAPI } from '../../services/api';
 
 export const DataImport: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [categorizing, setCategorizing] = useState(false);
+  const [autoCategorize, setAutoCategorize] = useState(true);
   const [importResults, setImportResults] = useState<{ success: number; errors: string[] } | null>(null);
+  const [categorizationResults, setCategorizationResults] = useState<{ applied: number; skipped: number } | null>(null);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categoryMapping, setCategoryMapping] = useState<Record<string, string>>({
+    safe: '',
+    impulsive: '',
+    anxious: ''
+  });
   const { user } = useAuth();
+  // const { showToast } = useToast();
+
+  // Fetch user categories on component mount
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await categoriesAPI.getAll();
+        const userCategories = response.data.categories;
+
+        // Create mapping from spending categories to actual category IDs
+        const mapping: Record<SpendingCategory, string> = {
+          safe: '',
+          impulsive: '',
+          anxious: ''
+        };
+
+        // Try to find categories by name or create default mappings
+        userCategories.forEach((category: Category) => {
+          const name = category.name.toLowerCase();
+          if (name.includes('safe') || name.includes('essential') || name.includes('basic')) {
+            mapping.safe = category._id;
+          } else if (name.includes('impulsive') || name.includes('entertainment') || name.includes('shopping')) {
+            mapping.impulsive = category._id;
+          } else if (name.includes('anxious') || name.includes('emergency') || name.includes('urgent')) {
+            mapping.anxious = category._id;
+          }
+        });
+
+        // If no categories found, use the first available ones as fallbacks
+        if (!mapping.safe && userCategories.length > 0) mapping.safe = userCategories[0]._id;
+        if (!mapping.impulsive && userCategories.length > 1) mapping.impulsive = userCategories[1]._id;
+        if (!mapping.anxious && userCategories.length > 2) mapping.anxious = userCategories[2]._id;
+
+        setCategories(userCategories);
+        setCategoryMapping(mapping);
+      } catch (error) {
+        console.error('Failed to fetch categories:', error);
+        showToast('Failed to load categories. Please try again.', 'error');
+      }
+    };
+
+    if (user) {
+      fetchCategories();
+    }
+  }, [user, showToast]);
 
   const categorizeTransaction = (description: string, amount: number): 'safe' | 'impulsive' | 'anxious' => {
     const desc = description.toLowerCase();
@@ -28,17 +83,23 @@ export const DataImport: React.FC = () => {
     return 'safe';
   };
 
-  const processCSV = (file: File) => {
+  const processCSV = async (file: File) => {
     setImporting(true);
     setImportResults(null);
 
     Papa.parse(file, {
       header: true,
-      complete: (results) => {
+      complete: async (results) => {
         const errors: string[] = [];
-        const transactions: Transaction[] = [];
+        const expensesData: Array<{
+          amount: number;
+          description: string;
+          category: string;
+          date?: string;
+          paymentMethod?: string;
+        }> = [];
 
-        results.data.forEach((row: any, index) => {
+        results.data.forEach((row: Record<string, unknown>, index: number) => {
           try {
             // Expected CSV format: date, description, amount
             const date = row.date || row.Date || row.DATE;
@@ -50,34 +111,88 @@ export const DataImport: React.FC = () => {
               return;
             }
 
-            const transaction: Transaction = {
-              id: `import-${Date.now()}-${index}`,
-              user_id: user?.id || '',
+            // Categorize transaction and map to category ID
+            const spendingCategory = categorizeTransaction(description.toString(), Math.abs(amount));
+            const categoryId = categoryMapping[spendingCategory];
+
+            if (!categoryId) {
+              errors.push(`Row ${index + 1}: No matching category found for spending type "${spendingCategory}"`);
+              return;
+            }
+
+            expensesData.push({
               amount: amount,
               description: description.toString(),
-              category: categorizeTransaction(description.toString(), Math.abs(amount)),
-              date: new Date(date).toISOString(),
-              created_at: new Date().toISOString()
-            };
-
-            transactions.push(transaction);
-          } catch (error) {
-            errors.push(`Row ${index + 1}: ${error}`);
+              category: categoryId,
+              date: new Date(date as string).toISOString(),
+              paymentMethod: 'other'
+            });
+          } catch (error: any) {
+            errors.push(`Row ${index + 1}: ${error.message}`);
           }
         });
 
-        // Save to localStorage
-        const existingTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-        const updatedTransactions = [...existingTransactions, ...transactions];
-        localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+        if (expensesData.length === 0) {
+          setImportResults({
+            success: 0,
+            errors: ['No valid expenses to import']
+          });
+          setImporting(false);
+          return;
+        }
 
-        setImportResults({
-          success: transactions.length,
-          errors
-        });
+        try {
+          // Send to backend API
+          const response = await expensesAPI.import(expensesData);
+
+          setImportResults({
+            success: response.data.imported,
+            errors: response.data.errorDetails || []
+          });
+
+          // Auto-categorize imported expenses if enabled
+          if (response.data.imported > 0 && autoCategorize && response.data.expenseIds) {
+            setCategorizing(true);
+            try {
+              const categorizeResponse = await fetch('/api/expenses/categorize', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({
+                  expenseIds: response.data.expenseIds,
+                  autoApply: true
+                })
+              });
+
+              if (categorizeResponse.ok) {
+                const categorizeData = await categorizeResponse.json();
+                setCategorizationResults({
+                  applied: categorizeData.data.summary.applied,
+                  skipped: categorizeData.data.summary.skipped
+                });
+              }
+            } catch (categorizeError) {
+              console.error('Auto-categorization error:', categorizeError);
+            }
+            setCategorizing(false);
+          }
+
+          if (response.data.imported > 0) {
+            showToast(`Successfully imported ${response.data.imported} transactions`, 'success');
+          }
+        } catch (error: any) {
+          console.error('Import error:', error);
+          setImportResults({
+            success: 0,
+            errors: [`Failed to import expenses: ${error.message || 'Unknown error'}`]
+          });
+        }
+
         setImporting(false);
       },
-      error: (error) => {
+      error: (error: any) => {
         setImportResults({
           success: 0,
           errors: [`Failed to parse CSV: ${error.message}`]
@@ -208,6 +323,17 @@ export const DataImport: React.FC = () => {
               </div>
             )}
 
+            {categorizationResults && (
+              <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4 mb-4">
+                <div className="flex items-center">
+                  <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400 mr-2" />
+                  <span className="text-purple-800 dark:text-purple-200 font-medium">
+                    AI categorization: {categorizationResults.applied} applied, {categorizationResults.skipped} skipped
+                  </span>
+                </div>
+              </div>
+            )}
+
             {importResults.errors.length > 0 && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                 <div className="flex items-start">
@@ -238,9 +364,9 @@ export const DataImport: React.FC = () => {
           Privacy & Security
         </h3>
         <p className="text-cyan-800 dark:text-cyan-200 text-sm">
-          Your financial data is processed locally in your browser and stored securely. 
-          We never send your transaction details to external servers. All categorization 
-          happens on your device to protect your privacy.
+          Your financial data is processed securely on our servers and stored in your personal account.
+          All data is encrypted and only accessible by you. We use AI to automatically categorize
+          your transactions for better spending insights.
         </p>
       </div>
     </div>

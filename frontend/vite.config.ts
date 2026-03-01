@@ -1,5 +1,6 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path"
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -8,28 +9,31 @@ export default defineConfig({
   optimizeDeps: {
     // Pre-bundle lucide-react to ensure icons are bundled into vendor build
     // This prevents per-icon ESM requests (which can be blocked by ad-blockers)
-    include: ['lucide-react'],
+    include: ["lucide-react"],
   },
   server: {
     port: 3002,
     host: true,
     cors: true,
     hmr: {
-      protocol: 'ws',
-      host: 'localhost',
+      protocol: "ws",
+      host: "localhost",
       port: 3002,
     },
     proxy: {
-      '/api': {
-        target: 'http://localhost:5001',
+      "/api": {
+        target: "http://localhost:5000",
         changeOrigin: true,
         secure: false,
         ws: true,
-        rewrite: (path) => path.replace(/^\/api/, '/api'),
       },
     },
   },
-  define: {
-    'process.env.VITE_API_URL': JSON.stringify('http://localhost:5001/api'),
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
   },
+  // Allow environment variables to define API URL
+  // Falls back to proxy if not set
 });

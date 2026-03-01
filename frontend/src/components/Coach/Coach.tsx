@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, Zap, DollarSign, TrendingDown } from 'lucide-react';
 import type { ChatMessage } from '../../types';
-import { fetchGeminiResponse } from '../../services/gemini';
+import { useLoading } from '../../context/LoadingContext';
+import { analyticsAPI, goalsAPI, api } from '../../services/api';
 
 const quickReplies = [
   { text: "Help me reduce impulsive spending", icon: TrendingDown },
@@ -13,7 +14,12 @@ export const Coach: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [goalsData, setGoalsData] = useState<any>(null);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { withLoading } = useLoading();
 
   useEffect(() => {
     // Load messages from localStorage
@@ -43,16 +49,39 @@ export const Coach: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Async Gemini response
-  const generateGeminiResponse = async (userMessage: string): Promise<string> => {
-    const prompt = `
-You are an AI Financial Coach.
-Answer in a friendly, concise way.
-Give practical tips about budgeting, saving, and financial wellness.
-User: ${userMessage}
-Coach:
-    `;
-    return await fetchGeminiResponse(prompt);
+  // Fetch analytics and goals data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoadingData(true);
+      try {
+        const [analyticsResponse, goalsResponse] = await Promise.all([
+          analyticsAPI.getSpendingSummary(),
+          goalsAPI.getAll()
+        ]);
+        setAnalyticsData(analyticsResponse.data);
+        setGoalsData(goalsResponse.data);
+        setDataError(null);
+      } catch (error) {
+        console.error('Error fetching analytics and goals data:', error);
+        setDataError('Unable to load your financial data. Providing general advice instead.');
+        // Continue without data - coach can still provide general advice
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Async chatbot response using backend AI service
+  const generateChatbotResponse = async (userMessage: string): Promise<string> => {
+    try {
+      const response = await api.post('/chatbot', { message: userMessage });
+      return response.data.reply;
+    } catch (error) {
+      console.error('Error calling chatbot API:', error);
+      throw new Error('Failed to get AI response');
+    }
   };
 
   const handleSendMessage = async (content: string) => {
@@ -111,6 +140,29 @@ Coach:
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {dataError && (
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 mb-4">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">{dataError}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isLoadingData && (
+          <div className="flex justify-center mb-4">
+            <div className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-3">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Loading your financial data...</p>
+            </div>
+          </div>
+        )}
+
         {messages.map((message) => (
           <div
             key={message._id}
