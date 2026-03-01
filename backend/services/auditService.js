@@ -2,6 +2,8 @@ import db from '../config/db.js';
 import { auditLogs, stateDeltas, auditSnapshots } from '../db/schema.js';
 import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
 import crypto from 'crypto';
+import differentialLogCompression from './differentialLogCompression.js';
+import { logInfo, logWarn } from '../utils/logger.js';
 
 // Audit Action Types
 export const AuditActions = {
@@ -122,6 +124,8 @@ export const ResourceTypes = {
  * @param {string} params.status - 'success' or 'failure'
  * @param {string} params.ipAddress - Client IP address
  * @param {string} params.userAgent - Client user agent
+ * @param {boolean} params.useCompression - Whether to use compression (default: true)
+ * @param {string} params.tenantId - Tenant ID for compression context
  */
 export const logAuditEvent = async ({
   userId = null,
@@ -132,10 +136,11 @@ export const logAuditEvent = async ({
   status = 'success',
   ipAddress = null,
   userAgent = null,
+  useCompression = true,
+  tenantId = null,
 }) => {
   try {
-    // Perform async insert without blocking the main request
-    await db.insert(auditLogs).values({
+    const logEntry = {
       userId,
       action,
       resourceType,
@@ -144,7 +149,39 @@ export const logAuditEvent = async ({
       status,
       ipAddress,
       userAgent,
-    });
+      createdAt: new Date()
+    };
+
+    // Check if compression is enabled and should be used
+    if (useCompression && differentialLogCompression.compressionEnabled && tenantId) {
+      try {
+        // Compress the log entry
+        const compressionResult = await differentialLogCompression.compressLogEntry(logEntry, tenantId);
+
+        // Store compressed log in database
+        await db.execute(sql`
+          SELECT compress_audit_log(${tenantId}, ${JSON.stringify(logEntry)}, ${JSON.stringify(compressionResult.metadata)})
+        `);
+
+        logInfo('Audit log compressed and stored', {
+          tenantId,
+          compressionRatio: compressionResult.metadata.compressionRatio,
+          isDeltaEncoded: compressionResult.metadata.isDeltaEncoded
+        });
+
+        return;
+      } catch (compressionError) {
+        // Log compression failure but continue with uncompressed logging
+        logWarn('Audit log compression failed, falling back to uncompressed', {
+          error: compressionError.message,
+          tenantId
+        });
+      }
+    }
+
+    // Fallback to regular uncompressed logging
+    await db.insert(auditLogs).values(logEntry);
+
   } catch (error) {
     // Log error but don't throw - audit logging should not break main flow
     console.error('Audit logging failed:', error);
