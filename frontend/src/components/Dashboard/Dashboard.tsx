@@ -1,5 +1,5 @@
 import "../../chartjs-setup";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Line, Pie } from "react-chartjs-2";
 import {
   RefreshCw,
@@ -10,7 +10,8 @@ import {
   TrendingUp,
   Activity,
   IndianRupee,
-  AlertCircle
+  AlertCircle,
+  Bell
 } from 'lucide-react';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
@@ -18,20 +19,22 @@ import { TransactionSearch } from './TransactionSearch';
 import AddExpenseButton from './AddExpenseButton';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import SpendingAnalytics from './SpendingAnalytics';
+import { BudgetAlerts } from '../Budgets/BudgetAlerts';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
-import CurrencyConverter from '../CurrencyConvert.jsx';
-import { useTheme } from '../../hooks/useTheme';
+import { useLoading } from '../../context/LoadingContext';
+import CurrencyConverter from '../CurrencyConvert';
 
 interface DashboardProps {
   paymentMade?: boolean;
 }
 
-type TabType = "overview" | "transactions" | "analytics" | "categories";
+type TabType = "overview" | "transactions" | "analytics" | "categories" | "budget-alerts";
 
 const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const { showToast } = useToast();
+  const { withLoading } = useLoading();
 
   // Tabs + Filters
   const [activeTab, setActiveTab] = useState<TabType>("overview");
@@ -69,6 +72,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     { id: "transactions" as TabType, label: "Transactions", icon: Receipt },
     { id: "analytics" as TabType, label: "Analytics", icon: BarChart3 },
     { id: "categories" as TabType, label: "Categories", icon: PieChart },
+    { id: "budget-alerts" as TabType, label: "Budget Alerts", icon: Bell },
   ];
 
   // Format amount
@@ -86,7 +90,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   };
 
   // Filter expenses by time range
-  const getFilteredExpensesByTimeRange = (allExpenses: Expense[]) => {
+  const getFilteredExpensesByTimeRange = useCallback((allExpenses: Expense[]) => {
     const now = new Date();
     let startDate: Date;
 
@@ -111,7 +115,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     }
 
     return allExpenses.filter((t) => new Date(t.date) >= startDate);
-  };
+  }, [timeRange]);
 
   // Fetch expenses
   useEffect(() => {
@@ -120,7 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       setError(null);
 
       try {
-        const res = await expensesAPI.getAll();
+        const res = await withLoading(expensesAPI.getAll(), 'Loading expenses...');
         const allExpenses: Expense[] = res.data.expenses || [];
 
         setExpenses(allExpenses);
@@ -185,7 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     };
 
     fetchExpenses();
-  }, [paymentMade, showToast]);
+  }, [paymentMade, showToast, getFilteredExpensesByTimeRange]);
 
   // Initialize filtered expenses when expenses change
   useEffect(() => {
@@ -312,7 +316,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
       description:
         expense.description ||
         (expense.merchantName ? `Paid to ${expense.merchantName}` : "Expense"),
-      category: expense.category.toLowerCase() as "safe" | "impulsive" | "anxious",
+      category: expense.category.toLowerCase(),
       date: new Date().toISOString().slice(0, 10),
       paymentMethod: "other",
       isRecurring: false,
@@ -702,6 +706,13 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Budget Alerts Tab */}
+              {activeTab === 'budget-alerts' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <BudgetAlerts />
                 </div>
               )}
             </div>

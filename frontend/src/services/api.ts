@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { User, Expense, Category, Goal } from '../types';
+import { User, Expense, Category, Goal, RecurringExpense, RecurringExpenseFormData, BudgetAlert, Vault, VaultWithRole, VaultMember, VaultBalance } from '../types';
 
 // Use environment variable for API URL
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -34,10 +34,30 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor for error handling
+// Flag to prevent multiple simultaneous refresh attempts
+let isRefreshing = false;
+// Store failed requests while refreshing
+let failedRequestsQueue: Array<{
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}> = [];
+
+// Process queued requests after token refresh
+const processQueue = (error: AxiosError | null, newAccessToken?: string) => {
+  failedRequestsQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(newAccessToken);
+    }
+  });
+  failedRequestsQueue = [];
+};
+
+// Response interceptor for error handling with auto-refresh
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     // Enhanced error logging
     if (error.response) {
       console.error('API Error Response:', {
@@ -58,13 +78,69 @@ api.interceptors.response.use(
       console.error('API Setup Error:', error.message);
     }
 
+    const originalRequest = error.config as { _retry?: boolean } & Record<string, unknown>;
+
+    // Handle 401 errors - try to refresh token using HttpOnly cookie
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      // Skip for dev mode
+      const token = localStorage.getItem('authToken');
+      if (token === 'dev-mock-token-123') {
+        return Promise.reject(error);
+      }
+
+      // If already refreshing, add to queue
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedRequestsQueue.push({ resolve, reject });
+        }).then((token) => {
+          originalRequest.headers = originalRequest.headers || {};
+          (originalRequest.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+          return api(originalRequest);
+        });
+      }
+
+      // Mark as retrying
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        // Call refresh endpoint - it will use the HttpOnly cookie automatically
+        const response = await api.post('/auth/refresh');
+        const { accessToken } = response.data.data;
+
+        // Update the access token in localStorage
+        localStorage.setItem('authToken', accessToken);
+
+        // Process queued requests
+        processQueue(null, accessToken);
+
+        // Retry the original request with new token
+        originalRequest.headers = originalRequest.headers || {};
+        (originalRequest.headers as Record<string, string>)['Authorization'] = `Bearer ${accessToken}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        // Refresh failed - process queue with error
+        processQueue(refreshError as AxiosError, undefined);
+        
+        // Clear tokens and redirect to login
+        localStorage.removeItem('authToken');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    // For other 401 errors (not token expiry), clear tokens
     if (error.response?.status === 401) {
-      // Token expired or invalid
       const token = localStorage.getItem('authToken');
       // Don't clear dev bypass token
       if (token !== 'dev-mock-token-123') {
         localStorage.removeItem('authToken');
-        window.location.href = '/login';
+        // Only redirect if not already on login page
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
@@ -89,15 +165,18 @@ const generateMockExpenses = (count: number = 20): Expense[] => {
     date.setDate(date.getDate() - daysAgo);
     
     expenses.push({
-      _id: `mock-expense-${i}`,
-      user: 'dev-user-001',
+      id: `mock-expense-${i}`,
+      userId: 'dev-user-001',
       amount: Math.floor(Math.random() * 5000) + 100,
+      currency: 'INR',
       category: categories[Math.floor(Math.random() * categories.length)] as 'safe' | 'impulsive' | 'anxious',
       description: descriptions[Math.floor(Math.random() * descriptions.length)],
       date: date.toISOString(),
       paymentMethod: paymentMethods[Math.floor(Math.random() * paymentMethods.length)] as 'cash' | 'card' | 'upi' | 'netbanking',
-      createdAt: date.toISOString(),
-      updatedAt: date.toISOString()
+      isRecurring: false,
+      status: 'completed',
+      created_at: date.toISOString(),
+      updated_at: date.toISOString()
     });
   }
   
@@ -105,7 +184,7 @@ const generateMockExpenses = (count: number = 20): Expense[] => {
 };
 
 // Generic API request function with enhanced error handling
-const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> => {
+const apiRequest = async <T>(endpoint: string, options: { method?: string; params?: Record<string, unknown>; data?: unknown } = {}): Promise<T> => {
   // Check if we're in dev mode
   const token = localStorage.getItem('authToken');
   if (token === 'dev-mock-token-123') {
@@ -247,7 +326,7 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       const newGoal = {
         _id: `mock-goal-${Date.now()}`,
         user: 'dev-user-001',
-        ...options.data,
+        ...(options.data as object),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -281,7 +360,7 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       // Update goal
       const goalId = endpoint.split('/')[2];
       const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
-      const index = mockGoals.findIndex((g: any) => g._id === goalId);
+      const index = mockGoals.findIndex((g: { _id: string }) => g._id === goalId);
       if (index !== -1) {
         mockGoals[index] = { ...mockGoals[index], ...options.data, updatedAt: new Date().toISOString() };
         localStorage.setItem('mockGoals', JSON.stringify(mockGoals));
@@ -297,7 +376,7 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       // Delete goal
       const goalId = endpoint.split('/')[2];
       const mockGoals = JSON.parse(localStorage.getItem('mockGoals') || '[]');
-      const filtered = mockGoals.filter((g: any) => g._id !== goalId);
+      const filtered = mockGoals.filter((g: { _id: string }) => g._id !== goalId);
       localStorage.setItem('mockGoals', JSON.stringify(filtered));
       return {
         success: true,
@@ -319,7 +398,7 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       ...options,
     });
     return response.data;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Additional error processing
     if (axios.isAxiosError(error)) {
       // Extract meaningful error message
@@ -339,10 +418,14 @@ const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> =>
       console.error('API Request Failed:', errorDetails);
 
       // Create a more informative error object
-      const enhancedError = new Error(errorMessage);
-      (enhancedError as any).status = error.response?.status;
-      (enhancedError as any).response = error.response;
-      (enhancedError as any).details = errorDetails;
+      const enhancedError = new Error(errorMessage) as Error & {
+        status?: number;
+        response?: unknown;
+        details?: unknown;
+      };
+      enhancedError.status = error.response?.status;
+      enhancedError.response = error.response;
+      enhancedError.details = errorDetails;
       
       throw enhancedError;
     }
@@ -392,15 +475,20 @@ export const authAPI = {
   },
 
   // Login user
-  login: async (credentials: { email: string; password: string }) => {
+  login: async (credentials: { email: string; password: string; mfaToken?: string }) => {
     // Validate required fields
     if (!credentials.email || !credentials.password) {
       throw new Error('Email and password are required');
     }
 
-    console.log('Logging in user:', { email: credentials.email });
+    console.log('Logging in user:', { email: credentials.email, hasMfaToken: !!credentials.mfaToken });
 
-    return apiRequest<{ success: boolean; data: { user: User; token: string } }>('/auth/login', {
+    return apiRequest<{
+      success: boolean;
+      data?: { user: User; token: string };
+      mfaRequired?: boolean;
+      message?: string;
+    }>('/auth/login', {
       method: 'POST',
       data: credentials,
     });
@@ -448,6 +536,66 @@ export const authAPI = {
       method: 'POST',
     });
   },
+
+  // MFA Setup - Generate secret and QR code
+  setupMFA: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        secret: string;
+        otpauth_url: string;
+        qr_code: string;
+      }
+    }>('/auth/mfa/setup', {
+      method: 'POST',
+    });
+  },
+
+  // MFA Verify - Enable MFA after setup
+  verifyMFA: async (token: string) => {
+    return apiRequest<{ success: boolean; message: string }>('/auth/mfa/verify', {
+      method: 'POST',
+      data: { token },
+    });
+  },
+
+  // MFA Disable
+  disableMFA: async (password: string) => {
+    return apiRequest<{ success: boolean; message: string }>('/auth/mfa/disable', {
+      method: 'POST',
+      data: { password },
+    });
+  },
+
+  // Get MFA recovery codes
+  getRecoveryCodes: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: { codes: string[] }
+    }>('/auth/mfa/recovery-codes');
+  },
+
+  // Regenerate MFA recovery codes
+  regenerateRecoveryCodes: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: { codes: string[] }
+    }>('/auth/mfa/regenerate-recovery-codes', {
+      method: 'POST',
+    });
+  },
+
+  // Get MFA status
+  getMFAStatus: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        enabled: boolean;
+        hasRecoveryCodes: boolean;
+        recoveryCodesCount: number;
+      }
+    }>('/auth/mfa/status');
+  },
 };
 
 // Expenses API
@@ -489,7 +637,7 @@ export const expensesAPI = {
   },
 
   // Create new expense
-  create: async (expenseData: Omit<Expense, '_id' | 'user' | 'createdAt' | 'updatedAt'>) => {
+  create: async (expenseData: Omit<Expense, 'id' | 'userId' | 'created_at' | 'updated_at'>) => {
     return apiRequest<{ success: boolean; data: { expense: Expense } }>('/expenses', {
       method: 'POST',
       data: expenseData,
@@ -528,6 +676,86 @@ export const expensesAPI = {
       method: 'GET',
       params,
     });
+  },
+
+  // Import expenses from CSV data
+  import: async (expensesData: Array<{
+    amount: number;
+    description: string;
+    category: string;
+    date?: string;
+    paymentMethod?: string;
+    location?: string;
+    tags?: string[];
+    isRecurring?: boolean;
+    recurringPattern?: string;
+    notes?: string;
+    subcategory?: string;
+  }>) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      data: {
+        imported: number;
+        errors: number;
+        errorDetails: string[];
+      };
+    }>('/expenses/import', {
+      method: 'POST',
+      data: { expenses: expensesData },
+    });
+  },
+
+  // Recurring Expenses API
+  recurringExpenses: {
+    // Get all recurring expenses
+    getAll: async (params?: {
+      isActive?: boolean;
+      category?: string;
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        data: { recurringExpenses: RecurringExpense[] };
+      }>('/expenses/recurring', {
+        method: 'GET',
+        params,
+      });
+    },
+
+    // Get recurring expense by ID
+    getById: async (id: string) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>(`/expenses/recurring/${id}`);
+    },
+
+    // Create new recurring expense
+    create: async (recurringExpenseData: RecurringExpenseFormData) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>('/expenses/recurring', {
+        method: 'POST',
+        data: recurringExpenseData,
+      });
+    },
+
+    // Update recurring expense
+    update: async (id: string, recurringExpenseData: Partial<RecurringExpenseFormData & { isActive?: boolean; isPaused?: boolean }>) => {
+      return apiRequest<{ success: boolean; data: { recurringExpense: RecurringExpense } }>(`/expenses/recurring/${id}`, {
+        method: 'PUT',
+        data: recurringExpenseData,
+      });
+    },
+
+    // Delete recurring expense
+    delete: async (id: string) => {
+      return apiRequest<{ success: boolean; message: string }>(`/expenses/recurring/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    // Manually trigger recurring expense generation (for testing)
+    triggerGeneration: async () => {
+      return apiRequest<{ success: boolean; message: string; data: { generatedExpenses: Expense[] } }>('/expenses/recurring/trigger', {
+        method: 'POST',
+      });
+    },
   },
 };
 
@@ -714,7 +942,7 @@ export const analyticsAPI = {
           amount: number;
           description: string;
           date: string;
-          category: any;
+          category: { name: string; color: string; icon?: string } | null;
         }>;
         paymentMethods: Array<{
           method: string;
@@ -789,25 +1017,25 @@ export const analyticsAPI = {
     endDate?: string;
   }) => {
     const token = localStorage.getItem('authToken');
-    
+
     // Handle dev mode
     if (token === 'dev-mock-token-123') {
       const mockData = generateMockExpenses(100);
-      
+
       if (params?.format === 'csv') {
         const csvHeader = 'Date,Amount,Currency,Description,Category,Payment Method\n';
-        const csvRows = mockData.map(expense => 
+        const csvRows = mockData.map(expense =>
           `${expense.date.split('T')[0]},${expense.amount},INR,"${expense.description}","${expense.category}","${expense.paymentMethod}"`
         ).join('\n');
-        
+
         const csvContent = csvHeader + csvRows;
         const blob = new Blob([csvContent], { type: 'text/csv' });
-        
+
         // Create a mock response that mimics the fetch API
         return {
           blob: () => Promise.resolve(blob),
           json: () => Promise.resolve({ data: mockData })
-        } as any;
+        } as Response;
       } else {
         const jsonData = {
           exportInfo: {
@@ -818,11 +1046,11 @@ export const analyticsAPI = {
           },
           expenses: mockData
         };
-        
+
         return {
           blob: () => Promise.resolve(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' })),
           json: () => Promise.resolve(jsonData)
-        } as any;
+        } as Response;
       }
     }
 
@@ -843,14 +1071,838 @@ export const analyticsAPI = {
 
     return response;
   },
+
+  // Get smart spending analysis with AI-powered insights
+  getSmartSpendingAnalysis: async (params?: {
+    timeRange?: '30days' | '90days' | '6months' | '1year';
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        status: 'success' | 'insufficient_data';
+        patternAnalysis: {
+          patterns: {
+            safe: { score: number; indicators: string[]; transactions: string[] };
+            impulsive: { score: number; indicators: string[]; transactions: string[] };
+            anxious: { score: number; indicators: string[]; transactions: string[] };
+          };
+          dominantPattern: string;
+          dominantScore: number;
+          patternDistribution: { safe: number; impulsive: number; anxious: number };
+        };
+        behavioralInsights: Array<{
+          type: string;
+          title: string;
+          description: string;
+          severity: 'low' | 'medium' | 'high';
+          data: any;
+        }>;
+        riskAssessment: {
+          riskLevel: 'low' | 'medium' | 'high';
+          riskFactors: string[];
+          riskScore: number;
+          recommendations: string[];
+        };
+        recommendations: Array<{
+          type: string;
+          priority: 'low' | 'medium' | 'high';
+          title: string;
+          description: string;
+          actions: string[];
+        }>;
+        totalTransactions: number;
+        totalAmount: number;
+      };
+    }>('/analytics/smart-spending-analysis', {
+      method: 'GET',
+      params,
+    });
+  },
+};
+
+// Budget Alerts API
+export const budgetAlertsAPI = {
+  // Get all budget alerts
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
+    categoryId?: string;
+    threshold?: number;
+    period?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        alerts: BudgetAlert[];
+        pagination: {
+          currentPage: number;
+          totalPages: number;
+          totalItems: number;
+          itemsPerPage: number;
+        };
+      };
+    }>('/budget-alerts', {
+      method: 'GET',
+      params,
+    });
+  },
+
+  // Get budget alert by ID
+  getById: async (id: string) => {
+    return apiRequest<{ success: boolean; data: { alert: BudgetAlert } }>(`/budget-alerts/${id}`);
+  },
+
+  // Delete budget alert
+  delete: async (id: string) => {
+    return apiRequest<{ success: boolean; message: string }>(`/budget-alerts/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Get budget alerts statistics
+  getStats: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        summary: { total: number };
+        byThreshold: Array<{ threshold: number; count: number }>;
+        byCategory: Array<{ categoryName: string; count: number }>;
+      };
+    }>('/budget-alerts/stats/summary');
+  },
+
+  // Test budget alert triggering
+  test: async (data: { categoryId: string; amount: number }) => {
+    return apiRequest<{ success: boolean; message: string }>('/budget-alerts/test', {
+      method: 'POST',
+      data,
+    });
+  },
+};
+
+// Investment API Types
+export interface Portfolio {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  currency: string;
+  totalValue: string;
+  totalCost: string;
+  totalGainLoss: string;
+  totalGainLossPercent: string;
+  isActive: boolean;
+  riskTolerance: string;
+  investmentStrategy?: string;
+  targetAllocation: Record<string, number>;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Investment {
+  id: string;
+  portfolioId: string;
+  userId: string;
+  symbol: string;
+  name: string;
+  type: 'stock' | 'etf' | 'mutual_fund' | 'bond' | 'crypto';
+  assetClass: string;
+  sector?: string;
+  country: string;
+  currency: string;
+  quantity: string;
+  averageCost: string;
+  currentPrice?: string;
+  marketValue?: string;
+  totalCost: string;
+  unrealizedGainLoss?: string;
+  unrealizedGainLossPercent?: string;
+  dividendYield?: number;
+  peRatio?: number;
+  marketCap?: string;
+  lastPriceUpdate?: string;
+  isActive: boolean;
+  tags: string[];
+  notes?: string;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvestmentTransaction {
+  id: string;
+  investmentId: string;
+  portfolioId: string;
+  userId: string;
+  type: 'buy' | 'sell' | 'dividend' | 'split' | 'fee';
+  quantity: string;
+  price: string;
+  totalAmount: string;
+  fees: string;
+  currency: string;
+  exchangeRate: number;
+  date: string;
+  broker?: string;
+  orderId?: string;
+  notes?: string;
+  metadata: Record<string, any>;
+  createdAt: string;
+}
+
+// Investment API
+export const investmentsAPI = {
+  // Portfolio CRUD
+  portfolios: {
+    // Get all portfolios
+    getAll: async () => {
+      return apiRequest<{
+        success: boolean;
+        data: Portfolio[];
+      }>('/investments/portfolios');
+    },
+
+    // Get portfolio by ID
+    getById: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: Portfolio;
+      }>(`/investments/portfolios/${id}`);
+    },
+
+    // Create new portfolio
+    create: async (portfolioData: Omit<Portfolio, 'id' | 'userId' | 'totalValue' | 'totalCost' | 'totalGainLoss' | 'totalGainLossPercent' | 'createdAt' | 'updatedAt'>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: Portfolio;
+      }>('/investments/portfolios', {
+        method: 'POST',
+        data: portfolioData,
+      });
+    },
+
+    // Update portfolio
+    update: async (id: string, portfolioData: Partial<Portfolio>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: Portfolio;
+      }>(`/investments/portfolios/${id}`, {
+        method: 'PUT',
+        data: portfolioData,
+      });
+    },
+
+    // Delete portfolio
+    delete: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/investments/portfolios/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    // Get portfolio summary
+    getSummary: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          portfolio: Portfolio;
+          investments: Investment[];
+          totalValue: number;
+          totalCost: number;
+          totalGainLoss: number;
+          totalGainLossPercent: number;
+          investmentCount: number;
+        };
+      }>(`/investments/portfolios/${id}/summary`);
+    },
+
+    // Update portfolio prices
+    updatePrices: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: {
+          updated: number;
+          failed: number;
+          updates: Array<{
+            investmentId: string;
+            symbol: string;
+            oldPrice?: string;
+            newPrice: string;
+          }>;
+          failures: Array<{
+            investmentId: string;
+            symbol: string;
+            error: string;
+          }>;
+        };
+      }>(`/investments/portfolios/${id}/update-prices`, {
+        method: 'POST',
+      });
+    },
+
+    // Rebalancing API
+    getRebalancingAlerts: async (portfolioId: string, threshold: number = 5, includeResolved: boolean = false) => {
+      return apiRequest<any>(`/investments/portfolios/${portfolioId}/rebalancing/alerts`, {
+        method: 'GET',
+        params: { threshold, includeResolved },
+      });
+    },
+
+    getRebalancingRecommendations: async (portfolioId: string, options: any = {}) => {
+      return apiRequest<any>(`/investments/portfolios/${portfolioId}/rebalancing/recommendations`, {
+        method: 'GET',
+        params: options,
+      });
+    },
+
+    executeRebalancing: async (portfolioId: string, rebalanceData: any) => {
+      return apiRequest<any>(`/investments/portfolios/${portfolioId}/rebalancing/execute`, {
+        method: 'POST',
+        data: rebalanceData,
+      });
+    },
+
+    getRebalancingHistory: async (portfolioId: string, options: any = {}) => {
+      return apiRequest<any>(`/investments/portfolios/${portfolioId}/rebalancing/history`, {
+        method: 'GET',
+        params: options,
+      });
+    },
+
+    getRebalancingSettings: async (portfolioId: string) => {
+      return apiRequest<any>(`/investments/portfolios/${portfolioId}/rebalancing/settings`);
+    },
+
+    updateRebalancingSettings: async (portfolioId: string, settings: any) => {
+      return apiRequest<any>(`/investments/portfolios/${portfolioId}/rebalancing/settings`, {
+        method: 'PUT',
+        data: settings,
+      });
+    },
+  },
+
+  // Investment CRUD
+  investments: {
+    // Get all investments
+    getAll: async (params?: {
+      portfolioId?: string;
+      type?: string;
+      isActive?: boolean;
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        data: Investment[];
+      }>('/investments', {
+        method: 'GET',
+        params,
+      });
+    },
+
+    // Get investment by ID
+    getById: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: Investment;
+      }>(`/investments/${id}`);
+    },
+
+    // Create new investment
+    create: async (investmentData: Omit<Investment, 'id' | 'userId' | 'currentPrice' | 'marketValue' | 'unrealizedGainLoss' | 'unrealizedGainLossPercent' | 'lastPriceUpdate' | 'createdAt' | 'updatedAt'>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: Investment;
+      }>('/investments', {
+        method: 'POST',
+        data: investmentData,
+      });
+    },
+
+    // Update investment
+    update: async (id: string, investmentData: Partial<Investment>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: Investment;
+      }>(`/investments/${id}`, {
+        method: 'PUT',
+        data: investmentData,
+      });
+    },
+
+    // Delete investment
+    delete: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/investments/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    // Get investment transactions
+    getTransactions: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: InvestmentTransaction[];
+      }>(`/investments/${id}/transactions`);
+    },
+
+    // Add transaction to investment
+    addTransaction: async (id: string, transactionData: Omit<InvestmentTransaction, 'id' | 'investmentId' | 'portfolioId' | 'userId' | 'createdAt'>) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: InvestmentTransaction;
+      }>(`/investments/${id}/transactions`, {
+        method: 'POST',
+        data: transactionData,
+      });
+    },
+
+    // Get price history
+    getPriceHistory: async (id: string, days: number = 30) => {
+      return apiRequest<{
+        success: boolean;
+        data: Array<{
+          id: string;
+          investmentId: string;
+          symbol: string;
+          date: string;
+          open?: string;
+          high?: string;
+          low?: string;
+          close: string;
+          volume?: number;
+          adjustedClose?: string;
+          dividend?: string;
+          splitRatio: number;
+          currency: string;
+          source: string;
+          createdAt: string;
+        }>;
+      }>(`/investments/${id}/price-history`, {
+        method: 'GET',
+        params: { days },
+      });
+    },
+
+    // Get investment analytics
+    getAnalytics: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          investmentId: string;
+          symbol: string;
+          name: string;
+          totalReturn: number;
+          totalReturnPercent: number;
+          annualizedReturn: number;
+          volatility: number;
+          sharpeRatio: number;
+          maxDrawdown: number;
+          beta?: number;
+          alpha?: number;
+          dividendYield?: number;
+          peRatio?: number;
+          marketCap?: string;
+          totalTransactions: number;
+          firstPurchaseDate: string;
+          lastTransactionDate: string;
+          holdingPeriodDays: number;
+          performanceHistory: Array<{
+            date: string;
+            value: number;
+            return: number;
+          }>;
+        };
+      }>(`/investments/${id}/analytics`);
+    },
+  },
+
+  // Analytics
+  analytics: {
+    // Get portfolio analytics
+    getPortfolioAnalytics: async (portfolioId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          portfolioId: string;
+          portfolioName: string;
+          totalValue: number;
+          totalCost: number;
+          totalReturn: number;
+          totalReturnPercent: number;
+          annualizedReturn: number;
+          volatility: number;
+          sharpeRatio: number;
+          maxDrawdown: number;
+          diversificationScore: number;
+          riskAdjustedReturn: number;
+          allocation: {
+            byAssetClass: Record<string, { value: number; percentage: number }>;
+            bySector: Record<string, { value: number; percentage: number }>;
+            byType: Record<string, { value: number; percentage: number }>;
+          };
+          topPerformers: Array<{
+            investmentId: string;
+            symbol: string;
+            name: string;
+            returnPercent: number;
+            contributionToPortfolio: number;
+          }>;
+          worstPerformers: Array<{
+            investmentId: string;
+            symbol: string;
+            name: string;
+            returnPercent: number;
+            contributionToPortfolio: number;
+          }>;
+          performanceHistory: Array<{
+            date: string;
+            value: number;
+            return: number;
+          }>;
+        };
+      }>(`/investments/portfolios/${portfolioId}/analytics`);
+    },
+  },
+};
+
+// Vault API
+export const vaultAPI = {
+  // Vault CRUD
+  vaults: {
+    // Create a new vault
+    create: async (vaultData: { name: string; description?: string; currency?: string }) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>('/vaults', {
+        method: 'POST',
+        data: vaultData,
+      });
+    },
+
+    // Get all vaults user is a member of
+    getAll: async () => {
+      return apiRequest<{
+        success: boolean;
+        data: VaultWithRole[];
+        message: string;
+      }>('/vaults');
+    },
+
+    // Get vault by ID
+    getById: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>(`/vaults/${id}`);
+    },
+
+    // Update vault
+    update: async (id: string, vaultData: Partial<Vault>) => {
+      return apiRequest<{
+        success: boolean;
+        data: Vault;
+        message: string;
+      }>(`/vaults/${id}`, {
+        method: 'PUT',
+        data: vaultData,
+      });
+    },
+
+    // Delete vault
+    delete: async (id: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>(`/vaults/${id}`, {
+        method: 'DELETE',
+      });
+    },
+  },
+
+  // Vault members
+  members: {
+    // Get vault members
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: VaultMember[];
+        message: string;
+      }>(`/vaults/${vaultId}/members`);
+    },
+  },
+
+  // Vault invites
+  invites: {
+    // Invite user to vault
+    create: async (vaultId: string, inviteData: { email: string; role?: string }) => {
+      return apiRequest<{
+        success: boolean;
+        data: { inviteToken: string };
+        message: string;
+      }>(`/vaults/${vaultId}/invite`, {
+        method: 'POST',
+        data: inviteData,
+      });
+    },
+
+    // Accept vault invitation
+    accept: async (token: string) => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+      }>('/vaults/accept-invite', {
+        method: 'POST',
+        data: { token },
+      });
+    },
+  },
+
+  // Vault balances
+  balances: {
+    // Get vault balances
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: {
+          balances: VaultBalance[];
+          debtStructure: any; // Simplified debt structure
+        };
+        message: string;
+      }>(`/vaults/${vaultId}/balances`);
+    },
+  },
+
+  // Shared budgets
+  sharedBudgets: {
+    // Create shared budget
+    create: async (vaultId: string, budgetData: {
+      name: string;
+      description?: string;
+      totalBudget: number;
+      period?: string;
+      approvalRequired?: boolean;
+      approvalThreshold?: number;
+      categories?: string[];
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Shared budget object
+        message: string;
+      }>(`/vaults/${vaultId}/shared-budgets`, {
+        method: 'POST',
+        data: budgetData,
+      });
+    },
+
+    // Get shared budgets
+    getByVaultId: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any[]; // Array of shared budgets
+        message: string;
+      }>(`/vaults/${vaultId}/shared-budgets`);
+    },
+  },
+
+  // Expense approvals
+  expenseApprovals: {
+    // Get pending approvals
+    getPending: async (vaultId: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any[]; // Array of pending approvals
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals`);
+    },
+
+    // Approve expense
+    approve: async (vaultId: string, approvalId: string, notes?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Approval result
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals/${approvalId}/approve`, {
+        method: 'POST',
+        data: { notes },
+      });
+    },
+
+    // Reject expense
+    reject: async (vaultId: string, approvalId: string, notes?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Rejection result
+        message: string;
+      }>(`/vaults/${vaultId}/expense-approvals/${approvalId}/reject`, {
+        method: 'POST',
+        data: { notes },
+      });
+    },
+  },
+
+  // Budget utilization
+  budgetUtilization: {
+    // Get budget utilization report
+    getByVaultId: async (vaultId: string, period?: string) => {
+      return apiRequest<{
+        success: boolean;
+        data: any; // Budget utilization data
+        message: string;
+      }>(`/vaults/${vaultId}/budget-utilization`, {
+        method: 'GET',
+        params: { period },
+      });
+    },
+  },
+};
+
+// Gamification API Types
+export interface AchievementDefinition {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  tier: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+  pointsRequired: number;
+  criteria: {
+    type: string;
+    value: number;
+    metric: string;
+  };
+  rewardPoints: number;
+  rewardBadge: boolean;
+  isActive: boolean;
+  displayOrder: number;
+}
+
+export interface UserAchievement {
+  id: string;
+  progress: number;
+  isCompleted: boolean;
+  earnedAt: string;
+  completedAt: string;
+  achievementId: string;
+  code: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  tier: string;
+  rewardPoints: number;
+}
+
+export interface UserProgress {
+  points: number;
+  lifetimePoints: number;
+  level: number;
+  levelProgress: number;
+  pointsToNextLevel: number;
+  badges: number;
+  currentStreak: number;
+  longestStreak: number;
+  weeklyPoints: number;
+  monthlyPoints: number;
+  streaks: {
+    type: string;
+    current: number;
+    longest: number;
+  }[];
+  recentHistory: {
+    id: string;
+    points: number;
+    actionType: string;
+    description: string;
+    createdAt: string;
+  }[];
+}
+
+export interface UserStats {
+  totalAchievements: number;
+  earnedAchievements: number;
+  lifetimePoints: number;
+  pointsByAction: {
+    actionType: string;
+    total: number;
+  }[];
+  achievementsByTier: {
+    tier: string;
+    count: number;
+  }[];
+  completionPercentage: number;
+}
+
+export interface GamificationDashboard {
+  progress: UserProgress;
+  achievements: UserAchievement[];
+  availableAchievements: AchievementDefinition[];
+  stats: UserStats;
+  healthScore: {
+    score: number;
+    rating: string;
+  } | null;
+}
+
+// Gamification API
+const gamificationAPI = {
+  // Get user achievements
+  getAchievements: async () => {
+    return apiRequest<{ success: boolean; data: UserAchievement[] }>('/achievements');
+  },
+
+  // Get achievement progress
+  getProgress: async () => {
+    return apiRequest<{ success: boolean; data: UserProgress }>('/achievements/progress');
+  },
+
+  // Get available achievements
+  getAvailableAchievements: async () => {
+    return apiRequest<{ success: boolean; data: AchievementDefinition[] }>('/achievements/available');
+  },
+
+  // Get achievement statistics
+  getStats: async () => {
+    return apiRequest<{ success: boolean; data: UserStats }>('/achievements/stats');
+  },
+
+  // Get gamification dashboard
+  getDashboard: async () => {
+    return apiRequest<{ success: boolean; data: GamificationDashboard }>('/achievements/dashboard');
+  },
+
+  // Manually trigger achievement check
+  checkAchievements: async () => {
+    return apiRequest<{ success: boolean; data: AchievementDefinition[] }>('/achievements/check', {
+      method: 'POST',
+    });
+  },
 };
 
 // Export all APIs
+export { api };
 export default {
   auth: authAPI,
   expenses: expensesAPI,
   categories: categoriesAPI,
   goals: goalsAPI,
   analytics: analyticsAPI,
+  investments: investmentsAPI,
   health: healthAPI,
+  vaults: vaultAPI,
+  gamification: gamificationAPI,
 };

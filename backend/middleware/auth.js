@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { eq, and } from 'drizzle-orm';
 import db from '../config/db.js';
-import { users, deviceSessions } from '../db/schema.js';
+import { users } from '../db/schema.js';
 import * as schema from '../db/schema.js';
 import { verifyAccessToken, isTokenBlacklisted } from '../services/tokenService.js';
 import policyEngineService from '../services/policyEngineService.js';
@@ -12,7 +12,9 @@ const getTable = (modelName) => {
     'User': schema.users,
     'Expense': schema.expenses,
     'Category': schema.categories,
-    'Goal': schema.goals
+    'Goal': schema.goals,
+    'Asset': schema.fixedAssets,
+    'Investment': schema.investments
   };
   return map[modelName];
 };
@@ -47,32 +49,32 @@ export const protect = async (req, res, next) => {
         });
       }
 
-      // Verify session exists and is active
-      if (decoded.sessionId) {
-        const [session] = await db
-          .select()
-          .from(deviceSessions)
-          .where(
-            and(
-              eq(deviceSessions.id, decoded.sessionId),
-              eq(deviceSessions.userId, decoded.id),
-              eq(deviceSessions.isActive, true)
-            )
-          );
+      // TODO: Verify session exists and is active when deviceSessions table exists
+      // if (decoded.sessionId) {
+      //   const [session] = await db
+      //     .select()
+      //     .from(deviceSessions)
+      //     .where(
+      //       and(
+      //         eq(deviceSessions.id, decoded.sessionId),
+      //         eq(deviceSessions.userId, decoded.id),
+      //         eq(deviceSessions.isActive, true)
+      //       )
+      //     );
 
-        if (!session) {
-          return res.status(401).json({
-            success: false,
-            message: 'Session not found or expired.',
-            code: 'SESSION_EXPIRED'
-          });
-        }
+      //   if (!session) {
+      //     return res.status(401).json({
+      //       success: false,
+      //       message: 'Session not found or expired.',
+      //       code: 'SESSION_EXPIRED'
+      //     });
+      //   }
 
-        // Update last activity
-        await db.update(deviceSessions)
-          .set({ lastActivity: new Date() })
-          .where(eq(deviceSessions.id, session.id));
-      }
+      //   // Update last activity
+      //   await db.update(deviceSessions)
+      //     .set({ lastActivity: new Date() })
+      //     .where(eq(deviceSessions.id, session.id));
+      // }
 
       // Get user from token
       const [user] = await db.select().from(users).where(eq(users.id, decoded.id));
@@ -100,7 +102,7 @@ export const protect = async (req, res, next) => {
       req.user = user;
       req.sessionId = decoded.sessionId;
       req.tokenExp = decoded.exp;
-      
+
       next();
     } catch (error) {
       console.error('Token verification error:', error);
@@ -146,12 +148,12 @@ export const protect = async (req, res, next) => {
   }
 };
 
-// Middleware to check if user is the owner of the resource
+// Middleware to check if user is the owner of the resource or has access via vault
 export const checkOwnership = (modelName) => {
   return async (req, res, next) => {
     try {
-      const resourceId = req.params.id;
-      const userId = req.user.id; // Drizzle user object has 'id', not '_id'
+      const resourceId = req.params.id || req.params.expenseId || req.params.goalId;
+      const userId = req.user.id;
 
       const table = getTable(modelName);
       if (!table) {
@@ -200,8 +202,28 @@ export const checkOwnership = (modelName) => {
         });
       }
 
-      req.resource = resource;
-      next();
+      // Check if resource belongs to a vault and user is a member
+      if (resource.vaultId) {
+        const [membership] = await db
+          .select()
+          .from(schema.vaultMembers)
+          .where(
+            and(
+              eq(schema.vaultMembers.vaultId, resource.vaultId),
+              eq(schema.vaultMembers.userId, userId)
+            )
+          );
+
+        if (membership) {
+          req.resource = resource;
+          return next();
+        }
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have permission to access this resource.'
+      });
     } catch (error) {
       console.error('Ownership check error:', error);
       return res.status(500).json({

@@ -2,10 +2,10 @@ import { useCallback } from 'react';
 import { useLoading } from '../context/LoadingContext';
 import { useError } from '../context/ErrorContext';
 
-interface UseAsyncOptions {
+interface UseAsyncOptions<T = unknown> {
   loadingMessage?: string;
-  onSuccess?: (data: any) => void;
-  onError?: (error: any) => void;
+  onSuccess?: (data: T) => void;
+  onError?: (error: Error | unknown) => void;
   showErrorToast?: boolean;
 }
 
@@ -33,7 +33,7 @@ export const useAsync = () => {
         }
         
         return result;
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (showErrorToast) {
           handleApiError(error);
         }

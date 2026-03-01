@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Blackbox AI",
+  "version": "4.4",
+  "description": "Blackbox AI extension",
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
