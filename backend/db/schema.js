@@ -845,3 +845,6 @@ export * from './schema-drift-detection.js';
 
 // Export goal sharing schema tables
 export * from './schema-goal-sharing.js';
+
+// Export anomaly detection schema tables
+export * from './schema-anomaly-detection.js';

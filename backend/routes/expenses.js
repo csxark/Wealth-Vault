@@ -12,6 +12,7 @@ import { executeQuery } from "../utils/queryOptimization.js";
 import { trackQuery } from "../utils/queryPerformanceTracker.js";
 import sagaCoordinator from "../services/sagaCoordinator.js";
 import distributedTransactionService from "../services/distributedTransactionService.js";
+import anomalyDetectionService from "../services/anomalyDetectionService.js";
 
 const router = express.Router();
 
@@ -397,6 +398,12 @@ router.post(
         with: {
           category: { columns: { name: true, color: true, icon: true } },
         },
+      });
+
+      // Run anomaly detection asynchronously (don't block response)
+      anomalyDetectionService.detectAnomaly(createdExpenseId, req.user.tenantId || req.user.id).catch(err => {
+        console.error('Anomaly detection error:', err);
+        // Don't throw - anomaly detection is non-blocking
       });
 
       await distributedTransactionService.commitDistributedTransaction({
