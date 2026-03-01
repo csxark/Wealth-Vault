@@ -5147,6 +5147,19 @@ export const auditAnchors = pgTable('audit_anchors', {
 });
 
 // ============================================================================
+// ASYMMETRIC SPV PARTNERSHIP & LP/GP WATERFALL DISTRIBUTION ENGINE (#510)
+// ============================================================================
+
+export const spvEntities = pgTable('spv_entities', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    gpEntityId: uuid('gp_entity_id').references(() => entities.id), // The entity managing the SPV
+    status: text('status').default('active'), // 'active', 'liquidating', 'closed'
+    initialAssetValue: numeric('initial_asset_value', { precision: 20, scale: 2 }),
+    totalCommittedCapital: numeric('total_committed_capital', { precision: 20, scale: 2 }).default('0'),
+    totalCalledCapital: numeric('total_called_capital', { precision: 20, scale: 2 }).default('0'),
 // MULTI-SIG TREASURY & SOCIAL RECOVERY LAYER (#497)
 // ============================================================================
 
