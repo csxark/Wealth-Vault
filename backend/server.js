@@ -18,6 +18,7 @@ import certificateRotation from "./jobs/certificateRotation.js";
 import financialReconciliation from "./jobs/financialReconciliation.js";
 import budgetRollupReconciliation from "./jobs/budgetRollupReconciliation.js";
 import RecurringPaymentScheduler from "./jobs/recurringPaymentScheduler.js";
+import fxReconciliation from "./jobs/fxReconciliation.js";
 import "./services/sagaDefinitions.js"; // Register saga definitions
 import { createFileServerRoute } from "./middleware/secureFileServer.js";
 import { requestIdMiddleware, requestLogger, errorLogger, analyticsMiddleware } from "./middleware/requestLogger.js";
@@ -130,6 +131,10 @@ const startServer = async () => {
     // Start budget rollup reconciliation job
     budgetRollupReconciliation.start(60); // Run every 60 minutes
     console.log('💰 Budget rollup reconciliation job started');
+
+    // Start FX reconciliation job
+    fxReconciliation.start(60 * 60 * 1000); // Run every 60 minutes
+    console.log('💱 FX reconciliation job started');
 
     // Initialize upload directories
     try {

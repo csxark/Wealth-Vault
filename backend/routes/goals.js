@@ -6,9 +6,11 @@ import { goals, users, categories } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
 import { apiIdempotency } from "../middleware/apiIdempotency.js";
 import { RecurringPaymentService } from "../services/recurringPaymentService.js";
+import { FXConversionService } from "../services/fxConversionService.js";
 
 const router = express.Router();
 const recurringPaymentService = new RecurringPaymentService();
+const fxService = new FXConversionService();
 
 // Helper to calculate goal progress
 const calculateProgress = (goal) => {
@@ -705,6 +707,165 @@ router.get("/metrics", protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || "Server error while fetching metrics"
+    });
+  }
+});
+
+// ============================================================
+// CROSS-CURRENCY FX ENDPOINTS (Issue #570)
+// ============================================================
+
+/**
+ * @route   POST /api/goals/fx/store-rate
+ * @desc    Store FX rate snapshot
+ * @access  Private
+ */
+router.post("/fx/store-rate", protect, async (req, res) => {
+  try {
+    const { sourceCurrency, targetCurrency, exchangeRate, rateTimestamp } = req.body;
+
+    if (!sourceCurrency || !targetCurrency || !exchangeRate || !rateTimestamp) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: sourceCurrency, targetCurrency, exchangeRate, rateTimestamp"
+      });
+    }
+
+    const rate = await fxService.storeFXRate({
+      tenantId: req.user.tenantId,
+      sourceCurrency,
+      targetCurrency,
+      exchangeRate: parseFloat(exchangeRate),
+      rateTimestamp: new Date(rateTimestamp),
+      policyType: 'transaction_time'
+    });
+
+    res.json({
+      success: true,
+      message: "FX rate stored successfully",
+      data: { rate }
+    });
+  } catch (error) {
+    console.error("Store FX rate error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error while storing FX rate"
+    });
+  }
+});
+
+/**
+ * @route   POST /api/goals/fx/set-policy
+ * @desc    Set FX conversion policy for tenant
+ * @access  Private
+ */
+router.post("/fx/set-policy", protect, async (req, res) => {
+  try {
+    const { policyType = 'transaction_time', baseCurrency = 'USD', allowedCurrencies = [] } = req.body;
+
+    const policy = await fxService.setConversionPolicy({
+      tenantId: req.user.tenantId,
+      policyType,
+      baseCurrency,
+      allowedCurrencies
+    });
+
+    res.json({
+      success: true,
+      message: "FX conversion policy set successfully",
+      data: { policy }
+    });
+  } catch (error) {
+    console.error("Set FX policy error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error while setting FX policy"
+    });
+  }
+});
+
+/**
+ * @route   GET /api/goals/:id/fx-report
+ * @desc    Get multi-currency FX report for a goal
+ * @access  Private
+ */
+router.get("/:id/fx-report", protect, checkOwnership("Goal"), async (req, res) => {
+  try {
+    const report = await fxService.getGoalFXReport({
+      goalId: req.params.id,
+      tenantId: req.user.tenantId
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: "FX report not available for this goal"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { report }
+    });
+  } catch (error) {
+    console.error("Get FX report error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error while fetching FX report"
+    });
+  }
+});
+
+/**
+ * @route   GET /api/goals/:id/fx-reconciliation
+ * @desc    Get FX reconciliation history for a goal
+ * @access  Private
+ */
+router.get("/:id/fx-reconciliation", protect, checkOwnership("Goal"), async (req, res) => {
+  try {
+    const { days = 30 } = req.query;
+
+    const history = await fxService.getReconciliationHistory({
+      tenantId: req.user.tenantId,
+      goalId: req.params.id,
+      days: parseInt(days)
+    });
+
+    res.json({
+      success: true,
+      data: { history }
+    });
+  } catch (error) {
+    console.error("Get FX reconciliation error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error while fetching reconciliation history"
+    });
+  }
+});
+
+/**
+ * @route   POST /api/goals/:id/fx-recalculate
+ * @desc    Recalculate goal progress from normalized FX amounts
+ * @access  Private
+ */
+router.post("/:id/fx-recalculate", protect, checkOwnership("Goal"), async (req, res) => {
+  try {
+    const progress = await fxService.recalculateGoalProgress({
+      goalId: req.params.id,
+      tenantId: req.user.tenantId
+    });
+
+    res.json({
+      success: true,
+      message: "Goal progress recalculated from normalized FX amounts",
+      data: progress
+    });
+  } catch (error) {
+    console.error("Recalculate goal progress error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error while recalculating progress"
     });
   }
 });
