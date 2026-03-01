@@ -11,7 +11,6 @@
  * Issue #612: Expense Anomaly Detection using Time Series Analysis
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import db from '../config/db.js';
 import anomalyDetectionService from '../services/anomalyDetectionService.js';
 import {

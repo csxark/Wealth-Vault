@@ -9,7 +9,6 @@
  * - Read-committed isolation
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import db from '../config/db.js';
 import budgetAlertService from '../services/budgetAlertService.js';
 import budgetAlertEventHandler from '../services/budgetAlertEventHandler.js';

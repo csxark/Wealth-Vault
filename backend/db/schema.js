@@ -5520,3 +5520,5 @@ export * from './schema-anomaly-detection.js';
 
 // Export portfolio rebalancing schema tables
 export * from './schema-portfolio-rebalancing.js';
+// Export smart notifications and recommendations schema tables
+export * from './schema-smart-notifications.js';
