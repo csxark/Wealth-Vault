@@ -658,14 +658,28 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
-    app.use("/api/health", healthRoutes);
-    app.use("/api/performance", userLimiter, performanceRoutes);
-    app.use("/api/tenants", userLimiter, tenantRoutes);
-    app.use("/api/audit", userLimiter, auditRoutes);
-    app.use("/api/db-router", userLimiter, dbRouterRoutes);
-    app.use("/api/authorization", userLimiter, authorizationRoutes);
-    app.use("/api/notifications", userLimiter, notificationRoutes);
-
+    app.use("/api/transactions", userLimiter, softDeleteRoutes);
+    app.use("/api/health", async (req, res) => {
+      const redisState = getConnectionState();
+      const dbState = getDatabaseState();
+      const dbHealthy = await isDatabaseHealthy();
+      
+      const overallHealthy = dbHealthy && dbState.isConnected;
+      
+      res.status(overallHealthy ? 200 : 503).json({
+        status: overallHealthy ? "OK" : "DEGRADED",
+        message: overallHealthy 
+          ? "Wealth Vault API is running" 
+          : "API running with degraded services",
+        timestamp: new Date().toISOString(),
+        services: {
+          database: {
+            state: dbState.state,
+            isConnected: dbState.isConnected,
+            healthy: dbHealthy,
+            attempts: dbState.attempts,
+            ...(dbState.lastError && { lastError: dbState.lastError })
+          },
     // Secur fil servr for uploddd fils
     app.use("/uploads", createFileServerRoute());
 

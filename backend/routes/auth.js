@@ -13,7 +13,7 @@ import fileStorageService from "../services/fileStorageService.js";
 import { getDefaultCategories } from "../utils/defaults.js";
 import { authLimiter, passwordResetLimiter } from "../middleware/rateLimiter.js";
 import { validatePasswordStrength, isCommonPassword, validatePassword } from "../utils/passwordValidator.js";
-import { asyncHandler } from "../middleware/errorHandler.js";
+import { asyncHandler, ValidationError } from "../middleware/errorHandler.js";
 import { AppError } from "../utils/AppError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import successionService from "../services/successionService.js";
@@ -141,7 +141,7 @@ router.post(
       .withMessage("Please provide a valid email")
       .normalizeEmail(),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return next(new AppError(400, "Invalid email format", errors.array()));
@@ -242,7 +242,7 @@ router.post(
       .isLength({ min: 1, max: 50 })
       .withMessage("Last name is required and must be less than 50 characters"),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return next(new AppError(400, "Validation failed", errors.array()));
@@ -922,6 +922,8 @@ router.post("/refresh",
     if (!errors.isEmpty()) {
       return next(new AppError(400, "Validation failed", errors.array()));
     }
+
+    const { refreshToken } = req.body;
 
     const ipAddress = req.ip || req.connection.remoteAddress;
 
