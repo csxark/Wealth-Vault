@@ -38,37 +38,52 @@ Wealth Vault guides users through a **simple three-step flow**:
      <img src="./assets/Dashboard.png" alt="Dashboard" width="80%" style="border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);" />
    </div>
 
+> Screenshots are illustrative and taken from the current main UI, but may occasionally show in-progress features. The running app reflects the source of truth for what is available today.
+
 ---
 
 ## ✨ What Makes Wealth Vault Different?
 
 Wealth Vault goes beyond simple expense tracking. It focuses on **behavior-aware finance**, helping users understand _why_ they spend — not just _what_ they spend.
 
-### 🔑 Key Features
+### 🔑 Key Features (Available Today)
+
+These features are implemented in the current main branch:
 
 - 🧠 **Smart Spending Analysis**  
-  Categorizes expenses into **Safe**, **Impulsive**, and **Anxious** spending patterns
+  Categorizes expenses into **Safe**, **Impulsive**, and **Anxious** spending patterns.
 
 - 🎯 **Financial Goals Management**  
-  Set, track, and visualize progress toward financial objectives
+  Set, track, and visualize progress toward financial objectives.
 
 - 🤖 **AI Financial Coach**  
-  Personalized insights and actionable recommendations
+  Personalized insights and actionable recommendations.
+  - Requires configuring `GEMINI_API_KEY` for live AI responses; without it, the coach falls back to limited guidance.
 
 - 📷 **QR Code Expense Entry**  
-  Log expenses instantly using QR codes and UPI
+  Log expenses using QR codes and UPI, including receipt and expense QR flows.
 
 - 📊 **Visual Analytics Dashboard**  
-  Interactive charts for clear spending insights
+  Interactive charts for clear spending and goal insights.
 
 - 📁 **CSV Data Import**  
-  Import historical financial data with ease
+  Import historical transaction data from CSV files to get started quickly.
 
 - 👤 **User Profiles**  
-  Personalized financial preferences and income settings
+  Personalized financial preferences and income settings.
 
 - 🎨 **User-Friendly Interface**  
-  Clean, responsive UI built for everyday use
+  Clean, responsive UI designed for everyday use.
+
+### 🚧 Roadmap & Coming Soon
+
+The codebase contains foundations for additional capabilities that are still evolving and may not be fully productized in the main UI yet. Examples include:
+
+- Real-time notifications and streaming updates powered by WebSockets and polling fallbacks.
+- Deeper multi-tenant administration and advanced workspace controls.
+- Expanded AI journeys and simulations for long-term planning and "what-if" scenarios.
+
+These items should be considered **in development / coming soon**, not guaranteed as stable user-facing features. Check the documentation under `backend/` (for example, WebSocket and multi-tenancy guides) and release notes for their current status.
 
 ---
 
