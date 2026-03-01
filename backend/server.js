@@ -185,6 +185,8 @@ import milestoneRoutes from "./routes/milestones.js";
 import forecastRoutes from "./routes/forecasts.js";
 import goalSharingRoutes from "./routes/goalSharing.js";
 import anomalyRoutes from "./routes/anomalies.js";
+import rebalancingRoutes from "./routes/rebalancing.js";
+import auditRetentionRoutes from "./routes/auditRetention.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -682,6 +684,8 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/forecasts", userLimiter, forecastRoutes);
     app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
     app.use("/api/anomalies", userLimiter, anomalyRoutes);
+    app.use("/api/portfolio", userLimiter, rebalancingRoutes);
+    app.use("/api/audit-retention", userLimiter, auditRetentionRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
