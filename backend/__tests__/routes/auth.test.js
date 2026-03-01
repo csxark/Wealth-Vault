@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 import request from 'supertest';
 import express from 'express';
 import authRouter from '../../routes/auth.js';
+import { errorHandler, notFound } from '../../middleware/errorHandler.js';
 
 // Create a simple mock app for testing
 describe('Auth Routes', () => {
@@ -11,6 +12,8 @@ describe('Auth Routes', () => {
     app = express();
     app.use(express.json());
     app.use('/api/auth', authRouter);
+    app.use(notFound); // 404 handler
+    app.use(errorHandler); // Error handler (must be last)
   });
 
   describe('POST /api/auth/register', () => {

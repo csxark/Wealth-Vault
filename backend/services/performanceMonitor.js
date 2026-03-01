@@ -1,1 +1,286 @@
-import os from 'os';\nimport process from 'process';\nimport { logPerformance, logWarn, logError } from '../utils/logger.js';\n\n/**\n * Performanc monitrng servic for systm metrcs\n * Tracks CPU, memry, and othr systm performanc indicatrs\n */\n\nclass PerformanceMonitor {\n  constructor() {\n    this.metrics = {\n      startTime: Date.now(),\n      requestCount: 0,\n      errorCount: 0,\n      lastHealthCheck: null\n    };\n    \n    this.thresholds = {\n      cpuUsage: 80, // 80%\n      memoryUsage: 85, // 85%\n      responseTime: 2000, // 2 seconds\n      errorRate: 5 // 5%\n    };\n    \n    // Start monitrng\n    this.startMonitoring();\n  }\n  \n  /**\n   * Start performanc monitrng with regulr intervls\n   */\n  startMonitoring() {\n    // Colect systm metrcs every 30 seconds\n    setInterval(() => {\n      this.collectSystemMetrics();\n    }, 30000);\n    \n    // Performanc helth chek every 5 minuts\n    setInterval(() => {\n      this.performHealthCheck();\n    }, 300000);\n    \n    // Log uptime every hour\n    setInterval(() => {\n      this.logUptime();\n    }, 3600000);\n  }\n  \n  /**\n   * Colect systm performanc metrcs\n   */\n  collectSystemMetrics() {\n    const cpuUsage = this.getCPUUsage();\n    const memoryUsage = this.getMemoryUsage();\n    const diskUsage = this.getDiskUsage();\n    \n    const systemMetrics = {\n      cpu: {\n        usage: cpuUsage,\n        loadAverage: os.loadavg()\n      },\n      memory: {\n        usage: memoryUsage,\n        total: Math.round(os.totalmem() / 1024 / 1024), // MB\n        free: Math.round(os.freemem() / 1024 / 1024), // MB\n        used: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024) // MB\n      },\n      process: {\n        pid: process.pid,\n        uptime: Math.round(process.uptime()),\n        memoryUsage: process.memoryUsage(),\n        cpuUsage: process.cpuUsage()\n      },\n      system: {\n        platform: os.platform(),\n        arch: os.arch(),\n        hostname: os.hostname(),\n        uptime: Math.round(os.uptime())\n      }\n    };\n    \n    logPerformance('System Metrics', systemMetrics);\n    \n    // Chek for performanc isus\n    this.checkPerformanceThresholds(systemMetrics);\n  }\n  \n  /**\n   * Calculat CPU usag percentag\n   */\n  getCPUUsage() {\n    const cpus = os.cpus();\n    let totalIdle = 0;\n    let totalTick = 0;\n    \n    cpus.forEach(cpu => {\n      for (const type in cpu.times) {\n        totalTick += cpu.times[type];\n      }\n      totalIdle += cpu.times.idle;\n    });\n    \n    const idle = totalIdle / cpus.length;\n    const total = totalTick / cpus.length;\n    const usage = 100 - ~~(100 * idle / total);\n    \n    return Math.max(0, Math.min(100, usage));\n  }\n  \n  /**\n   * Calculat memry usag percentag\n   */\n  getMemoryUsage() {\n    const total = os.totalmem();\n    const free = os.freemem();\n    const used = total - free;\n    return Math.round((used / total) * 100);\n  }\n  \n  /**\n   * Gt disk usag informaton\n   */\n  getDiskUsage() {\n    // Simplifid disk usag - in producton, us a propr library\n    return {\n      available: 'N/A',\n      used: 'N/A',\n      total: 'N/A'\n    };\n  }\n  \n  /**\n   * Chek if performanc metrcs exced thresholds\n   */\n  checkPerformanceThresholds(metrics) {\n    // CPU usag chek\n    if (metrics.cpu.usage > this.thresholds.cpuUsage) {\n      logWarn('High CPU Usage Detected', {\n        currentUsage: metrics.cpu.usage,\n        threshold: this.thresholds.cpuUsage,\n        loadAverage: metrics.cpu.loadAverage\n      });\n    }\n    \n    // Memry usag chek\n    if (metrics.memory.usage > this.thresholds.memoryUsage) {\n      logWarn('High Memory Usage Detected', {\n        currentUsage: metrics.memory.usage,\n        threshold: this.thresholds.memoryUsage,\n        usedMB: metrics.memory.used,\n        totalMB: metrics.memory.total\n      });\n    }\n  }\n  \n  /**\n   * Performanc helth chek\n   */\n  performHealthCheck() {\n    const healthStatus = {\n      timestamp: new Date().toISOString(),\n      uptime: Math.round(process.uptime()),\n      memoryUsage: process.memoryUsage(),\n      cpuUsage: this.getCPUUsage(),\n      requestCount: this.metrics.requestCount,\n      errorCount: this.metrics.errorCount,\n      errorRate: this.metrics.requestCount > 0 \n        ? ((this.metrics.errorCount / this.metrics.requestCount) * 100).toFixed(2)\n        : 0\n    };\n    \n    // Determin helth status\n    let status = 'healthy';\n    const issues = [];\n    \n    if (healthStatus.cpuUsage > this.thresholds.cpuUsage) {\n      status = 'warning';\n      issues.push(`High CPU usage: ${healthStatus.cpuUsage}%`);\n    }\n    \n    if (healthStatus.memoryUsage.heapUsed / healthStatus.memoryUsage.heapTotal > 0.9) {\n      status = 'warning';\n      issues.push('High heap memory usage');\n    }\n    \n    if (parseFloat(healthStatus.errorRate) > this.thresholds.errorRate) {\n      status = 'critical';\n      issues.push(`High error rate: ${healthStatus.errorRate}%`);\n    }\n    \n    healthStatus.status = status;\n    healthStatus.issues = issues;\n    \n    this.metrics.lastHealthCheck = healthStatus;\n    \n    if (status !== 'healthy') {\n      logWarn('Health Check Warning', healthStatus);\n    } else {\n      logPerformance('Health Check', healthStatus);\n    }\n  }\n  \n  /**\n   * Log applicaton uptime\n   */\n  logUptime() {\n    const uptime = {\n      processUptime: Math.round(process.uptime()),\n      systemUptime: Math.round(os.uptime()),\n      startTime: new Date(this.metrics.startTime).toISOString(),\n      currentTime: new Date().toISOString()\n    };\n    \n    logPerformance('Application Uptime', uptime);\n  }\n  \n  /**\n   * Recrd API requst metrcs\n   */\n  recordRequest(isError = false) {\n    this.metrics.requestCount++;\n    if (isError) {\n      this.metrics.errorCount++;\n    }\n  }\n  \n  /**\n   * Gt curent helth status\n   */\n  getHealthStatus() {\n    return this.metrics.lastHealthCheck || {\n      status: 'unknown',\n      message: 'Health check not yet performed'\n    };\n  }\n  \n  /**\n   * Gt performanc sumary\n   */\n  getPerformanceSummary() {\n    return {\n      uptime: Math.round(process.uptime()),\n      memoryUsage: process.memoryUsage(),\n      cpuUsage: this.getCPUUsage(),\n      systemMemoryUsage: this.getMemoryUsage(),\n      requestCount: this.metrics.requestCount,\n      errorCount: this.metrics.errorCount,\n      errorRate: this.metrics.requestCount > 0 \n        ? ((this.metrics.errorCount / this.metrics.requestCount) * 100).toFixed(2)\n        : 0,\n      lastHealthCheck: this.metrics.lastHealthCheck?.timestamp || null\n    };\n  }\n}\n\n// Creat global performanc monitr instanc\nconst performanceMonitor = new PerformanceMonitor();\n\n/**\n * Midlware to trak requst performanc\n */\nexport const performanceMiddleware = (req, res, next) => {\n  const startTime = Date.now();\n  \n  const originalEnd = res.end;\n  res.end = function(chunk, encoding) {\n    const responseTime = Date.now() - startTime;\n    const isError = res.statusCode >= 400;\n    \n    // Recrd requst metrcs\n    performanceMonitor.recordRequest(isError);\n    \n    // Log slow requst\n    if (responseTime > performanceMonitor.thresholds.responseTime) {\n      logWarn('Slow Request Detected', {\n        url: req.originalUrl,\n        method: req.method,\n        responseTime: `${responseTime}ms`,\n        statusCode: res.statusCode\n      });\n    }\n    \n    originalEnd.call(this, chunk, encoding);\n  };\n  \n  next();\n};\n\nexport { performanceMonitor };\nexport default performanceMonitor;", "oldStr": ""}]
+import os from 'os';
+import process from 'process';
+import { logPerformance, logWarn, logError } from '../utils/logger.js';
+
+/**
+ * Performance monitoring service for system metrics
+ * Tracks CPU, memory, and other system performance indicators
+ */
+class PerformanceMonitor {
+  constructor() {
+    this.metrics = {
+      startTime: Date.now(),
+      requestCount: 0,
+      errorCount: 0,
+      lastHealthCheck: null,
+    };
+
+    this.thresholds = {
+      cpuUsage: 80, // 80%
+      memoryUsage: 85, // 85%
+      responseTime: 2000, // 2 seconds
+      errorRate: 5, // 5%
+    };
+
+    // Start monitoring
+    this.startMonitoring();
+  }
+
+  /**
+   * Start performance monitoring with regular intervals
+   */
+  startMonitoring() {
+    // Collect system metrics every 30 seconds
+    setInterval(() => {
+      this.collectSystemMetrics();
+    }, 30000);
+
+    // Performance health check every 5 minutes
+    setInterval(() => {
+      this.performHealthCheck();
+    }, 300000);
+
+    // Log uptime every hour
+    setInterval(() => {
+      this.logUptime();
+    }, 3600000);
+  }
+
+  /**
+   * Collect system performance metrics
+   */
+  collectSystemMetrics() {
+    const cpuUsage = this.getCPUUsage();
+    const memoryUsage = this.getMemoryUsage();
+    const diskUsage = this.getDiskUsage();
+
+    const systemMetrics = {
+      cpu: {
+        usage: cpuUsage,
+        loadAverage: os.loadavg(),
+      },
+      memory: {
+        usage: memoryUsage,
+        total: Math.round(os.totalmem() / 1024 / 1024), // MB
+        free: Math.round(os.freemem() / 1024 / 1024), // MB
+        used: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024), // MB
+      },
+      process: {
+        pid: process.pid,
+        uptime: Math.round(process.uptime()),
+        memoryUsage: process.memoryUsage(),
+        cpuUsage: process.cpuUsage(),
+      },
+      system: {
+        platform: os.platform(),
+        arch: os.arch(),
+        hostname: os.hostname(),
+        uptime: Math.round(os.uptime()),
+      },
+    };
+
+    logPerformance('System Metrics', systemMetrics);
+
+    // Check for performance issues
+    this.checkPerformanceThresholds(systemMetrics);
+  }
+
+  /**
+   * Calculate CPU usage percentage
+   */
+  getCPUUsage() {
+    const cpus = os.cpus();
+    let totalIdle = 0;
+    let totalTick = 0;
+
+    cpus.forEach((cpu) => {
+      for (const type in cpu.times) {
+        totalTick += cpu.times[type];
+      }
+      totalIdle += cpu.times.idle;
+    });
+
+    const idle = totalIdle / cpus.length;
+    const total = totalTick / cpus.length;
+    const usage = 100 - ~~(100 * (idle / total));
+
+    return Math.max(0, Math.min(100, usage));
+  }
+
+  /**
+   * Calculate memory usage percentage
+   */
+  getMemoryUsage() {
+    const total = os.totalmem();
+    const free = os.freemem();
+    const used = total - free;
+    return Math.round((used / total) * 100);
+  }
+
+  /**
+   * Get disk usage information (simplified)
+   */
+  getDiskUsage() {
+    return {
+      available: 'N/A',
+      used: 'N/A',
+      total: 'N/A',
+    };
+  }
+
+  /**
+   * Check if performance metrics exceed thresholds
+   */
+  checkPerformanceThresholds(metrics) {
+    if (metrics.cpu.usage > this.thresholds.cpuUsage) {
+      logWarn('High CPU Usage Detected', {
+        currentUsage: metrics.cpu.usage,
+        threshold: this.thresholds.cpuUsage,
+        loadAverage: metrics.cpu.loadAverage,
+      });
+    }
+
+    if (metrics.memory.usage > this.thresholds.memoryUsage) {
+      logWarn('High Memory Usage Detected', {
+        currentUsage: metrics.memory.usage,
+        threshold: this.thresholds.memoryUsage,
+        usedMB: metrics.memory.used,
+        totalMB: metrics.memory.total,
+      });
+    }
+  }
+
+  /**
+   * Performance health check
+   */
+  performHealthCheck() {
+    const healthStatus = {
+      timestamp: new Date().toISOString(),
+      uptime: Math.round(process.uptime()),
+      memoryUsage: process.memoryUsage(),
+      cpuUsage: this.getCPUUsage(),
+      requestCount: this.metrics.requestCount,
+      errorCount: this.metrics.errorCount,
+      errorRate:
+        this.metrics.requestCount > 0
+          ? ((this.metrics.errorCount / this.metrics.requestCount) * 100).toFixed(2)
+          : 0,
+    };
+
+    let status = 'healthy';
+    const issues = [];
+
+    if (healthStatus.cpuUsage > this.thresholds.cpuUsage) {
+      status = 'warning';
+      issues.push(`High CPU usage: ${healthStatus.cpuUsage}%`);
+    }
+
+    if (healthStatus.memoryUsage.heapUsed / healthStatus.memoryUsage.heapTotal > 0.9) {
+      status = 'warning';
+      issues.push('High heap memory usage');
+    }
+
+    if (parseFloat(healthStatus.errorRate) > this.thresholds.errorRate) {
+      status = 'critical';
+      issues.push(`High error rate: ${healthStatus.errorRate}%`);
+    }
+
+    healthStatus.status = status;
+    healthStatus.issues = issues;
+
+    this.metrics.lastHealthCheck = healthStatus;
+
+    if (status !== 'healthy') {
+      logWarn('Health Check Warning', healthStatus);
+    } else {
+      logPerformance('Health Check', healthStatus);
+    }
+  }
+
+  /**
+   * Log application uptime
+   */
+  logUptime() {
+    const uptime = {
+      processUptime: Math.round(process.uptime()),
+      systemUptime: Math.round(os.uptime()),
+      startTime: new Date(this.metrics.startTime).toISOString(),
+      currentTime: new Date().toISOString(),
+    };
+
+    logPerformance('Application Uptime', uptime);
+  }
+
+  /**
+   * Record API request metrics
+   */
+  recordRequest(isError = false) {
+    this.metrics.requestCount++;
+    if (isError) this.metrics.errorCount++;
+  }
+
+  /**
+   * Get current health status
+   */
+  getHealthStatus() {
+    return this.metrics.lastHealthCheck || {
+      status: 'unknown',
+      message: 'Health check not yet performed',
+    };
+  }
+
+  /**
+   * Get performance summary
+   */
+  getPerformanceSummary() {
+    return {
+      uptime: Math.round(process.uptime()),
+      memoryUsage: process.memoryUsage(),
+      cpuUsage: this.getCPUUsage(),
+      systemMemoryUsage: this.getMemoryUsage(),
+      requestCount: this.metrics.requestCount,
+      errorCount: this.metrics.errorCount,
+      errorRate:
+        this.metrics.requestCount > 0
+          ? ((this.metrics.errorCount / this.metrics.requestCount) * 100).toFixed(2)
+          : 0,
+      lastHealthCheck: this.metrics.lastHealthCheck?.timestamp || null,
+    };
+  }
+}
+
+// Create global performance monitor instance
+const performanceMonitor = new PerformanceMonitor();
+
+/**
+ * Middleware to track request performance
+ */
+export const performanceMiddleware = (req, res, next) => {
+  const startTime = Date.now();
+
+  const originalEnd = res.end;
+  res.end = function (chunk, encoding) {
+    const responseTime = Date.now() - startTime;
+    const isError = res.statusCode >= 400;
+
+    // Record request metrics
+    performanceMonitor.recordRequest(isError);
+
+    // Log slow request
+    if (responseTime > performanceMonitor.thresholds.responseTime) {
+      logWarn('Slow Request Detected', {
+        url: req.originalUrl,
+        method: req.method,
+        responseTime: `${responseTime}ms`,
+        statusCode: res.statusCode,
+      });
+    }
+
+    originalEnd.call(this, chunk, encoding);
+  };
+
+  next();
+};
+
+export { performanceMonitor };
+export default performanceMonitor;

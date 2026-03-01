@@ -1,10 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
+import { useToast } from '../context/ToastContext';
 import type { User } from '../types';
+
+// Helper function to sync theme preference to localStorage
+const syncThemePreference = (user: User) => {
+  if (user?.preferences?.theme) {
+    const themeMode = user.preferences.theme;
+    localStorage.setItem('themeMode', themeMode);
+    console.log('[useAuth] Theme preference synced from backend:', themeMode);
+  }
+};
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { showToast } = useToast();
+
+  // Effect to sync theme when user changes
+  useEffect(() => {
+    if (user) {
+      syncThemePreference(user);
+    }
+  }, [user]);
 
   useEffect(() => {
     // Check current session
@@ -24,6 +42,8 @@ export const useAuth = () => {
               const parsedUser = JSON.parse(storedUser);
               console.log('[useAuth] Setting dev user:', parsedUser);
               setUser(parsedUser);
+              // Sync theme preference for dev user
+              syncThemePreference(parsedUser);
               setLoading(false);
               return;
             }
@@ -35,6 +55,8 @@ export const useAuth = () => {
           if (response.success && response.data.user) {
             console.log('[useAuth] Backend profile success:', response.data.user);
             setUser(response.data.user);
+            // Sync theme preference
+            syncThemePreference(response.data.user);
           } else {
             // Token might be invalid, remove it
             console.log('[useAuth] Invalid token, removing');
@@ -51,7 +73,10 @@ export const useAuth = () => {
           const storedUser = localStorage.getItem('user');
           if (storedUser) {
             console.log('[useAuth] Error but dev token present, using mock user');
-            setUser(JSON.parse(storedUser));
+            const parsedUser = JSON.parse(storedUser);
+            setUser(parsedUser);
+            // Sync theme preference for dev user
+            syncThemePreference(parsedUser);
             setLoading(false);
             return;
           }
@@ -80,31 +105,42 @@ export const useAuth = () => {
       if (result.success && result.data.user) {
         setUser(result.data.user);
         localStorage.setItem('authToken', result.data.token);
+        showToast('Account created successfully! Welcome to Wealth Vault.', 'success');
         return { success: true, user: result.data.user };
       } else {
+        showToast('Registration failed. Please try again.', 'error');
         return { success: false, error: 'Registration failed' };
       }
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Registration failed' };
+    } catch (error: unknown) {
+      const err = error as Error;
+      showToast(err.message || 'Registration failed. Please try again.', 'error');
+      return { success: false, error: err.message || 'Registration failed' };
     } finally {
       setLoading(false);
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, mfaToken?: string) => {
     setLoading(true);
     try {
-      const result = await authAPI.login({ email, password });
+      const result = await authAPI.login({ email, password, mfaToken });
       
-      if (result.success && result.data.user) {
+      if (result.success && result.data?.user) {
         setUser(result.data.user);
         localStorage.setItem('authToken', result.data.token);
+        showToast('Welcome back! Successfully logged in.', 'success');
         return { success: true, user: result.data.user };
+      } else if (result.mfaRequired) {
+        // MFA is required
+        return { success: false, mfaRequired: true, message: result.message || 'MFA token required' };
       } else {
+        showToast('Login failed. Please check your credentials.', 'error');
         return { success: false, error: 'Login failed' };
       }
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Login failed' };
+    } catch (error: unknown) {
+      const err = error as Error;
+      showToast(err.message || 'Login failed. Please try again.', 'error');
+      return { success: false, error: err.message || 'Login failed' };
     } finally {
       setLoading(false);
     }
@@ -128,12 +164,16 @@ export const useAuth = () => {
       const result = await authAPI.updateProfile(profileData);
       if (result.success && result.data.user) {
         setUser(result.data.user);
+        showToast('Profile updated successfully!', 'success');
         return { success: true, user: result.data.user };
       } else {
+        showToast('Profile update failed. Please try again.', 'error');
         return { success: false, error: 'Profile update failed' };
       }
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Profile update failed' };
+    } catch (error: unknown) {
+      const err = error as Error;
+      showToast(err.message || 'Profile update failed. Please try again.', 'error');
+      return { success: false, error: err.message || 'Profile update failed' };
     }
   };
 
