@@ -40,8 +40,9 @@ export const protect = async (req, res, next) => {
     try {
       // Verify token using enhanced token service
       const decoded = await verifyAccessToken(token);
+      const tokenUserId = decoded?.id || decoded?.userId;
 
-      if (!decoded || !decoded.id) {
+      if (!decoded || !tokenUserId) {
         return res.status(401).json({
           success: false,
           message: 'Invalid token format.',
@@ -77,7 +78,7 @@ export const protect = async (req, res, next) => {
       // }
 
       // Get user from token
-      const [user] = await db.select().from(users).where(eq(users.id, decoded.id));
+      const [user] = await db.select().from(users).where(eq(users.id, tokenUserId));
 
       if (!user) {
         return res.status(401).json({
