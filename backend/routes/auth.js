@@ -144,7 +144,11 @@ router.post(
   asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return next(new AppError(400, "Invalid email format", errors.array()));
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format',
+        errors: errors.array()
+      });
     }
 
     const { email } = req.body;
@@ -245,7 +249,11 @@ router.post(
   asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return next(new AppError(400, "Validation failed", errors.array()));
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
     }
 
     const {
@@ -260,8 +268,10 @@ router.post(
 
     // Check for required fields
     if (!email || !password || !firstName || !lastName) {
-      return next(new AppError(400, "Missing required fields: email, password, firstName, and lastName are required."));
-
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: email, password, firstName, and lastName are required."
+      });
     }
 
     const [existingUser] = await db
@@ -269,18 +279,28 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
     if (existingUser) {
-      return next(new AppError(409, "User with this email already exists"));
+      return res.status(409).json({
+        success: false,
+        message: "User with this email already exists"
+      });
     }
 
     // Check if password is common
     if (isCommonPassword(password)) {
-      return next(new AppError(400, "This password is too common. Please choose a more secure password."));
+      return res.status(400).json({
+        success: false,
+        message: "This password is too common. Please choose a more secure password."
+      });
     }
 
     // Validate password strength
     const passwordValidation = validatePasswordStrength(password, [email, firstName, lastName]);
     if (!passwordValidation.success) {
-      return next(new AppError(400, passwordValidation.message, passwordValidation.feedback));
+      return res.status(400).json({
+        success: false,
+        message: passwordValidation.message,
+        errors: passwordValidation.feedback
+      });
     }
 
     // Hash password
@@ -992,7 +1012,7 @@ router.get("/sessions", protect, asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/auth/sessions/:sessionId
 // @desc    Revoke specific session
 // @access  Private
-router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => {
+router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res, next) => {
   const { sessionId } = req.params;
   const userId = req.user.id;
 
@@ -1020,9 +1040,9 @@ router.post(
   "/upload-profile-picture",
   protect,
   uploadProfilePicture,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     if (!req.file) {
-      throw new ValidationError('No file uploaded');
+      return next(new ValidationError('No file uploaded'));
     }
 
     const userId = req.user.id;
@@ -1072,7 +1092,7 @@ router.post(
 router.delete(
   "/delete-profile-picture",
   protect,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
     const [user] = await db.select().from(users).where(eq(users.id, userId));
 
@@ -1114,7 +1134,7 @@ router.delete(
 router.get(
   "/storage-usage",
   protect,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
     const usage = await fileStorageService.getUserStorageUsage(userId);
 
