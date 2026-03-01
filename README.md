@@ -265,19 +265,63 @@ npm run dev
 
 ---
 
-## 🔒 Security Features
+## 🔒 Security Overview
 
-* **Rate Limiting**
+Wealth Vault is designed with multiple layers of defense across authentication, data protection, request hardening, and auditing. This section summarizes the key security features implemented in the app.
 
-  * General API: 100 requests / 15 min
-  * Authentication routes: 5 requests / 15 min
-  * AI/Gemini routes: 20 requests / 15 min
+For a detailed security policy and disclosure process, see [SECURITY.md](SECURITY.md).
 
-* **Password Security**
+### Multi-Factor Authentication (MFA)
 
-  * Strong password enforcement
-  * Real-time password strength meter
-  * Requirements: ≥9 characters, uppercase, lowercase, number, special character
+- **TOTP-based MFA** using industry-standard Time-based One-Time Passwords (compatible with Google Authenticator, Authy, Microsoft Authenticator, etc.).
+- **MFA enrollment and management** via the profile page (Two-Factor Authentication section), backed by `/auth/mfa/*` API endpoints.
+- **Recovery codes** (single-use) for account recovery when an authenticator device is unavailable.
+- **Secure storage of MFA data**:
+  - MFA secrets are encrypted at rest using AES-256-GCM.
+  - Recovery codes are hashed (not stored in plain text) and can be regenerated.
+
+More implementation details are available in [MFA_README.md](MFA_README.md).
+
+### Password Security & Authentication
+
+- Passwords are **hashed with bcrypt** before storage; plain-text passwords are never persisted.
+- Strong password guidance and validation via a **password strength meter** (zxcvbn-based) to discourage weak credentials.
+- JWT-based authentication with configurable token lifetime.
+
+### Rate Limiting & Abuse Protection
+
+- Centralized rate limiting middleware protects critical endpoints:
+  - General API routes: defensive limits against bulk abuse.
+  - Authentication routes: stricter limits to slow brute-force login attempts.
+  - AI / Gemini routes: dedicated limits to protect upstream APIs and control cost.
+
+### Security Headers & Transport
+
+- **Helmet** is enabled globally to set secure HTTP headers, including:
+  - `X-Content-Type-Options`, `X-DNS-Prefetch-Control`, `X-Download-Options`, and related best-practice headers.
+  - Custom cross-origin policies tuned for the SPA frontend:
+    - `Cross-Origin-Resource-Policy: cross-origin`
+    - `Cross-Origin-Opener-Policy: same-origin-allow-popups`.
+- CORS is configured with an **allowlist of frontend origins** (local dev ports plus `FRONTEND_URL`), rejecting unknown origins.
+- Production deployments are expected to run behind HTTPS (for example via Nginx as documented in [nginx/README.md](nginx/README.md)).
+
+### Input Sanitization & Hardening
+
+- Request bodies are sanitized to reduce the risk of XSS and injection attacks.
+- Strict JSON body size limits and URL-encoded payload limits are enforced.
+
+### Audit Logging
+
+- A dedicated **audit logging pipeline** records high-value security events and sensitive changes, including:
+  - Authentication flows (login, logout, token refresh, registration).
+  - Authorization and RBAC changes (roles, permissions).
+  - Requests resulting in `401`, `403`, or `429` responses.
+  - Mutating API operations (create/update/delete) for financial data.
+- Sensitive fields (passwords, tokens, secrets, etc.) are **automatically redacted** from audit payloads before persistence.
+- Each audit log entry includes a **cryptographic hash** linked to the previous entry, forming an append-only hash chain to support tamper-evidence.
+- Request-level audit logging is wired through middleware that attaches a request ID and response timing; this supports forensic analysis and incident response.
+
+These mechanisms are continually evolving; when adding new features, follow existing patterns (rate limiting, sanitization, audit logging, and MFA-aware authentication) to keep the security posture consistent.
 
 ---
 
