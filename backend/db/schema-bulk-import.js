@@ -125,17 +125,17 @@ export const importRecords = pgTable('import_records', {
     // Matching results
     match_status: matchStatusEnum('match_status').notNull().default('pending'),
     matched_expense_id: uuid('matched_expense_id'),
-    match_confidence: numeric('match_confidence', { precision: 5, 2 }), // 0-100
+    match_confidence: numeric('match_confidence', { precision: 5, scale: 2 }), // 0-100
     match_reason: text('match_reason'),
     
     // Categorization
     suggested_category: varchar('suggested_category', { length: 100 }),
-    categorization_confidence: numeric('categorization_confidence', { precision: 5, 2 }),
+    categorization_confidence: numeric('categorization_confidence', { precision: 5, scale: 2 }),
     
     // Duplicate detection
     is_duplicate: boolean('is_duplicate').default(false),
     duplicate_of_expense_id: uuid('duplicate_of_expense_id'),
-    duplicate_score: numeric('duplicate_score', { precision: 5, 2 }),
+    duplicate_score: numeric('duplicate_score', { precision: 5, scale: 2 }),
     
     // Processing
     is_imported: boolean('is_imported').default(false),
@@ -159,17 +159,17 @@ export const reconciliationMatches = pgTable('reconciliation_matches', {
     
     // Match details
     existing_expense_id: uuid('existing_expense_id').notNull(),
-    match_confidence: numeric('match_confidence', { precision: 5, 2 }).notNull(),
+    match_confidence: numeric('match_confidence', { precision: 5, scale: 2 }).notNull(),
     
     // Matching criteria
     match_factors: jsonb('match_factors'), // {amount: true, date: true, merchant: true, ...}
     match_algorithm: varchar('match_algorithm', { length: 50 }), // 'exact', 'fuzzy', 'ml'
     
     // Match scores
-    amount_similarity: numeric('amount_similarity', { precision: 5, 2 }),
-    date_similarity: numeric('date_similarity', { precision: 5, 2 }),
-    merchant_similarity: numeric('merchant_similarity', { precision: 5, 2 }),
-    description_similarity: numeric('description_similarity', { precision: 5, 2 }),
+    amount_similarity: numeric('amount_similarity', { precision: 5, scale: 2 }),
+    date_similarity: numeric('date_similarity', { precision: 5, scale: 2 }),
+    merchant_similarity: numeric('merchant_similarity', { precision: 5, scale: 2 }),
+    description_similarity: numeric('description_similarity', { precision: 5, scale: 2 }),
     
     // Review state
     review_status: varchar('review_status', { length: 20 }).default('pending'), // pending, approved, rejected
@@ -302,7 +302,7 @@ export const importHistory = pgTable('import_history', {
     duplicates_skipped: integer('duplicates_skipped').default(0),
     
     // Financial impact
-    total_amount_imported: numeric('total_amount_imported', { precision: 15, 2 }),
+    total_amount_imported: numeric('total_amount_imported', { precision: 15, scale: 2 }),
     
     // Metadata
     performed_by: uuid('performed_by').notNull(),
