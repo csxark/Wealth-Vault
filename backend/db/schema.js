@@ -5511,3 +5511,6 @@ export * from './schema-forecast.js';
 
 // Export drift detection schema tables
 export * from './schema-drift-detection.js';
+
+// Export goal sharing schema tables
+export * from './schema-goal-sharing.js';

@@ -183,6 +183,7 @@ import outboxRoutes from "./routes/outbox.js";
 import softDeleteRoutes from "./routes/softDelete.js";
 import milestoneRoutes from "./routes/milestones.js";
 import forecastRoutes from "./routes/forecasts.js";
+import goalSharingRoutes from "./routes/goalSharing.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -678,6 +679,7 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/integrity", userLimiter, softDeleteRoutes);
     app.use("/api/milestones", userLimiter, milestoneRoutes);
     app.use("/api/forecasts", userLimiter, forecastRoutes);
+    app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
