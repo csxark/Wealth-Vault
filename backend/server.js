@@ -17,6 +17,7 @@ import { initializeUploads } from "./middleware/fileUpload.js";
 import outboxDispatcher from "./jobs/outboxDispatcher.js";
 import certificateRotation from "./jobs/certificateRotation.js";
 import financialReconciliation from "./jobs/financialReconciliation.js";
+import budgetRollupReconciliation from "./jobs/budgetRollupReconciliation.js";
 import RecurringPaymentScheduler from "./jobs/recurringPaymentScheduler.js";
 import "./services/sagaDefinitions.js"; // Register saga definitions
 import { createFileServerRoute } from "./middleware/secureFileServer.js";
@@ -234,6 +235,10 @@ const startServer = async () => {
     const paymentScheduler = new RecurringPaymentScheduler();
     await paymentScheduler.start();
     console.log('📅 Recurring payment scheduler started');
+
+    // Start budget rollup reconciliation job
+    budgetRollupReconciliation.start(60); // Run every 60 minutes
+    console.log('💰 Budget rollup reconciliation job started');
 
     // Initialize upload directories
     try {
