@@ -4,12 +4,24 @@ import { AuthForm } from '../components/Auth/AuthForm';
 import Dashboard from '../components/Dashboard/Dashboard';
 import { Coach } from '../components/Coach/Coach';
 import { Goals } from '../components/Goals/Goals';
+import { Expenses } from '../components/Expenses/Expenses';
 import { DataImport } from '../components/Import/DataImport';
+
 import { Profile } from '../components/Profile/Profile';
 import Analytics from '../components/Analytics/Analytics';
+import Savings from '../components/Savings/Savings';
+import { Forecasting } from '../components/Budgets/Forecasting';
 import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
+import TaxCenter from '../pages/TaxCenter';
+import Vaults from '../pages/Vaults/Vaults';
+import CreateVault from '../pages/Vaults/CreateVault';
+import VaultDetails from '../pages/Vaults/VaultDetails';
+import VaultMembers from '../pages/Vaults/VaultMembers';
+import AcceptInvite from '../pages/Vaults/AcceptInvite';
+import { ResetPassword } from '../components/Auth/ResetPassword';
+
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -55,7 +67,7 @@ export const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
   }
 
   if (user) {
-    return <Navigate to={(location.state as any)?.from?.pathname || '/dashboard'} replace />;
+    return <Navigate to={(location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'} replace />;
   }
 
   return <>{children}</>;
@@ -74,6 +86,14 @@ export const routes = [
     element: (
       <PublicRoute>
         <AuthForm />
+      </PublicRoute>
+    )
+  },
+  {
+    path: '/reset-password',
+    element: (
+      <PublicRoute>
+        <ResetPassword />
       </PublicRoute>
     )
   },
@@ -110,6 +130,23 @@ export const routes = [
     )
   },
   {
+    path: '/expenses',
+    element: (
+      <ProtectedRoute>
+        <Expenses />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/savings',
+
+    element: (
+      <ProtectedRoute>
+        <Savings />
+      </ProtectedRoute>
+    )
+  },
+  {
     path: '/import',
     element: (
       <ProtectedRoute>
@@ -130,6 +167,94 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <Analytics />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/subscription-tracker',
+    element: (
+      <ProtectedRoute>
+        <SubscriptionTracker />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/forecasting',
+    element: (
+      <ProtectedRoute>
+        <Forecasting />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/tax-center',
+    element: (
+      <ProtectedRoute>
+        <TaxCenter />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults',
+    element: (
+      <ProtectedRoute>
+        <Vaults />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/create',
+    element: (
+      <ProtectedRoute>
+        <CreateVault />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/:vaultId',
+    element: (
+      <ProtectedRoute>
+        <VaultDetails />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/:vaultId/members',
+    element: (
+      <ProtectedRoute>
+        <VaultMembers />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/vaults/invite/:token',
+    element: (
+      <ProtectedRoute>
+        <AcceptInvite />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments',
+    element: (
+      <ProtectedRoute>
+        <PortfolioDashboard />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments/recommendations',
+    element: (
+      <ProtectedRoute>
+        <InvestmentRecommendations />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/investments/risk-profile',
+    element: (
+      <ProtectedRoute>
+        <RiskProfileAnalyzer />
       </ProtectedRoute>
     )
   },

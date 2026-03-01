@@ -30,8 +30,8 @@ export interface User {
 }
 
 export interface Expense {
-  _id: string;
-  user: string;
+  id: string;
+  userId: string;
   amount: number;
   currency: string;
   description: string;
@@ -68,8 +68,8 @@ export interface Expense {
   };
   notes?: string;
   status: string;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Category {
@@ -104,6 +104,26 @@ export interface Category {
 
 // Spending category type for consistency
 export type SpendingCategory = 'safe' | 'impulsive' | 'anxious';
+
+export interface Milestone {
+  id: string;
+  goalId: string;
+  title: string;
+  description?: string;
+  targetAmount: number;
+  currentAmount: number;
+  deadline?: string;
+  isCompleted: boolean;
+  completedDate?: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+  // Virtual fields
+  progressPercentage?: number;
+  remainingAmount?: number;
+  daysRemaining?: number;
+  isOverdue?: boolean;
+}
 
 export interface Goal {
   _id: string;
@@ -175,9 +195,9 @@ export interface UserProfile {
   occupation?: string;
   monthlyIncome: number;
   financialGoals?: string;
-<<<<<<< Updated upstream
-=======
   full_name?: string; // For legacy compatibility
+  currency?: string;
+  monthlyBudget?: number;
 }
 
 // API Response types
@@ -198,6 +218,7 @@ export interface PaginatedResponse<T> {
       itemsPerPage: number;
     };
   };
+  message?: string;
 }
 
 // Auth types
@@ -207,6 +228,55 @@ export interface AuthResponse {
     user: User;
     token: string;
   };
+  message?: string;
+}
+
+export interface RecurringExpense {
+  id: string;
+  userId: string;
+  categoryId: string;
+  category?: {
+    name: string;
+    color: string;
+    icon: string;
+  };
+  name: string;
+  description: string;
+  amount: number;
+  currency: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval: number;
+  startDate: string;
+  endDate?: string;
+  nextDueDate: string;
+  lastGeneratedDate?: string;
+  isActive: boolean;
+  isPaused: boolean;
+  paymentMethod: string;
+  tags?: string[];
+  notes?: string;
+  metadata?: {
+    totalGenerated: number;
+    lastAmount: number;
+    createdBy: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecurringExpenseFormData {
+  category: string;
+  name: string;
+  description: string;
+  amount: number;
+  currency?: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval?: number;
+  startDate: string;
+  endDate?: string;
+  paymentMethod?: string;
+  tags?: string[];
+  notes?: string;
 }
 
 export interface LoginCredentials {
@@ -222,6 +292,79 @@ export interface RegisterData {
   currency?: string;
   monthlyIncome?: number;
   monthlyBudget?: number;
->>>>>>> Stashed changes
->>>>>>> Stashed changes
+}
+
+// Budget Alert interface
+export interface BudgetAlert {
+  id: string;
+  userId: string;
+  categoryId: string;
+  categoryName: string;
+  threshold: number;
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  currentSpending: number;
+  alertDate: string;
+  isRead: boolean;
+  message: string;
+  severity: 'low' | 'medium' | 'high';
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Transaction interface for CSV import functionality
+export interface Transaction {
+  id: string;
+  user_id: string;
+  amount: number;
+  description: string;
+  category: SpendingCategory;
+  date: string;
+  created_at: string;
+}
+
+// Vault interfaces
+export interface Vault {
+  id: string;
+  name: string;
+  description?: string;
+  ownerId: string;
+  currency: string;
+  isActive: boolean;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VaultMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  joinedAt: string;
+}
+
+export interface VaultInvite {
+  id: string;
+  vaultId: string;
+  inviterId: string;
+  email: string;
+  token: string;
+  role: string;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface VaultBalance {
+  userId: string;
+  balance: string;
+  lastSettlementAt?: string;
+  userName: string;
+  userEmail: string;
+}
+
+export interface VaultWithRole extends Vault {
+  role: string;
+  joinedAt: string;
 }
