@@ -839,3 +839,6 @@ export const alertDeduplicationRelations = relations(alertDeduplication, ({ one 
 
 // Export forecast schema tables
 export * from './schema-forecast.js';
+
+// Export drift detection schema tables
+export * from './schema-drift-detection.js';
