@@ -13,7 +13,7 @@ import fileStorageService from "../services/fileStorageService.js";
 import { getDefaultCategories } from "../utils/defaults.js";
 import { authLimiter, passwordResetLimiter } from "../middleware/rateLimiter.js";
 import { validatePasswordStrength, isCommonPassword, validatePassword } from "../utils/passwordValidator.js";
-import { asyncHandler } from "../middleware/errorHandler.js";
+import { asyncHandler, ValidationError } from "../middleware/errorHandler.js";
 import { AppError } from "../utils/AppError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import successionService from "../services/successionService.js";
