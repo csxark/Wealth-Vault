@@ -20,7 +20,6 @@ import financialReconciliation from "./jobs/financialReconciliation.js";
 import budgetRollupReconciliation from "./jobs/budgetRollupReconciliation.js";
 import RecurringPaymentScheduler from "./jobs/recurringPaymentScheduler.js";
 import fxReconciliation from "./jobs/fxReconciliation.js";
-import integrityService from "./services/integrityService.js";
 import "./services/sagaDefinitions.js"; // Register saga definitions
 import { createFileServerRoute } from "./middleware/secureFileServer.js";
 import {
@@ -178,7 +177,6 @@ import servicesRoutes from "./routes/services.js";
 import dbRouterRoutes from "./routes/dbRouter.js";
 import authorizationRoutes from "./routes/authorization.js";
 import outboxRoutes from "./routes/outbox.js";
-import softDeleteRoutes from "./routes/softDelete.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -256,11 +254,6 @@ const startServer = async () => {
     // Start FX reconciliation job
     fxReconciliation.start(60 * 60 * 1000); // Run every 60 minutes
     console.log('💱 FX reconciliation job started');
-
-    // Start integrity check job for soft-delete safety
-    // Note: This will run once immediately, then every 60 minutes
-    // Each tenant's integrity check is independent
-    console.log('✅ Integrity check service initialized (will run per-tenant)');
 
     // Initialize upload directories
     try {
@@ -662,8 +655,6 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/expenses", userLimiter, expenseRoutes);
     app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
     app.use("/api/outbox", userLimiter, outboxRoutes);
-    app.use("/api/soft-delete", userLimiter, softDeleteRoutes);
-    app.use("/api/integrity", userLimiter, softDeleteRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
