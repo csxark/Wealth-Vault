@@ -33,26 +33,94 @@ Wealth Vault is a comprehensive financial wellness application built with modern
 
 ### Development Workflow
 
-1. Fork the repository
-2. Create a feature branch from `main`
-3. Make changes with proper tests
-4. Ensure all tests pass and linting is clean
-5. Submit a pull request with a detailed description
-6. Address review feedback
+This section describes the recommended end-to-end workflow for contributing changes.
+
+#### Git & Branching
+
+1. **Fork and clone** the repository to your local machine.
+2. **Create a topic branch** from the latest `main`:
+    - Use a descriptive name, e.g. `feature/budget-alerts`, `fix/auth-timeout`, `docs/testing-updates`.
+3. **Keep your branch up to date**:
+    - Regularly pull from `upstream main` and rebase or merge as needed.
+4. **One logical change per branch/PR**:
+    - Avoid mixing unrelated refactors, features, and fixes in the same PR.
+
+#### Local Development Loop
+
+1. Run the app locally:
+    - `npm run dev` from the project root to start both frontend and backend.
+2. Make focused changes in backend, frontend, or docs.
+3. Run tests and linters (see Testing Requirements below).
+4. Commit with clear messages (conventional style preferred, e.g. `feat: add budget alerts`, `fix: handle jwt expiry`, `docs: update testing guide`).
+
+#### Pull Request Flow
+
+1. Push your topic branch to your fork.
+2. Open a PR against `csxark/Wealth-Vault:main`.
+3. Fill in the PR template completely:
+    - Summary, linked issues (e.g. `Fixes #123`), implementation notes, screenshots for UI changes, and testing steps.
+4. Address review comments promptly and push updates as additional commits (no force-push required unless requested).
+
+> **Note:** Direct pushes to `main` are not allowed. All changes must go through a pull request.
 
 ### Testing Requirements
 
-- Unit tests for utilities and hooks
-- Integration tests for API endpoints
-- Component tests for React components
-- E2E tests for critical user flows (future goal)
+Before requesting review, ensure you have run the relevant tests locally:
+
+- **Backend (Node + Jest)**
+   - From project root: `npm test` (runs backend Jest tests).
+   - Or from `backend/`: `npm test`, `npm test -- --coverage` if you changed backend logic.
+
+- **Frontend (Vite + Vitest + ESLint)**
+   - From `frontend/`: `npm test` for unit/component tests.
+   - `npm run test:coverage` for coverage if you touched critical components.
+   - `npm run lint` to ensure there are no linting errors.
+
+- **End-to-End (Playwright)**
+   - For changes that impact key user flows (auth, dashboard, core journeys), run:
+      - `npx playwright install` (first time only).
+      - `npx playwright test` from the repo root.
+   - Full E2E coverage is a work in progress, but new critical flows should ship with or extend E2E tests where possible.
+
+Include a short **“Testing”** section in your PR description summarizing what you ran, for example:
+
+> Testing: `npm test` (backend), `cd frontend && npm test`, `npx playwright test`
 
 ### Code Review Process
 
-- All PRs require at least one approval
-- Reviews focus on code quality, security, and functionality
-- Maintainers will provide constructive feedback
-- No direct pushes to the main branch
+- **Approvals required**
+   - All PRs must receive at least one maintainer approval before merging.
+
+- **Review focus areas**
+   - Correctness and maintainability of the implementation.
+   - Security and data privacy (auth, multi-tenancy, permissions, PII access).
+   - Performance implications for hot paths and heavy queries.
+   - Testing coverage appropriate to the change scope.
+   - Documentation updates when behavior or workflows change.
+
+- **Reviewer & author expectations**
+   - Reviews should be constructive, specific, and respectful.
+   - Authors should respond to all comments, either by making changes or explaining why a change is not needed.
+   - Large PRs may be asked to be split into smaller, more focused ones.
+
+### Deployment & Release Considerations
+
+While maintainers typically handle production deployments, contributors should keep deployment in mind:
+
+- **Environment variables and config**
+   - Document any new env vars in `README.md` and/or relevant docs (e.g. `DOCKER_GUIDE.md`).
+   - Provide sensible defaults for local development.
+
+- **Database changes**
+   - Add migrations via Drizzle when changing the schema.
+   - Ensure migrations are idempotent and safe to run in production environments.
+
+- **Backward compatibility**
+   - Avoid breaking existing APIs or flows when possible.
+   - If a breaking change is unavoidable, clearly document it in the PR and related docs.
+
+- **Deployment validation**
+   - For changes that impact deployment (e.g. Docker, Nginx, env vars), call out any additional steps required after merging.
 
 ## Areas for Improvement
 
