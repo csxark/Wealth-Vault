@@ -577,29 +577,82 @@ These practices help ensure smooth, secure, and predictable production deploymen
 
 ## Troubleshooting
 
-### Common Issues
+This section lists common problems and concrete steps to diagnose and fix them.
 
-1. **Environment Variables Not Loading**
+### 1. Environment & Setup Issues
 
-   - Ensure `.env` file is in the correct directory (`backend/` for backend, `frontend/` for frontend)
-   - Restart the development server after adding variables
-   - Check variable naming (no spaces around `=`)
+**Symptoms:** `process.env` values are `undefined`, app crashes on startup, or frontend cannot reach the backend.
 
-2. **Database Connection Errors**
+- Ensure `.env` files exist in the correct directories:
+  - `backend/.env`
+  - `frontend/.env`
+- After editing `.env` files, restart the dev servers (`npm run dev`, or individual backend/frontend dev commands).
+- Check variable naming and formatting:
+  - No spaces around `=` (use `KEY=value`, not `KEY = value`).
+  - Keys must match those documented in the Environment Variables section.
+- If Docker is used, confirm the compose file is loading the right env file (`.env`, `.env.prod`, etc.).
 
-   - Verify the PostgreSQL connection string is correct
-   - Check if PostgreSQL server is running and accessible
-   - Ensure database and user exist with proper permissions
-   - Run `npm run db:push` to ensure schema is up to date
+### 2. Database Connection & Migration Issues
 
-3. **Authentication Issues**
-   - Verify `JWT_SECRET` is set and strong (at least 32 characters)
-   - Check token expiration settings
-   - Clear browser local storage if experiencing persistent auth issues
+**Symptoms:** Backend fails to start with connection errors, 500 errors on API calls, or schema mismatch errors.
+
+- Verify the PostgreSQL connection string in `backend/.env` (`DATABASE_URL` and `DIRECT_URL`).
+- Check that PostgreSQL is running and reachable:
+  - Local: confirm the container or local service is up and listening on port `5432`.
+  - Remote: test connectivity with a DB client using the same URL.
+- Ensure the database and user exist and have the right permissions.
+- Run migrations from the backend directory:
+  - `npm run db:push` — sync schema to the database.
+  - `npm run db:migrate` — apply any pending migrations.
+- If you see “relation does not exist” or similar errors:
+  - Re-check that you are pointing to the correct database (dev vs test vs prod).
+  - Re-run the migration commands and inspect the logs for failures.
+- For Docker-based DB (from the README’s Docker instructions):
+  - Ensure the database container is healthy (`docker ps`, `docker logs` for the DB container).
+
+### 3. Authentication & MFA Issues
+
+**Symptoms:** Login fails unexpectedly, JWT validation errors, or MFA prompts behave unexpectedly.
+
+- Confirm `JWT_SECRET` is set in `backend/.env` and is a sufficiently long, random string (at least 32 characters).
+- Check token lifetime settings (for example, `JWT_EXPIRE`) if tokens expire sooner than expected.
+- If you cannot log in after changing auth settings:
+  - Clear browser local storage / cookies and try again.
+  - Make sure the frontend `VITE_API_URL` matches the backend URL (including protocol and port).
+- MFA-specific issues:
+  - Ensure your device time is accurate—TOTP codes are time-based.
+  - If setup fails, try regenerating the QR code and scanning again.
+  - If locked out, use recovery codes (if enabled) or disable MFA via admin/dev tooling as appropriate.
+
+### 4. Performance & Latency Problems
+
+**Symptoms:** Slow page loads, delayed API responses, or high CPU usage during local development.
+
+- Start with the backend health endpoint: `GET /api/health`.
+  - Use it to verify database and Redis connectivity and general service status.
+- Check logs for slow endpoints:
+  - Backend logs (via `morgan`, request logging, and performance middleware) will highlight slow requests.
+- Common local performance tips:
+  - Ensure you are not running multiple dev servers against the same database unintentionally.
+  - Disable unnecessary heavy background jobs in development if they are enabled.
+  - Confirm your machine is not resource-starved (CPU/RAM/bandwidth).
+- For frontend slowness:
+  - Use the browser dev tools (Network/Performance tabs) to identify large or repeated requests.
+  - Set `VITE_DEBUG=true` temporarily to see additional logs during development.
+
+### 5. Frontend–Backend Connectivity
+
+**Symptoms:** Frontend shows “Network error”, cannot fetch data, or CORS errors in the browser console.
+
+- Confirm the backend is running on the expected port (default `5000`).
+- Ensure `VITE_API_URL` in `frontend/.env` points to the correct backend URL.
+- If you see CORS-related errors:
+  - Verify the frontend origin (e.g., `http://localhost:3000` or Vite dev port) is included in the backend CORS allowlist or `FRONTEND_URL`.
+  - Restart the backend after changing CORS-related environment variables.
 
 ### Debug Mode
 
-Enable debug mode by setting `VITE_DEBUG=true` in frontend environment to see detailed console logs.
+Enable debug mode in the frontend by setting `VITE_DEBUG=true` in the frontend environment file to see more detailed console logs during development.
 
 ---
 
