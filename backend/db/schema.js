@@ -848,3 +848,6 @@ export * from './schema-goal-sharing.js';
 
 // Export anomaly detection schema tables
 export * from './schema-anomaly-detection.js';
+
+// Export portfolio rebalancing schema tables
+export * from './schema-portfolio-rebalancing.js';

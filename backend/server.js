@@ -56,6 +56,7 @@ import milestoneRoutes from "./routes/milestones.js";
 import forecastRoutes from "./routes/forecasts.js";
 import goalSharingRoutes from "./routes/goalSharing.js";
 import anomalyRoutes from "./routes/anomalies.js";
+import rebalancingRoutes from "./routes/rebalancing.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -298,6 +299,7 @@ const startServer = async () => {
     app.use("/api/forecasts", userLimiter, forecastRoutes);
     app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
     app.use("/api/anomalies", userLimiter, anomalyRoutes);
+    app.use("/api/portfolio", userLimiter, rebalancingRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
