@@ -4,8 +4,11 @@ import { eq, and, sql, desc, asc } from "drizzle-orm";
 import db from "../config/db.js";
 import { goals, users, categories } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
+import { apiIdempotency } from "../middleware/apiIdempotency.js";
+import { RecurringPaymentService } from "../services/recurringPaymentService.js";
 
 const router = express.Router();
+const recurringPaymentService = new RecurringPaymentService();
 
 // Helper to calculate goal progress
 const calculateProgress = (goal) => {
@@ -478,6 +481,231 @@ router.get("/stats/summary", protect, async (req, res) => {
         success: false,
         message: "Server error while fetching goals summary",
       });
+  }
+});
+
+// ============================================================
+// RECURRING PAYMENT ENDPOINTS (Issue #568)
+// ============================================================
+
+/**
+ * @route   GET /api/goals/:id/recurring-payments/executions
+ * @desc    Get recurring payment execution history for a goal
+ * @access  Private
+ */
+router.get("/:id/recurring-payments/executions", protect, async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+
+    const result = await recurringPaymentService.getExecutionHistory({
+      goalId: req.params.id,
+      userId: req.user.id,
+      limit: Math.min(parseInt(limit), 100),
+      offset: parseInt(offset)
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error("Get execution history error:", error);
+    res.status(error.message?.includes("not found") ? 404 : 500).json({
+      success: false,
+      message: error.message || "Server error while fetching execution history"
+    });
+  }
+});
+
+/**
+ * @route   POST /api/goals/:id/recurring-payments/trigger
+ * @desc    Manually trigger recurring payment for a goal
+ * @access  Private
+ * @requires Idempotency-Key header
+ */
+router.post("/:id/recurring-payments/trigger", protect, apiIdempotency(), async (req, res) => {
+  try {
+    const result = await recurringPaymentService.triggerRecurringPayment({
+      goalId: req.params.id,
+      tenantId: req.user.tenantId,
+      userId: req.user.id,
+      sourceEventType: 'api_trigger'
+    });
+
+    if (!result.triggered) {
+      return res.status(409).json({
+        success: false,
+        message: result.reason || 'Payment trigger failed',
+        result
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Recurring payment triggered successfully",
+      data: result
+    });
+  } catch (error) {
+    console.error("Trigger recurring payment error:", error);
+    res.status(error.message?.includes("not found") ? 404 : 500).json({
+      success: false,
+      message: error.message || "Server error while triggering recurring payment"
+    });
+  }
+});
+
+/**
+ * @route   GET /api/recurring-payments/dead-letters
+ * @desc    Get dead-letter queue for authenticated tenant
+ * @access  Private
+ */
+router.get("/dead-letters", protect, async (req, res) => {
+  try {
+    const { status = 'pending_review', limit = 50 } = req.query;
+
+    const result = await recurringPaymentService.getTenantDLQ({
+      tenantId: req.user.tenantId,
+      status,
+      limit: Math.min(parseInt(limit), 100)
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error("Get dead-letter queue error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error while fetching dead-letter queue"
+    });
+  }
+});
+
+/**
+ * @route   GET /api/recurring-payments/dead-letters/:id
+ * @desc    Get dead-letter entry details
+ * @access  Private
+ */
+router.get("/dead-letters/:id", protect, async (req, res) => {
+  try {
+    const { DeadLetterService } = await import("../services/deadLetterService.js");
+    const dlqService = new DeadLetterService();
+    
+    const dlqDetails = await dlqService.getDLQDetails(req.params.id);
+
+    if (!dlqDetails || dlqDetails.tenantId !== req.user.tenantId) {
+      return res.status(404).json({
+        success: false,
+        message: "Dead-letter entry not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: dlqDetails
+    });
+  } catch (error) {
+    console.error("Get dead-letter details error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching dead-letter details"
+    });
+  }
+});
+
+/**
+ * @route   POST /api/recurring-payments/dead-letters/:id/replay
+ * @desc    Replay a failed payment from dead-letter queue
+ * @access  Private
+ * @requires Idempotency-Key header
+ */
+router.post("/dead-letters/:id/replay", protect, apiIdempotency(), async (req, res) => {
+  try {
+    const { reason } = req.body;
+
+    const result = await recurringPaymentService.replayDeadLetter({
+      deadLetterId: req.params.id,
+      tenantId: req.user.tenantId,
+      userId: req.user.id,
+      reason
+    });
+
+    res.json({
+      success: true,
+      message: "Payment replayed successfully",
+      data: result
+    });
+  } catch (error) {
+    console.error("Replay dead-letter error:", error);
+    res.status(error.message?.includes("not found") ? 404 : 500).json({
+      success: false,
+      message: error.message || "Server error while replaying payment"
+    });
+  }
+});
+
+/**
+ * @route   POST /api/recurring-payments/dead-letters/:id/resolve
+ * @desc    Mark dead-letter as resolved or ignored
+ * @access  Private
+ */
+router.post("/dead-letters/:id/resolve", protect, async (req, res) => {
+  try {
+    const { status, notes } = req.body;
+
+    if (!['resolved', 'ignored'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Must be 'resolved' or 'ignored'"
+      });
+    }
+
+    const result = await recurringPaymentService.resolveDeadLetter({
+      deadLetterId: req.params.id,
+      tenantId: req.user.tenantId,
+      status,
+      notes
+    });
+
+    res.json({
+      success: true,
+      message: `Dead-letter marked as ${status}`,
+      data: result
+    });
+  } catch (error) {
+    console.error("Resolve dead-letter error:", error);
+    res.status(error.message?.includes("not found") ? 404 : 500).json({
+      success: false,
+      message: error.message || "Server error while resolving dead-letter"
+    });
+  }
+});
+
+/**
+ * @route   GET /api/recurring-payments/metrics
+ * @desc    Get recurring payment metrics for tenant
+ * @access  Private
+ */
+router.get("/metrics", protect, async (req, res) => {
+  try {
+    const { days = 30 } = req.query;
+
+    const metrics = await recurringPaymentService.getDLQMetrics({
+      tenantId: req.user.tenantId,
+      days: parseInt(days)
+    });
+
+    res.json({
+      success: true,
+      data: metrics
+    });
+  } catch (error) {
+    console.error("Get metrics error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error while fetching metrics"
+    });
   }
 });
 

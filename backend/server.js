@@ -16,10 +16,12 @@ import { initializeUploads } from "./middleware/fileUpload.js";
 import outboxDispatcher from "./jobs/outboxDispatcher.js";
 import certificateRotation from "./jobs/certificateRotation.js";
 import financialReconciliation from "./jobs/financialReconciliation.js";
+import RecurringPaymentScheduler from "./jobs/recurringPaymentScheduler.js";
 import "./services/sagaDefinitions.js"; // Register saga definitions
 import { createFileServerRoute } from "./middleware/secureFileServer.js";
 import { requestIdMiddleware, requestLogger, errorLogger, analyticsMiddleware } from "./middleware/requestLogger.js";
 import { auditLogger } from "./middleware/auditLogger.js";
+import { apiIdempotency } from "./middleware/apiIdempotency.js";
 import { performanceMiddleware } from "./services/performanceMonitor.js";
 import { logInfo, logError } from "./utils/logger.js";
 import { generalLimiter, aiLimiter, userLimiter } from "./middleware/rateLimiter.js";
@@ -118,6 +120,11 @@ const startServer = async () => {
     // Start distributed financial reconciliation job
     financialReconciliation.start();
     console.log('🧮 Financial reconciliation job started');
+
+    // Start recurring payment scheduler
+    const paymentScheduler = new RecurringPaymentScheduler();
+    await paymentScheduler.start();
+    console.log('📅 Recurring payment scheduler started');
 
     // Initialize upload directories
     try {
@@ -251,7 +258,7 @@ const startServer = async () => {
     app.use("/api/auth", authRoutes);
     app.use("/api/users", userLimiter, userRoutes);
     app.use("/api/expenses", userLimiter, expenseRoutes);
-    app.use("/api/goals", userLimiter, goalRoutes);
+    app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
