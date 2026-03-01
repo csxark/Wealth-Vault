@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from '@jest/globals';
 import { protect } from '../../middleware/auth.js';
 
 describe('Authentication Middleware', () => {

@@ -1,10 +1,13 @@
+import { initializeRecurringExpense, disableRecurring } from "../services/expenseService.js";
+import { getJobStatus, runManualExecution } from "../jobs/recurringExecution.js";
 import express from "express";
 import { body, validationResult } from "express-validator";
 import { eq, and, gte, lte, asc, desc, sql, like } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users } from "../db/schema.js";
+import { expenses, categories, users, vaultMembers, subscriptions } from "../db/schema.js";
 import { protect, checkOwnership } from "../middleware/auth.js";
-import { asyncHandler, ValidationError, NotFoundError } from "../middleware/errorHandler.js";
+import { checkVaultAccess } from "../middleware/vaultAuth.js";
+import { asyncHandler } from "../middleware/errorHandler.js";
 import { parseListQuery } from "../utils/pagination.js";
 import cacheService from "../services/cacheService.js";
 import { routeCache, cacheInvalidation } from "../middleware/cache.js";
@@ -15,37 +18,7 @@ import distributedTransactionService from "../services/distributedTransactionSer
 
 const router = express.Router();
 
-// Helper to update category stats
-const updateCategoryStats = async (categoryId) => {
-  try {
-    const result = await db
-      .select({
-        count: sql`count(*)`,
-        total: sql`sum(${expenses.amount})`,
-      })
-      .from(expenses)
-      .where(eq(expenses.categoryId, categoryId));
-
-    const count = Number(result[0].count);
-    const total = Number(result[0].total) || 0;
-    const average = count > 0 ? total / count : 0;
-
-    // Use sql to update jsonb field properly if possible, or simple replace
-    // For simplicity, we replace the metadata object, as we know its structure
-    await db
-      .update(categories)
-      .set({
-        metadata: {
-          usageCount: count,
-          averageAmount: average,
-          lastUsed: new Date().toISOString(),
-        },
-      })
-      .where(eq(categories.id, categoryId));
-  } catch (err) {
-    console.error("Failed to update category stats:", err);
-  }
-};
+// Helper to update category stats removed - now handled by categoryListener via 'EXPENSE_CREATED' event
 
 /**
  * @swagger
@@ -158,7 +131,7 @@ router.get("/", protect, routeCache.list('expenses', cacheService.TTL.SHORT), as
   if (filters.category) conditions.push(eq(expenses.categoryId, filters.category));
   if (filters.paymentMethod) conditions.push(eq(expenses.paymentMethod, filters.paymentMethod));
   if (filters.status) conditions.push(eq(expenses.status, filters.status));
-  
+
   // Apply date range
   if (dateRange.startDate) conditions.push(gte(expenses.date, dateRange.startDate));
   if (dateRange.endDate) conditions.push(lte(expenses.date, dateRange.endDate));
@@ -224,10 +197,10 @@ router.get("/:id", protect, checkOwnership("Expense"), asyncHandler(async (req, 
   });
 
   if (!expense) {
-    throw new NotFoundError('Expense not found');
+    return next(new AppError(404, 'Expense not found'));
   }
 
-  return res.success(expense, 'Expense retrieved successfully');
+  return new ApiResponse(200, expense, 'Expense retrieved successfully').send(res);
 }));
 
 // @route   POST /api/expenses
@@ -236,6 +209,11 @@ router.get("/:id", protect, checkOwnership("Expense"), asyncHandler(async (req, 
 router.post(
   "/",
   protect,
+  securityGuard, // Security guard middleware
+  liquidityGuard, // Predictive liquidity check
+  riskInterceptor, // Black-swan protection
+  enforceInstitutionalGovernance, // Multi-Sig Resolution protocol
+  securityInterceptor(),
   [
     body("amount").isFloat({ min: 0.01 }),
     body("description").trim().isLength({ min: 1, max: 200 }),
@@ -456,19 +434,12 @@ router.post(
           : "Server error while creating expense",
       });
     }
-  }
-);
 
-// @route   PUT /api/expenses/:id
-// @desc    Update expense
-// @access  Private
-router.put("/:id", protect, checkOwnership("Expense"), async (req, res) => {
-  try {
-    const oldExpense = req.resource;
     const {
       amount,
       description,
       category,
+      vaultId,
       date,
       paymentMethod,
       location,
@@ -477,85 +448,195 @@ router.put("/:id", protect, checkOwnership("Expense"), async (req, res) => {
       recurringPattern,
       notes,
       subcategory,
-      status,
+      currency = 'USD',
     } = req.body;
 
-    const updateData = {};
-    if (amount !== undefined) updateData.amount = amount.toString();
-    if (description !== undefined) updateData.description = description;
-    if (category !== undefined) {
-      // Verify new category
-      const [cat] = await db
-        .select()
-        .from(categories)
-        .where(
-          and(eq(categories.id, category), eq(categories.userId, req.user.id))
-        );
-      if (!cat)
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid category" });
-      updateData.categoryId = category;
+    // Verify category (If personal, must be owned by user. If vault, should we allow shared categories? For now, user's categories are personal)
+    const [categoryDoc] = await db
+      .select()
+      .from(categories)
+      .where(
+        and(eq(categories.id, category), eq(categories.userId, req.user.id))
+      );
+
+    if (!categoryDoc) {
+      return next(new AppError(400, "Invalid category"));
     }
-    if (date !== undefined) updateData.date = new Date(date);
-    // ... map other fields
-    if (paymentMethod) updateData.paymentMethod = paymentMethod;
-    if (location) updateData.location = location;
-    if (tags) updateData.tags = tags;
-    if (isRecurring !== undefined) updateData.isRecurring = isRecurring;
-    if (recurringPattern) updateData.recurringPattern = recurringPattern;
-    if (notes) updateData.notes = notes;
-    if (subcategory) updateData.subcategory = subcategory;
-    if (status) updateData.status = status;
 
-    updateData.updatedAt = new Date();
+    // Verify vault access if provided
+    if (vaultId) {
+      const [membership] = await db
+        .select()
+        .from(vaultMembers)
+        .where(and(eq(vaultMembers.vaultId, vaultId), eq(vaultMembers.userId, req.user.id)));
 
-    const [updatedExpense] = await db
-      .update(expenses)
-      .set(updateData)
-      .where(eq(expenses.id, req.params.id))
-      .returning();
-
-    // Update stats if amount or category changed
-    if (updateData.amount || updateData.categoryId) {
-      if (oldExpense.categoryId)
-        await updateCategoryStats(oldExpense.categoryId);
-      if (
-        updateData.categoryId &&
-        updateData.categoryId !== oldExpense.categoryId
-      ) {
-        await updateCategoryStats(updateData.categoryId);
+      if (!membership) {
+        return next(new AppError(403, "Access denied to the specified vault"));
       }
     }
 
-    const result = await db.query.expenses.findFirst({
-      where: eq(expenses.id, updatedExpense.id),
-      with: { category: { columns: { name: true, color: true, icon: true } } },
+    const [newExpense] = await db
+      .insert(expenses)
+      .values({
+        userId: req.user.id,
+        amount: amount.toString(),
+        description,
+        categoryId: category,
+        vaultId: vaultId || null,
+        date: date ? new Date(date) : new Date(),
+        paymentMethod: paymentMethod || "other",
+        location,
+        tags: tags || [],
+        isRecurring: isRecurring || false,
+        recurringPattern,
+        notes,
+        subcategory,
+        currency,
+      })
+      .returning();
+
+    // ─── Feature #460: Tax-Lot Disposal ───
+    try {
+      const currencyToClose = currency || 'USD';
+      const inv = await fxEngine.getOrCreateCurrencyInvestment(req.user.id, currencyToClose, vaultId);
+      const usdRate = await currencyService.getExchangeRate(currencyToClose, 'USD');
+
+      await taxLotService.closeLots(req.user.id, {
+        investmentId: inv.id,
+        unitsSold: amount,
+        salePrice: usdRate,
+        method: 'HIFO' // Default to HIFO for tax optimization
+      });
+      logInfo(`[Expenses] Closed currency lots for ${amount} ${currencyToClose}`);
+    } catch (lotError) {
+      logWarn(`[Expenses] Tax-lot closure failed (non-blocking): ${lotError.message}`);
+    }
+
+    // Side effects are now handled asynchronously via the Event Bus
+    eventBus.emit('EXPENSE_CREATED', {
+      ...newExpense,
+      splitDetails: req.body.splitDetails,
+      paidById: req.body.paidById || req.user.id
     });
 
-    res.json({
-      success: true,
-      message: "Expense updated successfully",
-      data: { expense: result },
+    // Autopilot signal: feed expense total into workflow evaluation
+    signalAutopilot(req, 'EXPENSE_CREATED', { amount: parseFloat(amount), categoryId: category, vaultId: vaultId || null });
+
+    const expenseWithCategory = await db.query.expenses.findFirst({
+      where: eq(expenses.id, newExpense.id),
+      with: {
+        category: { columns: { name: true, color: true, icon: true } },
+      },
     });
-  } catch (error) {
-    console.error("Update expense error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server error while updating expense" });
+
+    return new ApiResponse(201, expenseWithCategory, "Expense created successfully").send(res);
+  }));
+
+
+// @route   PUT /api/expenses/:id
+// @desc    Update expense
+// @access  Private
+router.put("/:id", protect, checkOwnership("Expense"), securityInterceptor(), asyncHandler(async (req, res, next) => {
+  const oldExpense = req.resource;
+  const {
+    amount,
+    description,
+    category,
+    date,
+    paymentMethod,
+    location,
+    tags,
+    isRecurring,
+    recurringPattern,
+    notes,
+    subcategory,
+    status,
+  } = req.body;
+
+  const updateData = {};
+  if (amount !== undefined) updateData.amount = amount.toString();
+  if (description !== undefined) updateData.description = description;
+  if (category !== undefined) {
+    // Verify new category
+    const [cat] = await db
+      .select()
+      .from(categories)
+      .where(
+        and(eq(categories.id, category), eq(categories.userId, req.user.id))
+      );
+    if (!cat) {
+      return next(new AppError(400, "Invalid category"));
+    }
+    updateData.categoryId = category;
   }
-});
+  if (date !== undefined) updateData.date = new Date(date);
+  if (paymentMethod) updateData.paymentMethod = paymentMethod;
+  if (location) updateData.location = location;
+  if (tags) updateData.tags = tags;
+  if (isRecurring !== undefined) updateData.isRecurring = isRecurring;
+  if (recurringPattern) updateData.recurringPattern = recurringPattern;
+  if (notes) updateData.notes = notes;
+  if (subcategory) updateData.subcategory = subcategory;
+  if (status) updateData.status = status;
+
+  updateData.updatedAt = new Date();
+
+  const [updatedExpense] = await db
+    .update(expenses)
+    .set(updateData)
+    .where(eq(expenses.id, req.params.id))
+    .returning();
+
+  // Emit update event
+  eventBus.emit('EXPENSE_UPDATED', {
+    ...updatedExpense,
+    oldCategoryId: oldExpense.categoryId
+  });
+
+  const result = await db.query.expenses.findFirst({
+    where: eq(expenses.id, updatedExpense.id),
+    with: { category: { columns: { name: true, color: true, icon: true } } },
+  });
+
+  return new ApiResponse(200, result, "Expense updated successfully").send(res);
+}));
 
 // @route   DELETE /api/expenses/:id
 // @desc    Delete expense
 // @access  Private
-router.delete("/:id", protect, checkOwnership("Expense"), async (req, res) => {
-  try {
-    const expense = req.resource;
-    await db.delete(expenses).where(eq(expenses.id, req.params.id));
+router.delete("/:id", protect, checkOwnership("Expense"), securityInterceptor(), asyncHandler(async (req, res, next) => {
+  const expense = req.resource;
+  await db.delete(expenses).where(eq(expenses.id, req.params.id));
 
-    if (expense.categoryId) {
-      await updateCategoryStats(expense.categoryId);
+  // Emit deletion event
+  eventBus.emit('EXPENSE_DELETED', expense);
+
+  return new ApiResponse(200, null, "Expense deleted successfully").send(res);
+}));
+
+// @route   POST /api/expenses/import
+// @desc    Import expenses from CSV data
+// @access  Private
+router.post("/import", protect, auditBulkOperation('EXPENSE_IMPORT', 'expense'), asyncHandler(async (req, res, next) => {
+  const { expenses: expensesData } = req.body;
+
+  if (!expensesData || !Array.isArray(expensesData)) {
+    return next(new AppError(400, "Invalid request: expenses array is required"));
+  }
+
+  const errors = [];
+  const validExpenses = [];
+
+  // Validate and prepare expenses
+  for (let i = 0; i < expensesData.length; i++) {
+    const expense = expensesData[i];
+    const rowNumber = i + 1;
+
+    // Using a nested try-catch here is acceptable for row-level validation if we want to continue, 
+    // but we'll adapt it to avoid manual res.status calls.
+    if (!expense.amount || isNaN(parseFloat(expense.amount))) {
+      errors.push(`Row ${rowNumber}: Invalid or missing amount`);
+      continue;
     }
 
     // Invalidate caches
@@ -568,20 +649,92 @@ router.delete("/:id", protect, checkOwnership("Expense"), async (req, res) => {
       .status(500)
       .json({ success: false, message: "Server error while deleting expense" });
   }
-});
+
+  // Bulk insert valid expenses
+  const insertedExpenses = await db
+    .insert(expenses)
+    .values(validExpenses)
+    .returning();
+
+  // Log expense import
+  logAudit(req, {
+    userId: req.user.id,
+    action: AuditActions.EXPENSE_IMPORT,
+    resourceType: ResourceTypes.EXPENSE,
+    metadata: {
+      importedCount: insertedExpenses.length,
+      errorCount: errors.length,
+    },
+    status: 'success',
+  });
+
+  // Update category stats handled via events/listeners now
+
+  return new ApiResponse(201, {
+    imported: insertedExpenses.length,
+    errors: errors.length,
+    errorDetails: errors.slice(0, 10),
+  }, `Successfully imported ${insertedExpenses.length} expenses`).send(res);
+}));
 
 // @route   GET /api/expenses/stats/summary
 // @desc    Get expense summary statistics
 // @access  Private
-router.get("/stats/summary", protect, async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
+router.get("/stats/summary", protect, asyncHandler(async (req, res, next) => {
+  const { startDate, endDate } = req.query;
 
-    // Default dates if not provided
-    const start = startDate
-      ? new Date(startDate)
-      : new Date(new Date().getFullYear(), 0, 1);
-    const end = endDate ? new Date(endDate) : new Date();
+  // Default dates if not provided
+  const start = startDate
+    ? new Date(startDate)
+    : new Date(new Date().getFullYear(), 0, 1);
+  const end = endDate ? new Date(endDate) : new Date();
+
+  const conditions = [
+    eq(expenses.userId, req.user.id),
+    eq(expenses.status, "completed"),
+    gte(expenses.date, start),
+    lte(expenses.date, end),
+  ];
+
+  // Total expenses
+  const [totalResult] = await db
+    .select({
+      total: sql`sum(${expenses.amount})`,
+      count: sql`count(*)`,
+    })
+    .from(expenses)
+    .where(and(...conditions));
+
+  // By Category
+  const byCategory = await db
+    .select({
+      categoryId: expenses.categoryId,
+      categoryName: categories.name,
+      categoryColor: categories.color,
+      total: sql`sum(${expenses.amount})`,
+      count: sql`count(*)`,
+    })
+    .from(expenses)
+    .leftJoin(categories, eq(expenses.categoryId, categories.id))
+    .where(and(...conditions))
+    .groupBy(expenses.categoryId, categories.name, categories.color) // Ensure grouping correctness
+    .orderBy(desc(sql`sum(${expenses.amount})`)); // Sort by total amount
+
+  const data = {
+    summary: {
+      total: Number(totalResult?.total || 0),
+      count: Number(totalResult?.count || 0),
+    },
+    byCategory: byCategory.map((item) => ({
+      categoryName: item.categoryName,
+      categoryColor: item.categoryColor,
+      total: Number(item.total),
+      count: Number(item.count),
+    })),
+  };
+
+  return new ApiResponse(200, data, "Expense statistics retrieved successfully").send(res);
+}));
 
     // Generate cache key for stats
     const cacheKey = cacheService.cacheKeys.analytics(req.user.id, 'expenseSummary', `${start.toISOString()}-${end.toISOString()}`);
@@ -638,11 +791,23 @@ router.get("/stats/summary", protect, async (req, res) => {
       data: result,
     });
   } catch (error) {
-    console.error("Get expense stats error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching expense statistics",
+    console.error('Error uploading receipt:', error);
+
+    // Log failed audit event
+    await logAuditEventAsync({
+      userId: req.user.id,
+      action: 'RECEIPT_UPLOAD',
+      resourceType: 'RECEIPT',
+      resourceId: null,
+      metadata: {
+        error: error.message
+      },
+      status: 'failure',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
     });
+
+    res.status(500).json({ error: 'Failed to process receipt' });
   }
 });
 

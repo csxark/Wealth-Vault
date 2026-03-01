@@ -1,9 +1,13 @@
+
+//spinning api
 import React, { useState, useEffect } from 'react';
-import { BarChart3, PieChart, TrendingUp, Calendar, Filter, Download } from 'lucide-react';
+import { BarChart3, PieChart, Calendar, Filter, Brain, TrendingUp } from 'lucide-react';
 import SpendingAnalytics from '../Dashboard/SpendingAnalytics';
+import SmartSpendingAnalysis from './SmartSpendingAnalysis';
 import { LoadingSpinner } from '../Loading/LoadingSpinner';
 import type { Expense } from '../../types';
 import { expensesAPI } from '../../services/api';
+import { useLoading } from '../../context/LoadingContext';
 
 const Analytics: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -11,6 +15,8 @@ const Analytics: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState('6months');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [activeTab, setActiveTab] = useState('traditional');
+  const { withLoading } = useLoading();
 
   // Format amount to Indian Rupee
   const formatAmount = (amount: number): string => {
@@ -29,11 +35,11 @@ const Analytics: React.FC = () => {
       setError(null);
       
       try {
-        const res = await expensesAPI.getAll({
+        const res = await withLoading(expensesAPI.getAll({
           limit: 1000, // Get more data for analytics
           sortBy: 'date',
           sortOrder: 'desc'
-        });
+        }), 'Loading analytics data...');
         setExpenses(res.data.expenses || []);
       } catch (err) {
         console.error('Failed to fetch expenses:', err);
@@ -162,8 +168,42 @@ const Analytics: React.FC = () => {
           </div>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-1 mb-8">
+          <div className="flex space-x-1">
+            <button
+              onClick={() => setActiveTab('traditional')}
+              className={`flex-1 px-6 py-3 rounded-xl font-medium text-sm transition-all duration-200 ${
+                activeTab === 'traditional'
+                  ? 'bg-cyan-600 text-white shadow-lg'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Traditional Analytics
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('smart')}
+              className={`flex-1 px-6 py-3 rounded-xl font-medium text-sm transition-all duration-200 ${
+                activeTab === 'smart'
+                  ? 'bg-cyan-600 text-white shadow-lg'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <Brain className="h-4 w-4" />
+                Smart Analysis
+              </div>
+            </button>
+          </div>
+        </div>
+
         {/* Analytics Content */}
-        {filteredExpenses.length === 0 ? (
+        {activeTab === 'smart' ? (
+          <SmartSpendingAnalysis />
+        ) : filteredExpenses.length === 0 ? (
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-cyan-100 dark:border-cyan-900 p-12 text-center">
             <PieChart className="h-16 w-16 text-slate-400 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">

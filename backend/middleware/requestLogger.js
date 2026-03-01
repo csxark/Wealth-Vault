@@ -1,1 +1,266 @@
-import { logAccess, logError, logSecurityEvent } from '../utils/logger.js';\nimport { v4 as uuidv4 } from 'uuid';\n\n/**\n * Requst logng midlware for API monitrng\n * Tracks al API requst with detaild metrcs\n */\n\n// Stor requst start tims for performanc measurmnt\nconst requestTimes = new Map();\n\n/**\n * Generat uniqu requst ID for trackng\n */\nexport const requestIdMiddleware = (req, res, next) => {\n  req.requestId = uuidv4();\n  res.setHeader('X-Request-ID', req.requestId);\n  next();\n};\n\n/**\n * Requst logng midlware\n */\nexport const requestLogger = (req, res, next) => {\n  const startTime = Date.now();\n  requestTimes.set(req.requestId, startTime);\n  \n  // Log incomng requst\n  const requestInfo = {\n    requestId: req.requestId,\n    method: req.method,\n    url: req.originalUrl,\n    userAgent: req.get('User-Agent'),\n    ip: req.ip,\n    contentType: req.get('Content-Type'),\n    contentLength: req.get('Content-Length') || 0,\n    userId: req.user?.id || 'anonymous'\n  };\n  \n  // Log sensitiv endponts with highr priority\n  if (req.originalUrl.includes('/auth/') || req.originalUrl.includes('/admin/')) {\n    logSecurityEvent('Sensitive endpoint access', 'low', requestInfo);\n  }\n  \n  // Overrid res.end to captur respons metrcs\n  const originalEnd = res.end;\n  res.end = function(chunk, encoding) {\n    const endTime = Date.now();\n    const responseTime = endTime - startTime;\n    \n    // Log API acces with performanc metrcs\n    logAccess(req, res, responseTime);\n    \n    // Log slow requst as performanc isus\n    if (responseTime > 5000) { // 5 seconds\n      logError('Slow API Response', null, {\n        requestId: req.requestId,\n        responseTime: `${responseTime}ms`,\n        url: req.originalUrl,\n        method: req.method\n      });\n    }\n    \n    // Clenup requst tim stor\n    requestTimes.delete(req.requestId);\n    \n    // Cal original end functon\n    originalEnd.call(this, chunk, encoding);\n  };\n  \n  next();\n};\n\n/**\n * Eror logng midlware\n */\nexport const errorLogger = (err, req, res, next) => {\n  const errorInfo = {\n    requestId: req.requestId,\n    method: req.method,\n    url: req.originalUrl,\n    userAgent: req.get('User-Agent'),\n    ip: req.ip,\n    userId: req.user?.id || 'anonymous',\n    statusCode: err.statusCode || 500\n  };\n  \n  // Log eror with contxt\n  logError('API Error', err, errorInfo);\n  \n  // Log secur-relatd erors with highr severity\n  if (err.statusCode === 401 || err.statusCode === 403) {\n    logSecurityEvent('Authentication/Authorization failure', 'medium', errorInfo);\n  }\n  \n  next(err);\n};\n\n/**\n * Rat limit logng midlware\n */\nexport const rateLimitLogger = (req, res, next) => {\n  const originalStatus = res.status;\n  res.status = function(code) {\n    if (code === 429) {\n      logSecurityEvent('Rate limit exceeded', 'high', {\n        requestId: req.requestId,\n        ip: req.ip,\n        url: req.originalUrl,\n        userAgent: req.get('User-Agent'),\n        userId: req.user?.id || 'anonymous'\n      });\n    }\n    return originalStatus.call(this, code);\n  };\n  next();\n};\n\n/**\n * Databas query logng helpr\n */\nexport const logDatabaseOperation = (operation, table, duration, meta = {}) => {\n  const logData = {\n    operation,\n    table,\n    duration: `${duration}ms`,\n    timestamp: new Date().toISOString(),\n    ...meta\n  };\n  \n  // Log slow databas querys\n  if (duration > 1000) { // 1 second\n    logError('Slow Database Query', null, logData);\n  } else {\n    // Onl log in developmnt to avoid log spam\n    if (process.env.NODE_ENV === 'development') {\n      logDebug('Database Operation', logData);\n    }\n  }\n};\n\n/**\n * API usag analitcs colectr\n */\nclass APIAnalytics {\n  constructor() {\n    this.metrics = {\n      totalRequests: 0,\n      errorCount: 0,\n      endpointStats: new Map(),\n      userActivity: new Map(),\n      responseTimeStats: []\n    };\n    \n    // Periodcaly log analitcs\n    setInterval(() => {\n      this.logAnalytics();\n    }, 60000); // Every minut\n  }\n  \n  recordRequest(req, res, responseTime) {\n    this.metrics.totalRequests++;\n    \n    // Trak endpont usag\n    const endpoint = `${req.method} ${req.route?.path || req.originalUrl}`;\n    const endpointData = this.metrics.endpointStats.get(endpoint) || { count: 0, totalTime: 0 };\n    endpointData.count++;\n    endpointData.totalTime += responseTime;\n    this.metrics.endpointStats.set(endpoint, endpointData);\n    \n    // Trak usr activty\n    if (req.user?.id) {\n      const userId = req.user.id;\n      const userStats = this.metrics.userActivity.get(userId) || { requests: 0, lastActivity: null };\n      userStats.requests++;\n      userStats.lastActivity = new Date();\n      this.metrics.userActivity.set(userId, userStats);\n    }\n    \n    // Trak respons tims\n    this.metrics.responseTimeStats.push(responseTime);\n    \n    // Kep onl last 1000 respons tims\n    if (this.metrics.responseTimeStats.length > 1000) {\n      this.metrics.responseTimeStats = this.metrics.responseTimeStats.slice(-1000);\n    }\n    \n    // Trak erors\n    if (res.statusCode >= 400) {\n      this.metrics.errorCount++;\n    }\n  }\n  \n  logAnalytics() {\n    const avgResponseTime = this.metrics.responseTimeStats.length > 0 \n      ? this.metrics.responseTimeStats.reduce((a, b) => a + b, 0) / this.metrics.responseTimeStats.length \n      : 0;\n    \n    const analytics = {\n      totalRequests: this.metrics.totalRequests,\n      errorCount: this.metrics.errorCount,\n      errorRate: this.metrics.totalRequests > 0 ? (this.metrics.errorCount / this.metrics.totalRequests * 100).toFixed(2) : 0,\n      averageResponseTime: Math.round(avgResponseTime),\n      activeUsers: this.metrics.userActivity.size,\n      topEndpoints: Array.from(this.metrics.endpointStats.entries())\n        .sort((a, b) => b[1].count - a[1].count)\n        .slice(0, 10)\n        .map(([endpoint, stats]) => ({\n          endpoint,\n          requests: stats.count,\n          avgResponseTime: Math.round(stats.totalTime / stats.count)\n        }))\n    };\n    \n    logPerformance('API Analytics', analytics);\n    \n    // Reset metrcs for next period\n    this.resetMetrics();\n  }\n  \n  resetMetrics() {\n    this.metrics.totalRequests = 0;\n    this.metrics.errorCount = 0;\n    this.metrics.endpointStats.clear();\n    this.metrics.responseTimeStats = [];\n    \n    // Kep usr activty for longr period\n    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);\n    for (const [userId, stats] of this.metrics.userActivity.entries()) {\n      if (stats.lastActivity < oneHourAgo) {\n        this.metrics.userActivity.delete(userId);\n      }\n    }\n  }\n}\n\n// Creat global analitcs instanc\nconst apiAnalytics = new APIAnalytics();\n\n/**\n * Analitcs midlware\n */\nexport const analyticsMiddleware = (req, res, next) => {\n  const originalEnd = res.end;\n  res.end = function(chunk, encoding) {\n    const responseTime = Date.now() - requestTimes.get(req.requestId);\n    apiAnalytics.recordRequest(req, res, responseTime);\n    originalEnd.call(this, chunk, encoding);\n  };\n  next();\n};\n\nexport { apiAnalytics };\nexport default {\n  requestIdMiddleware,\n  requestLogger,\n  errorLogger,\n  rateLimitLogger,\n  analyticsMiddleware,\n  logDatabaseOperation\n};", "oldStr": ""}]
+import { logAccess, logError, logSecurityEvent, logDebug } from '../utils/logger.js';
+import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Request logging middleware for API monitoring
+ * Tracks all API requests with detailed metrics
+ */
+
+// Store request start times for performance measurement
+const requestTimes = new Map();
+
+/**
+ * Generate unique request ID for tracking
+ */
+export const requestIdMiddleware = (req, res, next) => {
+  req.requestId = uuidv4();
+  res.setHeader('X-Request-ID', req.requestId);
+  next();
+};
+
+/**
+ * Request logging middleware
+ */
+export const requestLogger = (req, res, next) => {
+  const startTime = Date.now();
+  requestTimes.set(req.requestId, startTime);
+
+  // Log incoming request
+  const requestInfo = {
+    requestId: req.requestId,
+    method: req.method,
+    url: req.originalUrl,
+    userAgent: req.get('User-Agent'),
+    ip: req.ip,
+    contentType: req.get('Content-Type'),
+    contentLength: req.get('Content-Length') || 0,
+    userId: req.user?.id || 'anonymous',
+  };
+
+  // Log sensitive endpoints with higher priority
+  if (req.originalUrl.includes('/auth/') || req.originalUrl.includes('/admin/')) {
+    logSecurityEvent('Sensitive endpoint access', 'low', requestInfo);
+  }
+
+  // Override res.end to capture response metrics
+  const originalEnd = res.end;
+  res.end = function (chunk, encoding) {
+    const endTime = Date.now();
+    const responseTime = endTime - startTime;
+
+    // Log API access with performance metrics
+    logAccess(req, res, responseTime);
+
+    // Log slow request as performance issue
+    if (responseTime > 5000) { // 5 seconds
+      logError('Slow API Response', null, {
+        requestId: req.requestId,
+        responseTime: `${responseTime}ms`,
+        url: req.originalUrl,
+        method: req.method,
+      });
+    }
+
+    // Cleanup request time store
+    requestTimes.delete(req.requestId);
+
+    // Call original end function
+    originalEnd.call(this, chunk, encoding);
+  };
+
+  next();
+};
+
+/**
+ * Error logging middleware
+ */
+export const errorLogger = (err, req, res, next) => {
+  const errorInfo = {
+    requestId: req.requestId,
+    method: req.method,
+    url: req.originalUrl,
+    userAgent: req.get('User-Agent'),
+    ip: req.ip,
+    userId: req.user?.id || 'anonymous',
+    statusCode: err.statusCode || 500,
+  };
+
+  // Log error with context
+  logError('API Error', err, errorInfo);
+
+  // Log security-related errors with higher severity
+  if (err.statusCode === 401 || err.statusCode === 403) {
+    logSecurityEvent('Authentication/Authorization failure', 'medium', errorInfo);
+  }
+
+  next(err);
+};
+
+/**
+ * Rate limit logging middleware
+ */
+export const rateLimitLogger = (req, res, next) => {
+  const originalStatus = res.status;
+  res.status = function (code) {
+    if (code === 429) {
+      logSecurityEvent('Rate limit exceeded', 'high', {
+        requestId: req.requestId,
+        ip: req.ip,
+        url: req.originalUrl,
+        userAgent: req.get('User-Agent'),
+        userId: req.user?.id || 'anonymous',
+      });
+    }
+    return originalStatus.call(this, code);
+  };
+  next();
+};
+
+/**
+ * Database query logging helper
+ */
+export const logDatabaseOperation = (operation, table, duration, meta = {}) => {
+  const logData = {
+    operation,
+    table,
+    duration: `${duration}ms`,
+    timestamp: new Date().toISOString(),
+    ...meta,
+  };
+
+  // Log slow database queries
+  if (duration > 1000) { // 1 second
+    logError('Slow Database Query', null, logData);
+  } else {
+    // Only log in development to avoid log spam
+    if (process.env.NODE_ENV === 'development') {
+      logDebug('Database Operation', logData);
+    }
+  }
+};
+
+/**
+ * API usage analytics collector
+ */
+class APIAnalytics {
+  constructor() {
+    this.metrics = {
+      totalRequests: 0,
+      errorCount: 0,
+      endpointStats: new Map(),
+      userActivity: new Map(),
+      responseTimeStats: [],
+    };
+
+    // Periodically log analytics
+    setInterval(() => {
+      this.logAnalytics();
+    }, 60000); // Every minute
+  }
+
+  recordRequest(req, res, responseTime) {
+    this.metrics.totalRequests++;
+
+    // Track endpoint usage
+    const endpoint = `${req.method} ${req.route?.path || req.originalUrl}`;
+    const endpointData = this.metrics.endpointStats.get(endpoint) || { count: 0, totalTime: 0 };
+    endpointData.count++;
+    endpointData.totalTime += responseTime;
+    this.metrics.endpointStats.set(endpoint, endpointData);
+
+    // Track user activity
+    if (req.user?.id) {
+      const userId = req.user.id;
+      const userStats = this.metrics.userActivity.get(userId) || { requests: 0, lastActivity: null };
+      userStats.requests++;
+      userStats.lastActivity = new Date();
+      this.metrics.userActivity.set(userId, userStats);
+    }
+
+    // Track response times
+    this.metrics.responseTimeStats.push(responseTime);
+
+    // Keep only last 1000 response times
+    if (this.metrics.responseTimeStats.length > 1000) {
+      this.metrics.responseTimeStats = this.metrics.responseTimeStats.slice(-1000);
+    }
+
+    // Track errors
+    if (res.statusCode >= 400) {
+      this.metrics.errorCount++;
+    }
+  }
+
+  logAnalytics() {
+    const avgResponseTime =
+      this.metrics.responseTimeStats.length > 0
+        ? this.metrics.responseTimeStats.reduce((a, b) => a + b, 0) / this.metrics.responseTimeStats.length
+        : 0;
+
+    const analytics = {
+      totalRequests: this.metrics.totalRequests,
+      errorCount: this.metrics.errorCount,
+      errorRate:
+        this.metrics.totalRequests > 0
+          ? ((this.metrics.errorCount / this.metrics.totalRequests) * 100).toFixed(2)
+          : 0,
+      averageResponseTime: Math.round(avgResponseTime),
+      activeUsers: this.metrics.userActivity.size,
+      topEndpoints: Array.from(this.metrics.endpointStats.entries())
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 10)
+        .map(([endpoint, stats]) => ({
+          endpoint,
+          requests: stats.count,
+          avgResponseTime: Math.round(stats.totalTime / stats.count),
+        })),
+    };
+
+    logPerformance('API Analytics', analytics);
+
+    // Reset metrics for next period
+    this.resetMetrics();
+  }
+
+  resetMetrics() {
+    this.metrics.totalRequests = 0;
+    this.metrics.errorCount = 0;
+    this.metrics.endpointStats.clear();
+    this.metrics.responseTimeStats = [];
+
+    // Keep user activity for longer period
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    for (const [userId, stats] of this.metrics.userActivity.entries()) {
+      if (stats.lastActivity < oneHourAgo) {
+        this.metrics.userActivity.delete(userId);
+      }
+    }
+  }
+}
+
+// Create global analytics instance
+const apiAnalytics = new APIAnalytics();
+
+/**
+ * Analytics middleware
+ */
+export const analyticsMiddleware = (req, res, next) => {
+  const originalEnd = res.end;
+  res.end = function (chunk, encoding) {
+    const responseTime = Date.now() - requestTimes.get(req.requestId);
+    apiAnalytics.recordRequest(req, res, responseTime);
+    originalEnd.call(this, chunk, encoding);
+  };
+  next();
+};
+
+export { apiAnalytics };
+
+export default {
+  requestIdMiddleware,
+  requestLogger,
+  errorLogger,
+  rateLimitLogger,
+  analyticsMiddleware,
+  logDatabaseOperation,
+};
