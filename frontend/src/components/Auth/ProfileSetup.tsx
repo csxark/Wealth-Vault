@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Phone, Calendar, Briefcase, IndianRupee, Target, ArrowRight } from 'lucide-react';
+import { User, Phone, Briefcase, IndianRupee, Target, ArrowRight } from 'lucide-react';
 import type { UserProfile } from '../../types';
 
 interface ProfileSetupProps {

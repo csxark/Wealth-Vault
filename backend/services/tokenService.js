@@ -1,239 +1,271 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { eq, and, lt } from 'drizzle-orm';
-import db from '../config/db.js';
-import { deviceSessions, tokenBlacklist, users } from '../db/schema.js';
-import { getRedisClient } from '../config/redis.js';
+import { eq, and, gt } from 'drizzle-orm';
+import dbRouter from '../services/dbRouterService.js';
+import { deviceSessions, tokenBlacklist } from '../db/schema.js';
 
 /**
- * Enhanced Token Management Service
- * Handles access tokens, refresh tokens, device sessions, and blacklisting
+ * Token Management Service with Database Integration
+ * Handles token generation, validation, and session management
  */
 
 // Token expiration times
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
-const DEVICE_SESSION_EXPIRY = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-/**
- * Generate access token (short-lived)
- */
-export const generateAccessToken = (userId, sessionId) => {
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters long');
-  }
-  
+// Cookie options for refresh tokens
+export const REFRESH_TOKEN_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+  path: '/api/auth'
+};
+
+export const generateAccessToken = (userId, sessionId = null) => {
   return jwt.sign(
     { 
-      id: userId, 
+      userId, 
       sessionId,
-      type: 'access',
-      iat: Math.floor(Date.now() / 1000)
-    }, 
-    process.env.JWT_SECRET, 
-    { expiresIn: ACCESS_TOKEN_EXPIRY }
+      type: 'access' 
+    },
+    process.env.JWT_SECRET || 'fallback-secret',
+    { 
+      expiresIn: ACCESS_TOKEN_EXPIRY,
+      issuer: 'wealth-vault',
+      audience: 'wealth-vault-client'
+    }
   );
 };
 
-/**
- * Generate refresh token (long-lived)
- */
 export const generateRefreshToken = () => {
   return crypto.randomBytes(64).toString('hex');
 };
 
-/**
- * Create device session with tokens
- */
 export const createDeviceSession = async (userId, deviceInfo, ipAddress) => {
   const refreshToken = generateRefreshToken();
-  const expiresAt = new Date(Date.now() + DEVICE_SESSION_EXPIRY);
-  
-  // Create device session
-  const [session] = await db.insert(deviceSessions).values({
-    userId,
-    deviceId: deviceInfo.deviceId || crypto.randomUUID(),
-    deviceName: deviceInfo.deviceName || 'Unknown Device',
-    deviceType: deviceInfo.deviceType || 'web',
-    ipAddress,
-    userAgent: deviceInfo.userAgent,
-    refreshToken,
-    expiresAt,
-    lastActivity: new Date(),
-  }).returning();
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  const accessToken = generateAccessToken(userId, sessionId);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  // Generate access token with session ID
-  const accessToken = generateAccessToken(userId, session.id);
-  
-  // Update session with access token
-  await db.update(deviceSessions)
-    .set({ accessToken })
-    .where(eq(deviceSessions.id, session.id));
+  // Save session to database
+  const [session] = await dbRouter.primaryDb
+    .insert(deviceSessions)
+    .values({
+      id: sessionId,
+      userId,
+      deviceId: deviceInfo?.deviceId || 'unknown',
+      deviceName: deviceInfo?.deviceName || 'Unknown Device',
+      deviceType: deviceInfo?.deviceType || 'web',
+      ipAddress,
+      userAgent: deviceInfo?.userAgent,
+      refreshToken,
+      accessToken,
+      expiresAt
+    })
+    .returning();
 
   return {
-    accessToken,
-    refreshToken,
     sessionId: session.id,
-    expiresIn: 15 * 60, // 15 minutes in seconds
-    refreshExpiresIn: 7 * 24 * 60 * 60, // 7 days in seconds
+    refreshToken: session.refreshToken,
+    accessToken: session.accessToken,
+    expiresAt: session.expiresAt
   };
 };
 
-/**
- * Refresh access token using refresh token
- */
 export const refreshAccessToken = async (refreshToken, ipAddress) => {
-  // Find active session with refresh token
-  const [session] = await db
+  if (!refreshToken) {
+    throw new Error('Refresh token is required');
+  }
+
+  // Check if refresh token is blacklisted
+  const [blacklisted] = await dbRouter.primaryDb
+    .select()
+    .from(tokenBlacklist)
+    .where(and(
+      eq(tokenBlacklist.token, refreshToken),
+      eq(tokenBlacklist.tokenType, 'refresh')
+    ));
+
+  if (blacklisted) {
+    throw new Error('Refresh token has been revoked');
+  }
+
+  // Find active device session with matching refresh token
+  const [session] = await dbRouter.primaryDb
     .select()
     .from(deviceSessions)
-    .where(
-      and(
-        eq(deviceSessions.refreshToken, refreshToken),
-        eq(deviceSessions.isActive, true),
-        lt(new Date(), deviceSessions.expiresAt)
-      )
-    );
+    .where(and(
+      eq(deviceSessions.refreshToken, refreshToken),
+      eq(deviceSessions.isActive, true),
+      gt(deviceSessions.expiresAt, new Date())
+    ));
 
   if (!session) {
     throw new Error('Invalid or expired refresh token');
   }
 
-  // Check if refresh token is blacklisted
-  const [blacklistedToken] = await db
-    .select()
-    .from(tokenBlacklist)
-    .where(eq(tokenBlacklist.token, refreshToken));
-
-  if (blacklistedToken) {
-    throw new Error('Refresh token has been revoked');
-  }
-
-  // Generate new access token
+  // Generate new tokens
+  const newRefreshToken = generateRefreshToken();
   const newAccessToken = generateAccessToken(session.userId, session.id);
-  
-  // Update session activity and access token
-  await db.update(deviceSessions)
-    .set({ 
+
+  // Update session with new tokens and activity
+  await dbRouter.primaryDb
+    .update(deviceSessions)
+    .set({
+      refreshToken: newRefreshToken,
       accessToken: newAccessToken,
       lastActivity: new Date(),
-      ipAddress: ipAddress || session.ipAddress
+      ipAddress: ipAddress
     })
     .where(eq(deviceSessions.id, session.id));
 
   return {
     accessToken: newAccessToken,
-    expiresIn: 15 * 60, // 15 minutes in seconds
-    sessionId: session.id,
+    refreshToken: newRefreshToken,
+    sessionId: session.id
   };
 };
 
-/**
- * Blacklist token (logout, password change, etc.)
- */
 export const blacklistToken = async (token, tokenType, userId, reason = 'logout') => {
-  try {
-    // Decode token to get expiration
-    const decoded = jwt.decode(token);
-    const expiresAt = decoded?.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
 
-    // Add to blacklist
-    await db.insert(tokenBlacklist).values({
+  await dbRouter.primaryDb
+    .insert(tokenBlacklist)
+    .values({
       token,
       tokenType,
       userId,
       reason,
-      expiresAt,
+      expiresAt
     });
 
-    // Also add to Redis for faster lookup (if available)
-    const redisClient = getRedisClient();
-    if (redisClient) {
-      const ttl = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-      await redisClient.setEx(`blacklist:${token}`, ttl, reason);
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error blacklisting token:', error);
-    return false;
-  }
+  return { success: true };
 };
 
-/**
- * Check if token is blacklisted
- */
 export const isTokenBlacklisted = async (token) => {
-  // Check Redis first (faster)
-  const redisClient = getRedisClient();
-  if (redisClient) {
-    try {
-      const result = await redisClient.get(`blacklist:${token}`);
-      if (result) return true;
-    } catch (error) {
-      console.warn('Redis blacklist check failed:', error.message);
-    }
-  }
-
-  // Fallback to database
-  const [blacklistedToken] = await db
+  const [blacklisted] = await dbRouter.primaryDb
     .select()
     .from(tokenBlacklist)
-    .where(eq(tokenBlacklist.token, token));
+    .where(and(
+      eq(tokenBlacklist.token, token),
+      gt(tokenBlacklist.expiresAt, new Date())
+    ));
 
-  return !!blacklistedToken;
+  return !!blacklisted;
 };
 
-/**
- * Revoke device session (logout from specific device)
- */
-export const revokeDeviceSession = async (sessionId, userId, reason = 'logout') => {
-  const [session] = await db
+export const verifyAccessToken = (token) => {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+  } catch (error) {
+    throw new Error(`Invalid token: ${error.message}`);
+  }
+};
+
+export const getDeviceSession = async (sessionId, userId) => {
+  const [session] = await dbRouter.primaryDb
     .select()
     .from(deviceSessions)
-    .where(
-      and(
-        eq(deviceSessions.id, sessionId),
-        eq(deviceSessions.userId, userId)
-      )
-    );
+    .where(and(
+      eq(deviceSessions.id, sessionId),
+      eq(deviceSessions.userId, userId),
+      eq(deviceSessions.isActive, true)
+    ));
 
-  if (!session) {
-    throw new Error('Session not found');
-  }
+  return session || null;
+};
 
-  // Blacklist both tokens
-  if (session.accessToken) {
-    await blacklistToken(session.accessToken, 'access', userId, reason);
-  }
-  if (session.refreshToken) {
-    await blacklistToken(session.refreshToken, 'refresh', userId, reason);
-  }
-
-  // Deactivate session
-  await db.update(deviceSessions)
-    .set({ isActive: false, updatedAt: new Date() })
+export const invalidateDeviceSession = async (sessionId) => {
+  const result = await dbRouter.primaryDb
+    .update(deviceSessions)
+    .set({ isActive: false })
     .where(eq(deviceSessions.id, sessionId));
 
-  return true;
+  return { success: result.rowCount > 0 };
 };
 
-/**
- * Revoke all user sessions (logout from all devices)
- */
-export const revokeAllUserSessions = async (userId, reason = 'security') => {
-  // Get all active sessions
-  const sessions = await db
+export const getUserDeviceSessions = async (userId) => {
+  return await dbRouter.primaryDb
     .select()
     .from(deviceSessions)
-    .where(
-      and(
-        eq(deviceSessions.userId, userId),
-        eq(deviceSessions.isActive, true)
-      )
-    );
+    .where(and(
+      eq(deviceSessions.userId, userId),
+      eq(deviceSessions.isActive, true)
+    ));
+};
 
-  // Blacklist all tokens
+export const invalidateAllUserSessions = async (userId) => {
+  const result = await dbRouter.primaryDb
+    .update(deviceSessions)
+    .set({ isActive: false })
+    .where(eq(deviceSessions.userId, userId));
+
+  return { success: true };
+};
+
+export const cleanupExpiredTokens = async () => {
+  const now = new Date();
+
+  // Deactivate expired device sessions
+  const expiredSessions = await dbRouter.primaryDb
+    .update(deviceSessions)
+    .set({ isActive: false })
+    .where(gt(deviceSessions.expiresAt, now))
+    .returning();
+
+  // Remove expired blacklist entries
+  const expiredBlacklist = await dbRouter.primaryDb
+    .delete(tokenBlacklist)
+    .where(gt(tokenBlacklist.expiresAt, now))
+    .returning();
+
+  return {
+    sessionsRemoved: expiredSessions.length,
+    tokensRemoved: expiredBlacklist.length
+  };
+};
+
+export const revokeDeviceSession = async (sessionId, userId, reason = 'logout') => {
+  // First get the session to blacklist the tokens
+  const [session] = await dbRouter.primaryDb
+    .select()
+    .from(deviceSessions)
+    .where(and(
+      eq(deviceSessions.id, sessionId),
+      eq(deviceSessions.userId, userId)
+    ));
+
+  if (session) {
+    // Blacklist the current tokens
+    if (session.accessToken) {
+      await blacklistToken(session.accessToken, 'access', session.userId, reason);
+    }
+    if (session.refreshToken) {
+      await blacklistToken(session.refreshToken, 'refresh', session.userId, reason);
+    }
+  }
+
+  // Deactivate the session
+  const result = await dbRouter.primaryDb
+    .update(deviceSessions)
+    .set({ isActive: false })
+    .where(eq(deviceSessions.id, sessionId));
+
+  return { success: result.rowCount > 0 };
+};
+
+export const revokeAllUserSessions = async (userId, reason = 'logout_all') => {
+  // Get all active sessions for the user
+  const sessions = await dbRouter.primaryDb
+    .select()
+    .from(deviceSessions)
+    .where(and(
+      eq(deviceSessions.userId, userId),
+      eq(deviceSessions.isActive, true)
+    ));
+
+  // Blacklist all tokens from active sessions
   for (const session of sessions) {
     if (session.accessToken) {
       await blacklistToken(session.accessToken, 'access', userId, reason);
@@ -244,87 +276,32 @@ export const revokeAllUserSessions = async (userId, reason = 'security') => {
   }
 
   // Deactivate all sessions
-  await db.update(deviceSessions)
-    .set({ isActive: false, updatedAt: new Date() })
+  const result = await dbRouter.primaryDb
+    .update(deviceSessions)
+    .set({ isActive: false })
     .where(eq(deviceSessions.userId, userId));
 
-  return sessions.length;
+  return { success: true, revokedCount: sessions.length };
 };
 
-/**
- * Get user's active sessions
- */
 export const getUserSessions = async (userId) => {
-  return await db
+  return await dbRouter.primaryDb
     .select({
       id: deviceSessions.id,
+      deviceId: deviceSessions.deviceId,
       deviceName: deviceSessions.deviceName,
       deviceType: deviceSessions.deviceType,
       ipAddress: deviceSessions.ipAddress,
+      userAgent: deviceSessions.userAgent,
       lastActivity: deviceSessions.lastActivity,
       createdAt: deviceSessions.createdAt,
+      expiresAt: deviceSessions.expiresAt,
+      isActive: deviceSessions.isActive
     })
     .from(deviceSessions)
-    .where(
-      and(
-        eq(deviceSessions.userId, userId),
-        eq(deviceSessions.isActive, true),
-        lt(new Date(), deviceSessions.expiresAt)
-      )
-    );
-};
-
-/**
- * Clean expired tokens and sessions
- */
-export const cleanupExpiredTokens = async () => {
-  const now = new Date();
-  
-  // Remove expired blacklisted tokens
-  await db.delete(tokenBlacklist)
-    .where(lt(tokenBlacklist.expiresAt, now));
-  
-  // Deactivate expired sessions
-  await db.update(deviceSessions)
-    .set({ isActive: false })
-    .where(lt(deviceSessions.expiresAt, now));
-  
-  console.log('✅ Expired tokens and sessions cleaned up');
-};
-
-/**
- * Verify and decode access token
- */
-export const verifyAccessToken = async (token) => {
-  try {
-    // Check if token is blacklisted
-    if (await isTokenBlacklisted(token)) {
-      throw new Error('Token has been revoked');
-    }
-
-    // Verify JWT
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    if (decoded.type !== 'access') {
-      throw new Error('Invalid token type');
-    }
-
-    return decoded;
-  } catch (error) {
-    throw new Error(`Token verification failed: ${error.message}`);
-  }
-};
-
-export default {
-  generateAccessToken,
-  generateRefreshToken,
-  createDeviceSession,
-  refreshAccessToken,
-  blacklistToken,
-  isTokenBlacklisted,
-  revokeDeviceSession,
-  revokeAllUserSessions,
-  getUserSessions,
-  cleanupExpiredTokens,
-  verifyAccessToken,
+    .where(and(
+      eq(deviceSessions.userId, userId),
+      eq(deviceSessions.isActive, true)
+    ))
+    .orderBy(deviceSessions.lastActivity);
 };
