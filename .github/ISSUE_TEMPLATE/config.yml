@@ -6,6 +6,3 @@ contact_links:
   - name: 📖 Documentation
     url: https://github.com/csxark/Wealth-Vault#readme
     about: Check out the documentation for setup and usage guides
-  - name: 🔒 Report Security Vulnerability (Private)
-    url: https://github.com/csxark/Wealth-Vault/security/advisories/new
-    about: Privately report security vulnerabilities to maintainers

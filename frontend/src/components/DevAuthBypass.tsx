@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 export const DevAuthBypass: React.FC = () => {
-  const navigate = useNavigate();
   const [bypassed, setBypassed] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 

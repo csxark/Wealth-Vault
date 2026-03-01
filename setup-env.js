@@ -23,6 +23,11 @@ DIRECT_URL=postgres://postgres.xxxx:password@aws-0-region.supabase.com:5432/post
 JWT_SECRET=wealth-vault-super-secret-jwt-key-2024
 JWT_EXPIRE=30d
 
+# Exchange Rate API Configuration
+# Get your free API key from: https://exchangerate-api.com/
+# Or use 'free' for limited free tier
+EXCHANGE_RATE_API_KEY=free
+
 # CORS Configuration
 FRONTEND_URL=http://localhost:3000
 `;
@@ -52,7 +57,7 @@ try {
 
   console.log('\n🎉 Environment setup complete!');
   console.log('\n📋 Next steps:');
-  console.log('1. Start MongoDB (if not already running)');
+  console.log('1. Ensure PostgreSQL database is accessible (Supabase configured)');
   console.log('2. Run: cd backend && npm install && npm run dev');
   console.log('3. Run: cd frontend && npm install && npm run dev');
   console.log('4. Test API connection with: node test-api.js');
