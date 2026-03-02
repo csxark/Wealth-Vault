@@ -205,6 +205,7 @@ import anomalyRoutes from "./routes/anomalies.js";
 import goalEarlyWarningRoutes from "./routes/goalEarlyWarning.js";
 import deadlineReforecastRoutes from "./routes/deadlineReforecast.js";
 import savingsVelocityRoutes from "./routes/savingsVelocity.js";
+import goalConflictResolverRoutes from "./routes/goalConflictResolver.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
 import logSnapshotJob from "./jobs/logSnapshotJob.js";
 
@@ -507,6 +508,7 @@ app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/goal-early-warning", userLimiter, goalEarlyWarningRoutes);
 app.use("/api/deadline-reforecast", userLimiter, deadlineReforecastRoutes);
 app.use("/api/savings-velocity", userLimiter, savingsVelocityRoutes);
+app.use("/api/goal-conflicts", userLimiter, goalConflictResolverRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/smart-categorization", userLimiter, smartCategorizationRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
