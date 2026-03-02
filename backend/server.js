@@ -202,6 +202,7 @@ import goalSharingRoutes from "./routes/goalSharing.js";
 import goalContributionSmoothingRoutes from "./routes/goalContributionSmoothing.js";
 import budgetGuardrailRoutes from "./routes/budgetGuardrails.js";
 import anomalyRoutes from "./routes/anomalies.js";
+import goalEarlyWarningRoutes from "./routes/goalEarlyWarning.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
 import logSnapshotJob from "./jobs/logSnapshotJob.js";
 
@@ -501,6 +502,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userLimiter, userRoutes);
 app.use("/api/expenses", userLimiter, securityGuard, expenseRoutes);
 app.use("/api/goals", userLimiter, goalRoutes);
+app.use("/api/goal-early-warning", userLimiter, goalEarlyWarningRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/smart-categorization", userLimiter, smartCategorizationRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
