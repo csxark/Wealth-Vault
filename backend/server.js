@@ -190,6 +190,7 @@ import forecastRoutes from "./routes/forecasts.js";
 import goalSharingRoutes from "./routes/goalSharing.js";
 import anomalyRoutes from "./routes/anomalies.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
+import logSnapshotJob from "./jobs/logSnapshotJob.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -280,6 +281,10 @@ const startServer = async () => {
     // Start forecast reconciliation job
     forecastReconciliation.start(120); // Run every 2 hours
     console.log('📊 Forecast reconciliation job started');
+
+    // Start log snapshot job
+    await logSnapshotJob.initialize();
+    console.log('📋 Log snapshot job initialized');
 
     // Initialize upload directories
     try {
@@ -694,6 +699,7 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/forecasts", userLimiter, forecastRoutes);
     app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
     app.use("/api/anomalies", userLimiter, anomalyRoutes);
+    app.use("/api/log-snapshots", userLimiter, logSnapshotsRoutes);
     app.use("/api/portfolio", userLimiter, rebalancingRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
