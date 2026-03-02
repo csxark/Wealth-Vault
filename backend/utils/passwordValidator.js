@@ -92,3 +92,34 @@ export const isCommonPassword = (password) => {
     password.toLowerCase() === common.toLowerCase()
   );
 };
+
+/**
+ * Validate password comprehensively
+ * @param {string} password - Password to validate
+ * @param {Array} userInputs - Additional inputs to check against (email, name, etc.)
+ * @returns {Object} Validation result with isValid and message
+ */
+export const validatePassword = (password, userInputs = []) => {
+  // Check if password is common
+  if (isCommonPassword(password)) {
+    return {
+      isValid: false,
+      message: 'This password is too common. Please choose a more unique password.'
+    };
+  }
+
+  // Use strength validation
+  const strengthResult = validatePasswordStrength(password, userInputs);
+  
+  if (!strengthResult.success) {
+    return {
+      isValid: false,
+      message: strengthResult.message
+    };
+  }
+
+  return {
+    isValid: true,
+    message: 'Password is valid'
+  };
+};

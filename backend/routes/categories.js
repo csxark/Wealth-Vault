@@ -5,11 +5,10 @@ import { eq, and, sql, not } from 'drizzle-orm';
 import db from '../config/db.js';
 import { categories, expenses } from '../db/schema.js';
 import { protect, checkOwnership } from '../middleware/auth.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import { AppError } from '../utils/AppError.js';
-import { ApiResponse } from '../utils/ApiResponse.js';
+import { BudgetRollupService } from '../services/budgetRollupService.js';
 
 const router = express.Router();
+const budgetRollupService = new BudgetRollupService();
 
 // @route   GET /api/categories
 // @desc    Get all categories for authenticated user
@@ -174,5 +173,172 @@ router.get('/stats/usage', protect, asyncHandler(async (req, res, next) => {
 
   return new ApiResponse(200, { categories: categoriesWithStats }, 'Category stats retrieved successfully').send(res);
 }));
+
+// ============================================================
+// BUDGET ROLLUP ENDPOINTS (Issue #569)
+// ============================================================
+
+/**
+ * @route   GET /api/categories/:id/budget-rollup/status
+ * @desc    Get budget rollup status for a category
+ * @access  Private
+ */
+router.get('/:id/budget-rollup/status', protect, checkOwnership('Category'), async (req, res) => {
+  try {
+    const status = await budgetRollupService.getRollupStatus({
+      tenantId: req.user.tenantId || req.user.id,
+      categoryId: req.params.id
+    });
+
+    if (!status) {
+      return res.status(404).json({
+        success: false,
+        message: 'Rollup status not available for this category'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { status }
+    });
+  } catch (error) {
+    console.error('Get budget rollup status error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error while fetching rollup status'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/categories/:id/budget-rollup/compute
+ * @desc    Manually trigger budget rollup computation for a category
+ * @access  Private
+ */
+router.post('/:id/budget-rollup/compute', protect, checkOwnership('Category'), async (req, res) => {
+  try {
+    const { reason = 'manual_api_request' } = req.body;
+
+    const result = await budgetRollupService.computeRollupForCategory({
+      categoryId: req.params.id,
+      tenantId: req.user.tenantId || req.user.id,
+      reason
+    });
+
+    // Cascade to ancestors
+    const cascadeCount = await budgetRollupService.cascadeRollupToAncestors({
+      categoryId: req.params.id,
+      tenantId: req.user.tenantId || req.user.id
+    });
+
+    res.json({
+      success: true,
+      message: 'Budget rollup computed successfully',
+      data: {
+        ...result,
+        ancestorsCascaded: cascadeCount
+      }
+    });
+  } catch (error) {
+    console.error('Compute budget rollup error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error while computing rollup'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/categories/:id/budget-rollup/reconcile
+ * @desc    Reconcile budget for a category against actual leaf transactions
+ * @access  Private
+ */
+router.post('/:id/budget-rollup/reconcile', protect, checkOwnership('Category'), async (req, res) => {
+  try {
+    const { rootCause = 'manual_api_request' } = req.body;
+
+    const result = await budgetRollupService.reconcileCategory({
+      categoryId: req.params.id,
+      tenantId: req.user.tenantId || req.user.id,
+      rootCause
+    });
+
+    res.json({
+      success: true,
+      message: result.correctionApplied ? 'Reconciliation completed with corrections' : 'Reconciliation completed (no corrections needed)',
+      data: result
+    });
+  } catch (error) {
+    console.error('Reconcile budget error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error while reconciling budget'
+    });
+  }
+});
+
+/**
+ * @route   GET /api/categories/budget-rollup/variances
+ * @desc    Detect budget variances across all categories
+ * @access  Private
+ */
+router.get('/budget-rollup/variances', protect, async (req, res) => {
+  try {
+    const { threshold = 5.0 } = req.query;
+
+    const variances = await budgetRollupService.detectVariances({
+      tenantId: req.user.tenantId || req.user.id,
+      varianceThresholdPercent: parseFloat(threshold)
+    });
+
+    const summary = {
+      totalCount: variances.length,
+      bySeverity: variances.reduce((acc, v) => {
+        acc[v.severity] = (acc[v.severity] || 0) + 1;
+        return acc;
+      }, {}),
+      largestVariance: variances[0]
+    };
+
+    res.json({
+      success: true,
+      data: {
+        variances,
+        summary
+      }
+    });
+  } catch (error) {
+    console.error('Detect budget variances error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error while detecting variances'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/categories/budget-rollup/reconcile-tree
+ * @desc    Reconcile full category tree
+ * @access  Private
+ */
+router.post('/budget-rollup/reconcile-tree', protect, async (req, res) => {
+  try {
+    const result = await budgetRollupService.reconcileFullTree({
+      tenantId: req.user.tenantId || req.user.id
+    });
+
+    res.json({
+      success: true,
+      message: `Full tree reconciliation complete: ${result.reconciled} categories, ${result.corrected} corrected`,
+      data: result
+    });
+  } catch (error) {
+    console.error('Reconcile tree error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error while reconciling tree'
+    });
+  }
+});
 
 export default router;

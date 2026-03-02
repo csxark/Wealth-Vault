@@ -793,7 +793,167 @@ export async function sendSecuritySummaryReport({ email, userName, stats, period
   });
 }
 
-export { sendEmail };
+/**
+ * Send password reset email
+ */
+export async function sendPasswordResetEmail({ email, userName, resetToken, resetUrl }) {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #EF4444; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+        .warning-box { background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 15px; margin: 15px 0; }
+        .reset-button { display: inline-block; background: #EF4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+        .token-box { background: #f0f0f0; padding: 10px; border-radius: 3px; font-family: monospace; margin: 10px 0; word-break: break-all; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🔐 Password Reset Request</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${userName},</p>
+
+          <div class="warning-box">
+            <strong>⚠️ Password Reset Requested</strong><br>
+            We received a request to reset your Wealth-Vault account password.
+          </div>
+
+          <p>If you made this request, click the button below to reset your password:</p>
+
+          <div style="text-align: center;">
+            <a href="${resetUrl}" class="reset-button">Reset My Password</a>
+          </div>
+
+          <p><strong>This link will expire in 1 hour.</strong></p>
+
+          <p>If the button doesn't work, you can copy and paste this URL into your browser:</p>
+          <div class="token-box">${resetUrl}</div>
+
+          <p>If you didn't request a password reset, please ignore this email. Your password will remain unchanged.</p>
+
+          <p>For security reasons, this link can only be used once and will expire after 1 hour.</p>
+        </div>
+        <div class="footer">
+          <p>This email was sent by Wealth-Vault. If you have any questions, please contact support.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    Password Reset Request - Wealth-Vault
+
+    Hi ${userName},
+
+    We received a request to reset your Wealth-Vault account password.
+
+    If you made this request, use this link to reset your password:
+    ${resetUrl}
+
+    This link will expire in 1 hour and can only be used once.
+
+    If you didn't request a password reset, please ignore this email.
+
+    For security reasons, never share this link with anyone.
+
+    This email was sent by Wealth-Vault.
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: '🔐 Reset Your Wealth-Vault Password',
+    html,
+    text,
+  });
+}
+
+/**
+ * Send password reset success notification
+ */
+export async function sendPasswordResetSuccessEmail({ email, userName, timestamp }) {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #10B981; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+        .success-box { background: #D1FAE5; border-left: 4px solid #10B981; padding: 15px; margin: 15px 0; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>✅ Password Reset Successful</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${userName},</p>
+
+          <div class="success-box">
+            <strong>🎉 Password Reset Complete</strong><br>
+            Your Wealth-Vault account password has been successfully changed.
+          </div>
+
+          <p><strong>Time:</strong> ${new Date(timestamp).toLocaleString()}</p>
+
+          <p>If you made this change, no further action is required.</p>
+
+          <p>If you didn't change your password, please contact support immediately and consider changing your password again.</p>
+
+          <p>For your security, we recommend:</p>
+          <ul>
+            <li>Using a strong, unique password</li>
+            <li>Enabling two-factor authentication</li>
+            <li>Regularly monitoring your account activity</li>
+          </ul>
+        </div>
+        <div class="footer">
+          <p>This is an automated security notification from Wealth-Vault.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    Password Reset Successful - Wealth-Vault
+
+    Hi ${userName},
+
+    Your Wealth-Vault account password has been successfully changed.
+
+    Time: ${new Date(timestamp).toLocaleString()}
+
+    If you made this change, no further action is required.
+
+    If you didn't change your password, please contact support immediately.
+
+    For your security, we recommend:
+    - Using a strong, unique password
+    - Enabling two-factor authentication
+    - Regularly monitoring your account activity
+
+    This is an automated security notification from Wealth-Vault.
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: '✅ Password Reset Successful - Wealth-Vault',
+    html,
+    text,
+  });
+}
 
 export default {
   sendEmail,
@@ -805,4 +965,6 @@ export default {
   sendAnomalyDetectionAlert,
   sendScamDetectionAlert,
   sendSecuritySummaryReport,
+  sendPasswordResetEmail,
+  sendPasswordResetSuccessEmail,
 };

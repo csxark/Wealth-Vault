@@ -6,17 +6,20 @@ import { eq, and } from "drizzle-orm";
 import path from "path";
 import { fileURLToPath } from 'url';
 import db from "../config/db.js";
-import { users, categories, securityEvents } from "../db/schema.js";
+import { users, categories, securityEvents, passwordResetTokens } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { uploadProfilePicture, saveUploadedFile } from "../middleware/fileUpload.js";
 import fileStorageService from "../services/fileStorageService.js";
 import { getDefaultCategories } from "../utils/defaults.js";
-import { authLimiter } from "../middleware/rateLimiter.js";
-import { validatePasswordStrength, isCommonPassword } from "../utils/passwordValidator.js";
-import { asyncHandler } from "../middleware/errorHandler.js";
+import { authLimiter, passwordResetLimiter } from "../middleware/rateLimiter.js";
+import { validatePasswordStrength, isCommonPassword, validatePassword } from "../utils/passwordValidator.js";
+import { asyncHandler, ValidationError } from "../middleware/errorHandler.js";
 import { AppError } from "../utils/AppError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import successionService from "../services/successionService.js";
+import { hashPassword } from "../utils/auth.js";
+import { generatePasswordResetToken, verifyPasswordResetToken } from "../utils/passwordReset.js";
+import { sendPasswordResetEmail, sendPasswordResetSuccessEmail } from "../services/emailService.js";
 
 import {
   createDeviceSession,
@@ -40,6 +43,7 @@ import {
 } from "../utils/mfa.js";
 import securityService from "../services/securityService.js";
 import { logAudit, AuditActions, ResourceTypes } from "../middleware/auditLogger.js";
+import { sendEmailVerification } from "../services/emailVerificationService.js";
 
 // Get __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -137,10 +141,14 @@ router.post(
       .withMessage("Please provide a valid email")
       .normalizeEmail(),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return next(new AppError(400, "Invalid email format", errors.array()));
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format',
+        errors: errors.array()
+      });
     }
 
     const { email } = req.body;
@@ -238,10 +246,14 @@ router.post(
       .isLength({ min: 1, max: 50 })
       .withMessage("Last name is required and must be less than 50 characters"),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return next(new AppError(400, "Validation failed", errors.array()));
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
     }
 
     const {
@@ -256,8 +268,10 @@ router.post(
 
     // Check for required fields
     if (!email || !password || !firstName || !lastName) {
-      return next(new AppError(400, "Missing required fields: email, password, firstName, and lastName are required."));
-
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: email, password, firstName, and lastName are required."
+      });
     }
 
     const [existingUser] = await db
@@ -265,25 +279,35 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
     if (existingUser) {
-      return next(new AppError(409, "User with this email already exists"));
+      return res.status(409).json({
+        success: false,
+        message: "User with this email already exists"
+      });
     }
 
     // Check if password is common
     if (isCommonPassword(password)) {
-      return next(new AppError(400, "This password is too common. Please choose a more secure password."));
+      return res.status(400).json({
+        success: false,
+        message: "This password is too common. Please choose a more secure password."
+      });
     }
 
     // Validate password strength
     const passwordValidation = validatePasswordStrength(password, [email, firstName, lastName]);
     if (!passwordValidation.success) {
-      return next(new AppError(400, passwordValidation.message, passwordValidation.feedback));
+      return res.status(400).json({
+        success: false,
+        message: passwordValidation.message,
+        errors: passwordValidation.feedback
+      });
     }
 
     // Hash password
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
+    // Create user (inactive until email verified)
     const [newUser] = await db
       .insert(users)
       .values({
@@ -294,6 +318,7 @@ router.post(
         currency: currency || "USD",
         monthlyIncome: monthlyIncome || "0",
         monthlyBudget: monthlyBudget || "0",
+        isActive: false, // User inactive until email verified
       })
       .returning();
 
@@ -313,13 +338,13 @@ router.post(
 
     await db.insert(categories).values(defaultCategoriesData);
 
-    // Create device session with enhanced tokens
-    const deviceInfo = getDeviceInfo(req);
-    const ipAddress = req.ip || req.connection.remoteAddress;
-    const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
-
-    // Update activity for Dead Man's Switch
-    await successionService.trackActivity(newUser.id, 'register');
+    // Send email verification
+    try {
+      await sendEmailVerification(newUser.id);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      // Don't fail registration if email fails, but log it
+    }
 
     // Log successful registration
     logAudit(req, {
@@ -332,9 +357,15 @@ router.post(
     });
 
     return new ApiResponse(201, {
-      user: getPublicProfile(newUser),
-      ...tokens,
-    }, "User registered successfully").send(res);
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        emailVerified: false
+      },
+      requiresEmailVerification: true
+    }, "User registered successfully. Please check your email to verify your account.").send(res);
   })
 );
 
@@ -452,6 +483,16 @@ router.post(
       return res.status(401).json({
         success: false,
         message: "Invalid credentials",
+      });
+    }
+
+    // Check if email is verified
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Email not verified. Please check your email and verify your account before logging in.",
+        requiresEmailVerification: true,
+        email: user.email
       });
     }
 
@@ -574,6 +615,157 @@ router.post(
       ...tokens,
     }, "Login successful").send(res);
 
+  })
+);
+
+/**
+ * @swagger
+ * /auth/verify-email:
+ *   post:
+ *     summary: Verify user email with token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Email verification token
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post(
+  "/verify-email",
+  [
+    body("token")
+      .notEmpty()
+      .withMessage("Verification token is required"),
+  ],
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new AppError(400, "Validation failed", errors.array()));
+    }
+
+    const { token } = req.body;
+
+    const { verifyEmail } = await import("../services/emailVerificationService.js");
+    const result = await verifyEmail(token);
+
+    if (!result.success) {
+      return next(new AppError(400, result.message));
+    }
+
+    // Activate the user account now that email is verified
+    await db
+      .update(users)
+      .set({ isActive: true, updatedAt: new Date() })
+      .where(eq(users.id, result.user.id));
+
+    // Log email verification
+    logAudit(req, {
+      userId: result.user.id,
+      action: AuditActions.AUTH_VERIFY_EMAIL,
+      resourceType: ResourceTypes.USER,
+      resourceId: result.user.id,
+      metadata: { email: result.user.email },
+      status: 'success',
+    });
+
+    return new ApiResponse(200, {
+      user: result.user,
+      emailVerified: true
+    }, "Email verified successfully. Your account is now active.").send(res);
+  })
+);
+
+/**
+ * @swagger
+ * /auth/resend-verification:
+ *   post:
+ *     summary: Resend email verification
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: User's email address
+ *     responses:
+ *       200:
+ *         description: Verification email sent
+ *       400:
+ *         description: Email already verified or user not found
+ *       429:
+ *         $ref: '#/components/responses/RateLimitError'
+ */
+router.post(
+  "/resend-verification",
+  process.env.NODE_ENV === 'test' ? [] : authLimiter,
+  [
+    body("email")
+      .isEmail()
+      .withMessage("Please provide a valid email")
+      .normalizeEmail(),
+  ],
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new AppError(400, "Validation failed", errors.array()));
+    }
+
+    const { email } = req.body;
+
+    // Find user by email
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+
+    if (!user) {
+      // Don't reveal if email exists or not for security
+      return new ApiResponse(200, {}, "If the email exists in our system, a verification email has been sent.").send(res);
+    }
+
+    if (user.emailVerified) {
+      return next(new AppError(400, "Email is already verified"));
+    }
+
+    // Send verification email (as reminder)
+    const { sendEmailVerification } = await import("../services/emailVerificationService.js");
+    try {
+      await sendEmailVerification(user.id, true); // true for reminder
+    } catch (emailError) {
+      console.error('Failed to send verification reminder:', emailError);
+      return next(new AppError(500, "Failed to send verification email"));
+    }
+
+    // Log resend verification
+    logAudit(req, {
+      userId: user.id,
+      action: AuditActions.AUTH_RESEND_VERIFICATION,
+      resourceType: ResourceTypes.USER,
+      resourceId: user.id,
+      metadata: { email: user.email },
+      status: 'success',
+    });
+
+    return new ApiResponse(200, {}, "Verification email sent successfully.").send(res);
   })
 );
 
@@ -751,6 +943,8 @@ router.post("/refresh",
       return next(new AppError(400, "Validation failed", errors.array()));
     }
 
+    const { refreshToken } = req.body;
+
     const ipAddress = req.ip || req.connection.remoteAddress;
 
     const tokens = await refreshAccessToken(refreshToken, ipAddress);
@@ -818,7 +1012,7 @@ router.get("/sessions", protect, asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/auth/sessions/:sessionId
 // @desc    Revoke specific session
 // @access  Private
-router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => {
+router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res, next) => {
   const { sessionId } = req.params;
   const userId = req.user.id;
 
@@ -846,9 +1040,9 @@ router.post(
   "/upload-profile-picture",
   protect,
   uploadProfilePicture,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     if (!req.file) {
-      throw new ValidationError('No file uploaded');
+      return next(new ValidationError('No file uploaded'));
     }
 
     const userId = req.user.id;
@@ -898,7 +1092,7 @@ router.post(
 router.delete(
   "/delete-profile-picture",
   protect,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
     const [user] = await db.select().from(users).where(eq(users.id, userId));
 
@@ -940,7 +1134,7 @@ router.delete(
 router.get(
   "/storage-usage",
   protect,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
     const usage = await fileStorageService.getUserStorageUsage(userId);
 
@@ -1321,6 +1515,141 @@ router.get("/mfa/status", protect, asyncHandler(async (req, res, next) => {
     mfaEnabled: user.mfaEnabled,
     recoveryCodesStatus: recoveryCodeStatus,
   }, "MFA status retrieved").send(res);
+}));
+
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Request password reset
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: User's email address
+ *     responses:
+ *       200:
+ *         description: Password reset email sent
+ *       400:
+ *         description: Invalid email or rate limited
+ *       404:
+ *         description: User not found
+ */
+router.post("/forgot-password", passwordResetLimiter, asyncHandler(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email || !email.includes("@")) {
+    return new ApiResponse(400, null, "Valid email is required").send(res);
+  }
+
+  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
+
+  if (!user) {
+    // Don't reveal if user exists or not for security
+    return new ApiResponse(200, null, "If an account with that email exists, a password reset link has been sent.").send(res);
+  }
+
+  // Generate password reset token
+  const { token, hashedToken } = await generatePasswordResetToken();
+
+  // Save token to database
+  await db.insert(passwordResetTokens).values({
+    userId: user.id,
+    token: hashedToken,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+  });
+
+  // Send password reset email
+  try {
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
+    await sendPasswordResetEmail({ email: user.email, userName: user.name, resetToken: token, resetUrl });
+  } catch (error) {
+    console.error("Failed to send password reset email:", error);
+    // Don't fail the request, just log the error
+  }
+
+  return new ApiResponse(200, null, "If an account with that email exists, a password reset link has been sent.").send(res);
+}));
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset password using token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Password reset token from email
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *                 description: New password
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid token or password
+ *       404:
+ *         description: Token not found or expired
+ */
+router.post("/reset-password", passwordResetLimiter, asyncHandler(async (req, res, next) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    return new ApiResponse(400, null, "Token and password are required").send(res);
+  }
+
+  // Validate password strength
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.isValid) {
+    return new ApiResponse(400, null, passwordValidation.message).send(res);
+  }
+
+  // Verify token
+  const tokenData = await verifyPasswordResetToken(token);
+  if (!tokenData) {
+    return new ApiResponse(400, null, "Invalid or expired token").send(res);
+  }
+
+  // Hash new password
+  const hashedPassword = await hashPassword(password);
+
+  // Update user password
+  await db.update(users)
+    .set({ password: hashedPassword })
+    .where(eq(users.id, tokenData.userId));
+
+  // Delete used token
+  await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, tokenData.id));
+
+  // Send success email
+  try {
+    const [user] = await db.select().from(users).where(eq(users.id, tokenData.userId));
+    await sendPasswordResetSuccessEmail({ email: user.email, userName: user.name, timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.error("Failed to send password reset success email:", error);
+  }
+
+  return new ApiResponse(200, null, "Password reset successfully").send(res);
 }));
 
 export default router;

@@ -20,6 +20,7 @@ import CreateVault from '../pages/Vaults/CreateVault';
 import VaultDetails from '../pages/Vaults/VaultDetails';
 import VaultMembers from '../pages/Vaults/VaultMembers';
 import AcceptInvite from '../pages/Vaults/AcceptInvite';
+import { ResetPassword } from '../components/Auth/ResetPassword';
 
 
 interface ProtectedRouteProps {
@@ -85,6 +86,14 @@ export const routes = [
     element: (
       <PublicRoute>
         <AuthForm />
+      </PublicRoute>
+    )
+  },
+  {
+    path: '/reset-password',
+    element: (
+      <PublicRoute>
+        <ResetPassword />
       </PublicRoute>
     )
   },

@@ -10,7 +10,8 @@ import {
   TrendingUp,
   Activity,
   IndianRupee,
-  AlertCircle
+  AlertCircle,
+  Bell
 } from 'lucide-react';
 import { SafeSpendZone } from './SafeSpendZone';
 import { CategoryDetails } from './CategoryDetails';
@@ -18,6 +19,7 @@ import { TransactionSearch } from './TransactionSearch';
 import AddExpenseButton from './AddExpenseButton';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import SpendingAnalytics from './SpendingAnalytics';
+import { BudgetAlerts } from '../Budgets/BudgetAlerts';
 import type { SpendingData, Expense, CategoryDetails as CategoryDetailsType } from '../../types';
 import { expensesAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -28,7 +30,7 @@ interface DashboardProps {
   paymentMade?: boolean;
 }
 
-type TabType = "overview" | "transactions" | "analytics" | "categories";
+type TabType = "overview" | "transactions" | "analytics" | "categories" | "budget-alerts";
 
 const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
   const { showToast } = useToast();
@@ -70,6 +72,7 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
     { id: "transactions" as TabType, label: "Transactions", icon: Receipt },
     { id: "analytics" as TabType, label: "Analytics", icon: BarChart3 },
     { id: "categories" as TabType, label: "Categories", icon: PieChart },
+    { id: "budget-alerts" as TabType, label: "Budget Alerts", icon: Bell },
   ];
 
   // Format amount
@@ -703,6 +706,13 @@ const Dashboard: React.FC<DashboardProps> = ({ paymentMade }) => {
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Budget Alerts Tab */}
+              {activeTab === 'budget-alerts' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <BudgetAlerts />
                 </div>
               )}
             </div>

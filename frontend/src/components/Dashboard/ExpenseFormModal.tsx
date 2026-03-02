@@ -1,9 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { X, Receipt, Calendar, CreditCard, MapPin, Tag, RotateCcw, Clock } from 'lucide-react';
+import { X, Receipt, Calendar, CreditCard, MapPin, Tag, RotateCcw, Clock, QrCode, Scan } from 'lucide-react';
 import type { Expense } from '../../types';
 import { expenseFormSchema, type ExpenseFormData } from '../../schemas/validationSchemas';
+import QRScanner, { UPIData } from '../Payment/QRScanner';
+import { ExpenseReceipt } from '../Receipt/ExpenseReceipt';
 
 interface ExpenseFormModalProps {
   expense?: Expense;
@@ -12,6 +14,11 @@ interface ExpenseFormModalProps {
 }
 
 export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onSave, onCancel }) => {
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [scannedData, setScannedData] = useState<UPIData | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [savedExpense, setSavedExpense] = useState<Expense | null>(null);
   const {
     register,
     handleSubmit,
@@ -60,6 +67,41 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
     }
   }, [expense, reset]);
 
+  // QR scanning handlers
+  const handleQRScanSuccess = (data: UPIData) => {
+    setScannedData(data);
+    setQrError(null);
+    setShowQRScanner(false);
+
+    // Auto-fill form with scanned data
+    const updates: Partial<ExpenseFormData> = {};
+
+    if (data.am) {
+      updates.amount = data.am;
+    }
+
+    if (data.pn) {
+      updates.description = `Payment to ${data.pn}`;
+    }
+
+    if (data.tn) {
+      updates.notes = data.tn;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      reset((prev) => ({ ...prev, ...updates }));
+    }
+  };
+
+  const handleQRScanError = (error: string) => {
+    setQrError(error);
+  };
+
+  const handleScanQR = () => {
+    setShowQRScanner(true);
+    setQrError(null);
+  };
+
   const onFormSubmit = (data: ExpenseFormData) => {
     const expenseData: Partial<Expense> = {
       amount: parseFloat(data.amount),
@@ -97,7 +139,27 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
       }
     }
 
+    // Add scanned data if available
+    if (scannedData) {
+      expenseData.merchantName = scannedData.pn;
+      expenseData.upiId = scannedData.pa;
+    }
+
+    // Create complete expense object for receipt
+    const completeExpense: Expense = {
+      _id: expense?._id || Math.random().toString(36).substr(2, 9),
+      user: expense?.user || 'current-user',
+      ...expenseData,
+      amount: -Math.abs(expenseData.amount!), // Expenses are stored as negative
+      createdAt: expense?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as Expense;
+
+    setSavedExpense(completeExpense);
     onSave(expenseData);
+
+    // Show receipt after saving
+    setShowReceipt(true);
   };
 
   return (
@@ -119,9 +181,20 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
           {/* Amount and Description */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Amount (₹)
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Amount (₹)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleScanQR}
+                  className="flex items-center space-x-1 px-2 py-1 text-xs bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 rounded hover:bg-cyan-200 dark:hover:bg-cyan-800 transition-colors"
+                  title="Scan QR Code"
+                >
+                  <Scan className="h-3 w-3" />
+                  <span>Scan QR</span>
+                </button>
+              </div>
               <input
                 type="number"
                 step="0.01"
@@ -132,6 +205,11 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
               />
               {errors.amount && (
                 <p className="mt-1 text-sm text-red-500">{errors.amount.message}</p>
+              )}
+              {scannedData && (
+                <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                  QR scanned: {scannedData.pn}
+                </p>
               )}
             </div>
 
@@ -348,6 +426,54 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({ expense, onS
           </div>
         </form>
       </div>
+
+      {/* QR Scanner Modal */}
+      {showQRScanner && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Scan QR Code
+              </h3>
+              <button
+                onClick={() => setShowQRScanner(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {qrError && (
+              <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-400 rounded">
+                {qrError}
+              </div>
+            )}
+
+            <QRScanner
+              onScanSuccess={handleQRScanSuccess}
+              onScanError={handleQRScanError}
+            />
+
+            <button
+              onClick={() => setShowQRScanner(false)}
+              className="mt-4 w-full px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors"
+            >
+              Cancel Scan
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Expense Receipt */}
+      {showReceipt && savedExpense && (
+        <ExpenseReceipt
+          expense={savedExpense}
+          onClose={() => {
+            setShowReceipt(false);
+            onCancel(); // Close the form modal as well
+          }}
+        />
+      )}
     </div>
   );
 };
