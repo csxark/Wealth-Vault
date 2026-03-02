@@ -143,6 +143,8 @@ import capitalCallIssuerJob from "./jobs/capitalCallIssuer.js";
 import derivativesRoutes from "./routes/derivatives.js";
 import optionsRollEvaluator from "./jobs/optionsRollEvaluator.js";
 import volatilitySyncJob from "./jobs/volatilitySyncJob.js";
+import passionAssetsRoutes from "./routes/passionAssets.js";
+import passionAppraisalSyncJob from "./jobs/passionAppraisalSync.js";
 
 // Event Listeners
 import { initializeBudgetListeners } from "./listeners/budgetListeners.js";
@@ -370,6 +372,7 @@ app.use("/api/liquidity/graph", userLimiter, liquidityGraphRoutes);
 app.use("/api/dynasty-trusts", userLimiter, dynastyTrustsRoutes);
 app.use("/api/spv", userLimiter, spvOwnershipRoutes);
 app.use("/api/derivatives", userLimiter, derivativesRoutes);
+app.use("/api/passion-assets", userLimiter, passionAssetsRoutes);
 
 
 
@@ -481,6 +484,7 @@ if (process.env.NODE_ENV !== 'test') {
     capitalCallIssuerJob.start();
     optionsRollEvaluator.start();
     volatilitySyncJob.start();
+    passionAppraisalSyncJob.start();
 
     // Add debt services to app.locals for middleware/route access
     app.locals.debtEngine = debtEngine;
