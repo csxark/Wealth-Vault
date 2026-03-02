@@ -25,6 +25,9 @@ import {
 import { protect } from '../middleware/auth.js';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/errorHandler.js';
 import portfolioRebalancingService from '../services/portfolioRebalancingService.js';
+import taxLossHarvestingEngine from '../services/taxLossHarvestingEngine.js';
+import multiCurrencyRebalancingService from '../services/multiCurrencyRebalancingService.js';
+import advancedRebalancingOptimizer from '../services/advancedRebalancingOptimizer.js';
 
 const router = express.Router();
 
@@ -498,6 +501,488 @@ router.delete(
     res.json({
       success: true,
       message: 'Allocation target deleted',
+    });
+  })
+);
+
+/**
+ * TAX-LOSS HARVESTING ENDPOINTS
+ */
+
+/**
+ * @swagger
+ * /portfolio/harvesting/opportunities:
+ *   get:
+ *     summary: Get tax-loss harvesting opportunities
+ *     tags: [Tax Harvesting]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/harvesting/opportunities',
+  protect,
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.user;
+
+    const opportunities = await taxLossHarvestingEngine.findHarvestingOpportunities(
+      req.user.id,
+      tenantId
+    );
+
+    res.json({
+      success: true,
+      data: { 
+        opportunities,
+        totalHarvestable: opportunities.reduce((sum, op) => sum + op.harvestValue, 0),
+        opportunityCount: opportunities.length,
+      },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/harvesting/year-end-strategy:
+ *   get:
+ *     summary: Get year-end tax harvesting strategy
+ *     tags: [Tax Harvesting]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: taxBracket
+ *         schema:
+ *           type: number
+ *         description: Tax bracket (0.37 by default)
+ */
+router.get(
+  '/harvesting/year-end-strategy',
+  protect,
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.user;
+    const { taxBracket = 0.35 } = req.query;
+
+    const strategy = await taxLossHarvestingEngine.calculateYearEndStrategy(
+      req.user.id,
+      tenantId,
+      parseFloat(taxBracket)
+    );
+
+    res.json({
+      success: true,
+      data: { strategy },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/harvesting/carryforward:
+ *   get:
+ *     summary: Get capital loss carryforward amount
+ *     tags: [Tax Harvesting]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/harvesting/carryforward',
+  protect,
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.user;
+    const { year } = req.query;
+
+    const carryforward = await taxLossHarvestingEngine.getCapitalLossCarryforward(
+      req.user.id,
+      tenantId,
+      year ? parseInt(year) : new Date().getFullYear()
+    );
+
+    res.json({
+      success: true,
+      data: { carryforward },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/harvesting/wash-sale-check:
+ *   post:
+ *     summary: Check wash-sale compliance for a trade
+ *     tags: [Tax Harvesting]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post(
+  '/harvesting/wash-sale-check',
+  protect,
+  [
+    body('assetSymbol').trim().isLength({ min: 1 }),
+  ],
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { tenantId } = req.user;
+    const { assetSymbol, saleDate } = req.body;
+
+    const compliance = await taxLossHarvestingEngine.checkWashSaleCompliance(
+      req.user.id,
+      tenantId,
+      assetSymbol,
+      new Date(saleDate || Date.now())
+    );
+
+    res.json({
+      success: true,
+      data: { compliance },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/harvesting/tax-lot/:lotId/implications:
+ *   get:
+ *     summary: Get tax implications for specific tax lot
+ *     tags: [Tax Harvesting]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/harvesting/tax-lot/:lotId/implications',
+  protect,
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.user;
+
+    const implications = await taxLossHarvestingEngine.getTaxLotTaxImplications(
+      req.user.id,
+      tenantId,
+      req.params.lotId
+    );
+
+    res.json({
+      success: true,
+      data: { implications },
+    });
+  })
+);
+
+/**
+ * MULTI-CURRENCY ENDPOINTS
+ */
+
+/**
+ * @swagger
+ * /portfolio/multi-currency/analysis:
+ *   get:
+ *     summary: Analyze portfolio in multiple currencies
+ *     tags: [Multi-Currency]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: baseCurrency
+ *         schema:
+ *           type: string
+ *         description: Base currency for analysis (USD by default)
+ */
+router.get(
+  '/multi-currency/analysis',
+  protect,
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.user;
+    const { baseCurrency = 'USD' } = req.query;
+
+    const analysis = await multiCurrencyRebalancingService.analyzeMultiCurrencyPortfolio(
+      req.user.id,
+      tenantId,
+      baseCurrency
+    );
+
+    res.json({
+      success: true,
+      data: { analysis },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/multi-currency/exposure:
+ *   get:
+ *     summary: Get currency exposure summary
+ *     tags: [Multi-Currency]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/multi-currency/exposure',
+  protect,
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.user;
+
+    const exposure = await multiCurrencyRebalancingService.getCurrencyExposure(
+      req.user.id,
+      tenantId
+    );
+
+    res.json({
+      success: true,
+      data: { exposure },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/multi-currency/hedging-strategy:
+ *   get:
+ *     summary: Get currency hedging recommendations
+ *     tags: [Multi-Currency]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/multi-currency/hedging-strategy',
+  protect,
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.user;
+    const { baseCurrency = 'USD' } = req.query;
+
+    const strategy = await multiCurrencyRebalancingService.recommendHedgingStrategy(
+      req.user.id,
+      tenantId,
+      baseCurrency
+    );
+
+    res.json({
+      success: true,
+      data: { strategy },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/multi-currency/optimize-conversion:
+ *   post:
+ *     summary: Find optimal currency conversion path
+ *     tags: [Multi-Currency]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post(
+  '/multi-currency/optimize-conversion',
+  protect,
+  [
+    body('fromCurrency').trim().isLength({ min: 3, max: 3 }),
+    body('toCurrency').trim().isLength({ min: 3, max: 3 }),
+    body('amount').isFloat({ min: 0 }),
+  ],
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { fromCurrency, toCurrency, amount } = req.body;
+
+    const optimization = await multiCurrencyRebalancingService.optimizeCurrencyConversion(
+      fromCurrency,
+      toCurrency,
+      parseFloat(amount)
+    );
+
+    res.json({
+      success: true,
+      data: { optimization },
+    });
+  })
+);
+
+/**
+ * ADVANCED OPTIMIZATION ENDPOINTS
+ */
+
+/**
+ * @swagger
+ * /portfolio/optimization/scenarios:
+ *   post:
+ *     summary: Generate alternative rebalancing scenarios
+ *     tags: [Optimization]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post(
+  '/optimization/scenarios',
+  protect,
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.user;
+    const { allocationId } = req.body;
+
+    if (!allocationId) {
+      return res.status(400).json({
+        success: false,
+        message: 'allocationId is required',
+      });
+    }
+
+    // Get allocation target
+    const [target] = await db
+      .select()
+      .from(allocationTargets)
+      .where(
+        and(
+          eq(allocationTargets.id, allocationId),
+          eq(allocationTargets.userId, req.user.id)
+        )
+      );
+
+    if (!target) {
+      return res.status(404).json({
+        success: false,
+        message: 'Allocation target not found',
+      });
+    }
+
+    // Get current portfolio
+    const holdings = await portfolioRebalancingService.getPortfolioHoldings(
+      req.user.id,
+      tenantId
+    );
+    const portfolioValue = portfolioRebalancingService.calculatePortfolioValue(holdings);
+    const currentAllocations = portfolioRebalancingService.calculateAllocations(holdings, portfolioValue);
+    const targetAllocations = portfolioRebalancingService.parseTargetAllocations(
+      target.allocations,
+      portfolioValue
+    );
+
+    const scenarios = advancedRebalancingOptimizer.generateAlternativeScenarios(
+      currentAllocations,
+      targetAllocations
+    );
+
+    res.json({
+      success: true,
+      data: { scenarios },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/optimization/validate-moves:
+ *   post:
+ *     summary: Validate proposed rebalancing moves
+ *     tags: [Optimization]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post(
+  '/optimization/validate-moves',
+  protect,
+  [
+    body('moves').isArray(),
+    body('constraints').optional().isObject(),
+  ],
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { tenantId } = req.user;
+    const { moves, constraints = {} } = req.body;
+
+    // Get current portfolio
+    const holdings = await portfolioRebalancingService.getPortfolioHoldings(
+      req.user.id,
+      tenantId
+    );
+    const portfolioValue = portfolioRebalancingService.calculatePortfolioValue(holdings);
+    const allocations = portfolioRebalancingService.calculateAllocations(holdings, portfolioValue);
+
+    const validation = advancedRebalancingOptimizer.validateMoves(
+      moves,
+      allocations,
+      constraints
+    );
+
+    res.json({
+      success: validation.valid,
+      data: { validation },
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /portfolio/optimization/efficiency:
+ *   post:
+ *     summary: Calculate rebalancing efficiency score
+ *     tags: [Optimization]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post(
+  '/optimization/efficiency',
+  protect,
+  [
+    body('allocationId').trim().isUUID(),
+    body('moves').isArray(),
+  ],
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { tenantId } = req.user;
+    const { allocationId, moves } = req.body;
+
+    // Get allocation target
+    const [target] = await db
+      .select()
+      .from(allocationTargets)
+      .where(
+        and(
+          eq(allocationTargets.id, allocationId),
+          eq(allocationTargets.userId, req.user.id)
+        )
+      );
+
+    if (!target) {
+      return res.status(404).json({
+        success: false,
+        message: 'Allocation target not found',
+      });
+    }
+
+    // Get current portfolio
+    const holdings = await portfolioRebalancingService.getPortfolioHoldings(
+      req.user.id,
+      tenantId
+    );
+    const portfolioValue = portfolioRebalancingService.calculatePortfolioValue(holdings);
+    const currentAllocations = portfolioRebalancingService.calculateAllocations(holdings, portfolioValue);
+    const targetAllocations = portfolioRebalancingService.parseTargetAllocations(
+      target.allocations,
+      portfolioValue
+    );
+
+    const efficiency = advancedRebalancingOptimizer.calculateEfficiencyScore(
+      currentAllocations,
+      targetAllocations,
+      moves,
+      moves
+    );
+
+    res.json({
+      success: true,
+      data: { efficiency },
     });
   })
 );
