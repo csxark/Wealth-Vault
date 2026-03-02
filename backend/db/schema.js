@@ -1,5 +1,5 @@
 
-import { pgTable, uuid, text, boolean, integer, numeric, timestamp, jsonb, doublePrecision, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, boolean, integer, numeric, timestamp, jsonb, doublePrecision, pgEnum, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums for RBAC
@@ -13165,6 +13165,102 @@ export const contributionStreaksRelations = relations(contributionStreaks, ({ on
 export const goalFailureAlertsRelations = relations(goalFailureAlerts, ({ one }) => ({
     goal: one(financialGoals, { fields: [goalFailureAlerts.goalId], references: [financialGoals.id] }),
     user: one(users, { fields: [goalFailureAlerts.userId], references: [users.id] }),
+}));
+
+// ====================
+// Lifestyle Inflation Detection & Alert System (ISSUE-736)
+// ====================
+
+// Income History - Track income changes over time
+export const incomeHistory = pgTable('income_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    monthlyIncome: numeric('monthly_income', { precision: 12, scale: 2 }).notNull(),
+    recordDate: timestamp('record_date').notNull(),
+    source: text('source').default('manual'), // 'manual', 'automatic', 'bank_sync'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_income_history_user').on(table.userId),
+    userDateIdx: index('idx_income_history_user_date').on(table.userId, table.recordDate),
+    tenantIdx: index('idx_income_history_tenant').on(table.tenantId),
+}));
+
+// Lifestyle Inflation Snapshots - Periodic inflation analysis results
+export const lifestyleInflationSnapshots = pgTable('lifestyle_inflation_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    incomeIncreaseDate: timestamp('income_increase_date').notNull(),
+    previousIncome: numeric('previous_income', { precision: 12, scale: 2 }).notNull(),
+    currentIncome: numeric('current_income', { precision: 12, scale: 2 }).notNull(),
+    incomeIncreasePct: numeric('income_increase_pct', { precision: 5, scale: 2 }).notNull(),
+    beforeSpending: numeric('before_spending', { precision: 12, scale: 2 }).notNull(),
+    afterSpending: numeric('after_spending', { precision: 12, scale: 2 }).notNull(),
+    spendingIncreasePct: numeric('spending_increase_pct', { precision: 5, scale: 2 }).notNull(),
+    beforeSavingsRate: numeric('before_savings_rate', { precision: 5, scale: 2 }).notNull(),
+    afterSavingsRate: numeric('after_savings_rate', { precision: 5, scale: 2 }).notNull(),
+    savingsRateChange: numeric('savings_rate_change', { precision: 5, scale: 2 }).notNull(),
+    inflationScore: integer('inflation_score').notNull(), // 0-100
+    categoryBreakdown: jsonb('category_breakdown').default([]), // Array of category analysis
+    goalImpact: jsonb('goal_impact').default([]), // Array of impacted goals
+    recommendations: jsonb('recommendations').default([]), // Array of rollback recommendations
+    analysisDate: timestamp('analysis_date').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_lifestyle_inflation_snapshots_user').on(table.userId),
+    tenantIdx: index('idx_lifestyle_inflation_snapshots_tenant').on(table.tenantId),
+    scoreIdx: index('idx_lifestyle_inflation_snapshots_score').on(table.inflationScore),
+    analysisDateIdx: index('idx_lifestyle_inflation_snapshots_analysis_date').on(table.analysisDate),
+}));
+
+// Lifestyle Inflation Alerts - Active alerts for users
+export const lifestyleInflationAlerts = pgTable('lifestyle_inflation_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    snapshotId: uuid('snapshot_id').references(() => lifestyleInflationSnapshots.id, { onDelete: 'cascade' }),
+    alertType: text('alert_type').notNull(), // 'savings_rate_drop', 'category_inflation', 'goal_delay'
+    severity: text('severity').notNull(), // 'low', 'medium', 'high', 'critical'
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    actionRequired: boolean('action_required').default(false),
+    isRead: boolean('is_read').default(false),
+    readAt: timestamp('read_at'),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    status: text('status').default('active'), // 'active', 'acknowledged', 'dismissed', 'resolved'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_lifestyle_inflation_alerts_user').on(table.userId),
+    tenantIdx: index('idx_lifestyle_inflation_alerts_tenant').on(table.tenantId),
+    snapshotIdx: index('idx_lifestyle_inflation_alerts_snapshot').on(table.snapshotId),
+    statusIdx: index('idx_lifestyle_inflation_alerts_status').on(table.status),
+    severityIdx: index('idx_lifestyle_inflation_alerts_severity').on(table.severity),
+}));
+
+// Alias for goals compatibility
+export const goals = financialGoals;
+
+// Relations for Lifestyle Inflation System
+export const incomeHistoryRelations = relations(incomeHistory, ({ one }) => ({
+    user: one(users, { fields: [incomeHistory.userId], references: [users.id] }),
+    tenant: one(tenants, { fields: [incomeHistory.tenantId], references: [tenants.id] }),
+}));
+
+export const lifestyleInflationSnapshotsRelations = relations(lifestyleInflationSnapshots, ({ one, many }) => ({
+    user: one(users, { fields: [lifestyleInflationSnapshots.userId], references: [users.id] }),
+    tenant: one(tenants, { fields: [lifestyleInflationSnapshots.tenantId], references: [tenants.id] }),
+    alerts: many(lifestyleInflationAlerts),
+}));
+
+export const lifestyleInflationAlertsRelations = relations(lifestyleInflationAlerts, ({ one }) => ({
+    user: one(users, { fields: [lifestyleInflationAlerts.userId], references: [users.id] }),
+    tenant: one(tenants, { fields: [lifestyleInflationAlerts.tenantId], references: [tenants.id] }),
+    snapshot: one(lifestyleInflationSnapshots, { fields: [lifestyleInflationAlerts.snapshotId], references: [lifestyleInflationSnapshots.id] }),
 }));
 
 // Export forecast schema tables
