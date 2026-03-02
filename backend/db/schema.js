@@ -2525,6 +2525,250 @@ export const merchantFrequencyPatterns = pgTable('merchant_frequency_patterns', 
 }));
 
 // ============================================================================
+// REAL-TIME TAX OPTIMIZATION & DEDUCTION TRACKING (#641)
+// ============================================================================
+
+// Tax Profiles - User tax filing status and configuration
+export const taxProfiles = pgTable('tax_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    filingStatus: text('filing_status').notNull().default('single'), // single, married_joint, married_separate, head_of_household
+    state: text('state'), // State code for state tax
+    isSelfEmployed: boolean('is_self_employed').default(false),
+    hasDependents: boolean('has_dependents').default(false),
+    dependentCount: integer('dependent_count').default(0),
+    taxYear: integer('tax_year').notNull(),
+    standardDeduction: numeric('standard_deduction', { precision: 12, scale: 2 }),
+    usesItemizedDeductions: boolean('uses_itemized_deductions').default(false),
+    estimatedAnnualIncome: numeric('estimated_annual_income', { precision: 12, scale: 2 }),
+    withholdingYtd: numeric('withholding_ytd', { precision: 12, scale: 2 }).default('0'),
+    w2JobsCount: integer('w2_jobs_count').default(0),
+    hasInvestmentIncome: boolean('has_investment_income').default(false),
+    hasRentalIncome: boolean('has_rental_income').default(false),
+    qbiEligible: boolean('qbi_eligible').default(false),
+    preferences: jsonb('preferences').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userYearIdx: index('idx_tax_profiles_user_year').on(table.userId, table.taxYear),
+}));
+
+// Tax Deductions - Tracked deductible expenses
+export const taxDeductions = pgTable('tax_deductions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'set null' }),
+    deductionCategory: text('deduction_category').notNull(),
+    deductionType: text('deduction_type').notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    deductionDate: timestamp('deduction_date').notNull(),
+    taxYear: integer('tax_year').notNull(),
+    description: text('description'),
+    notes: text('notes'),
+    vendor: text('vendor'),
+    receiptUrl: text('receipt_url'),
+    isRecurring: boolean('is_recurring').default(false),
+    isAutoDetected: boolean('is_auto_detected').default(false),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }),
+    proofDocuments: jsonb('proof_documents').default([]),
+    irsForm: text('irs_form'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userYearIdx: index('idx_tax_deductions_user_year').on(table.userId, table.taxYear),
+    expenseIdx: index('idx_tax_deductions_expense').on(table.expenseId),
+    categoryIdx: index('idx_tax_deductions_category').on(table.deductionCategory),
+}));
+
+// Tax Estimates - Real-time tax liability calculations
+export const taxEstimates = pgTable('tax_estimates', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    taxYear: integer('tax_year').notNull(),
+    calculationDate: timestamp('calculation_date').notNull().defaultNow(),
+    grossIncome: numeric('gross_income', { precision: 12, scale: 2 }).notNull(),
+    adjustedGrossIncome: numeric('adjusted_gross_income', { precision: 12, scale: 2 }).notNull(),
+    taxableIncome: numeric('taxable_income', { precision: 12, scale: 2 }).notNull(),
+    totalDeductions: numeric('total_deductions', { precision: 12, scale: 2 }).default('0'),
+    federalTax: numeric('federal_tax', { precision: 12, scale: 2 }).notNull(),
+    stateTax: numeric('state_tax', { precision: 12, scale: 2 }).default('0'),
+    selfEmploymentTax: numeric('self_employment_tax', { precision: 12, scale: 2 }).default('0'),
+    totalTax: numeric('total_tax', { precision: 12, scale: 2 }).notNull(),
+    withholdingYtd: numeric('withholding_ytd', { precision: 12, scale: 2 }).default('0'),
+    estimatedPaymentsYtd: numeric('estimated_payments_ytd', { precision: 12, scale: 2 }).default('0'),
+    amountOwed: numeric('amount_owed', { precision: 12, scale: 2 }),
+    refundAmount: numeric('refund_amount', { precision: 12, scale: 2 }),
+    effectiveTaxRate: numeric('effective_tax_rate', { precision: 5, scale: 2 }),
+    marginalTaxRate: numeric('marginal_tax_rate', { precision: 5, scale: 2 }),
+    nextTaxBracketThreshold: numeric('next_tax_bracket_threshold', { precision: 12, scale: 2 }),
+    scenarioName: text('scenario_name'),
+    isProjection: boolean('is_projection').default(false),
+    calculationDetails: jsonb('calculation_details').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userYearIdx: index('idx_tax_estimates_user_year').on(table.userId, table.taxYear),
+}));
+
+// Tax Optimization Suggestions - AI-generated tax strategies
+export const taxOptimizationSuggestions = pgTable('tax_optimization_suggestions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    suggestionType: text('suggestion_type').notNull(),
+    category: text('category').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    potentialSavings: numeric('potential_savings', { precision: 12, scale: 2 }),
+    priorityScore: integer('priority_score').default(50),
+    actionRequired: text('action_required'),
+    deadline: timestamp('deadline'),
+    taxYear: integer('tax_year').notNull(),
+    isTimeSensitive: boolean('is_time_sensitive').default(false),
+    complexityLevel: text('complexity_level').default('medium'),
+    requiresProfessional: boolean('requires_professional').default(false),
+    relatedAccountType: text('related_account_type'),
+    suggestedAmount: numeric('suggested_amount', { precision: 12, scale: 2 }),
+    details: jsonb('details').default({}),
+    status: text('status').default('pending'),
+    appliedAt: timestamp('applied_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userStatusIdx: index('idx_tax_optimization_user_status').on(table.userId, table.status),
+}));
+
+// Quarterly Tax Payments - Estimated tax payment tracking
+export const quarterlyTaxPayments = pgTable('quarterly_tax_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    taxYear: integer('tax_year').notNull(),
+    quarter: integer('quarter').notNull(),
+    dueDate: timestamp('due_date').notNull(),
+    estimatedAmount: numeric('estimated_amount', { precision: 12, scale: 2 }).notNull(),
+    safeHarborAmount: numeric('safe_harbor_amount', { precision: 12, scale: 2 }),
+    recommendedAmount: numeric('recommended_amount', { precision: 12, scale: 2 }),
+    actualAmountPaid: numeric('actual_amount_paid', { precision: 12, scale: 2 }),
+    paymentDate: timestamp('payment_date'),
+    paymentMethod: text('payment_method'),
+    confirmationNumber: text('confirmation_number'),
+    isPaid: boolean('is_paid').default(false),
+    reminderSent: boolean('reminder_sent').default(false),
+    penaltyRisk: text('penalty_risk').default('low'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userYearIdx: index('idx_quarterly_payments_user_year').on(table.userId, table.taxYear),
+    dueIdx: index('idx_quarterly_payments_due').on(table.dueDate, table.isPaid),
+}));
+
+// Tax Deadlines - Important tax dates and reminders
+export const taxDeadlines = pgTable('tax_deadlines', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    deadlineType: text('deadline_type').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    dueDate: timestamp('due_date').notNull(),
+    taxYear: integer('tax_year').notNull(),
+    isUniversal: boolean('is_universal').default(true),
+    filingStatus: text('filing_status'),
+    isCompleted: boolean('is_completed').default(false),
+    reminderDaysBefore: integer('reminder_days_before').default(14),
+    reminderSent: boolean('reminder_sent').default(false),
+    priority: text('priority').default('medium'),
+    relatedForm: text('related_form'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userDateIdx: index('idx_tax_deadlines_user_date').on(table.userId, table.dueDate),
+    universalIdx: index('idx_tax_deadlines_universal').on(table.isUniversal, table.dueDate),
+}));
+
+// Tax Advantaged Accounts - 401k, IRA, HSA tracking
+export const taxAdvantagedAccounts = pgTable('tax_advantaged_accounts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    accountType: text('account_type').notNull(),
+    accountName: text('account_name'),
+    employerOffered: boolean('employer_offered').default(false),
+    contributionLimit: numeric('contribution_limit', { precision: 12, scale: 2 }).notNull(),
+    catchUpLimit: numeric('catch_up_limit', { precision: 12, scale: 2 }),
+    ytdContributions: numeric('ytd_contributions', { precision: 12, scale: 2 }).default('0'),
+    employerMatchRate: numeric('employer_match_rate', { precision: 5, scale: 2 }),
+    employerMatchLimit: numeric('employer_match_limit', { precision: 12, scale: 2 }),
+    ytdEmployerContributions: numeric('ytd_employer_contributions', { precision: 12, scale: 2 }).default('0'),
+    remainingContributionSpace: numeric('remaining_contribution_space', { precision: 12, scale: 2 }),
+    recommendedContribution: numeric('recommended_contribution', { precision: 12, scale: 2 }),
+    taxYear: integer('tax_year').notNull(),
+    accountStatus: text('account_status').default('active'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userYearIdx: index('idx_tax_advantaged_user_year').on(table.userId, table.taxYear),
+}));
+
+// Tax Scenarios - "What if" tax planning simulations
+export const taxScenarios = pgTable('tax_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scenarioName: text('scenario_name').notNull(),
+    description: text('description'),
+    taxYear: integer('tax_year').notNull(),
+    baseEstimateId: uuid('base_estimate_id').references(() => taxEstimates.id, { onDelete: 'set null' }),
+    scenarioEstimateId: uuid('scenario_estimate_id').references(() => taxEstimates.id, { onDelete: 'set null' }),
+    changes: jsonb('changes').notNull().default({}),
+    taxImpact: numeric('tax_impact', { precision: 12, scale: 2 }),
+    isFavorable: boolean('is_favorable'),
+    assumptions: text('assumptions'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_tax_scenarios_user').on(table.userId, table.taxYear),
+}));
+
+// Tax Documents - Receipt and document vault
+export const taxDocuments = pgTable('tax_documents', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    deductionId: uuid('deduction_id').references(() => taxDeductions.id, { onDelete: 'set null' }),
+    documentType: text('document_type').notNull(),
+    documentCategory: text('document_category').notNull(),
+    fileUrl: text('file_url').notNull(),
+    fileName: text('file_name').notNull(),
+    fileSize: integer('file_size'),
+    mimeType: text('mime_type'),
+    taxYear: integer('tax_year').notNull(),
+    documentDate: timestamp('document_date'),
+    vendorName: text('vendor_name'),
+    amount: numeric('amount', { precision: 12, scale: 2 }),
+    ocrData: jsonb('ocr_data'),
+    isOcrProcessed: boolean('is_ocr_processed').default(false),
+    tags: text('tags').array(),
+    notes: text('notes'),
+    uploadedAt: timestamp('uploaded_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userYearIdx: index('idx_tax_documents_user_year').on(table.userId, table.taxYear),
+    deductionIdx: index('idx_tax_documents_deduction').on(table.deductionId),
+}));
+
+// Tax Brackets - Federal and state tax bracket data
+export const taxBrackets = pgTable('tax_brackets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    jurisdiction: text('jurisdiction').notNull(),
+    taxYear: integer('tax_year').notNull(),
+    filingStatus: text('filing_status').notNull(),
+    bracketNumber: integer('bracket_number').notNull(),
+    incomeFloor: numeric('income_floor', { precision: 12, scale: 2 }).notNull(),
+    incomeCeiling: numeric('income_ceiling', { precision: 12, scale: 2 }),
+    taxRate: numeric('tax_rate', { precision: 5, scale: 2 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    lookupIdx: index('idx_tax_brackets_lookup').on(table.jurisdiction, table.taxYear, table.filingStatus),
+}));
+
+// ============================================================================
 // MULTI-CURRENCY PORTFOLIO MANAGER (#297)
 // ============================================================================
 
@@ -5765,6 +6009,89 @@ export const merchantFrequencyPatternsRelations = relations(merchantFrequencyPat
     user: one(users, {
         fields: [merchantFrequencyPatterns.userId],
         references: [users.id],
+    }),
+}));
+
+// ============================================================================
+// RELATIONS FOR ISSUE #641: REAL-TIME TAX OPTIMIZATION & DEDUCTION TRACKING
+// ============================================================================
+
+export const taxProfilesRelations = relations(taxProfiles, ({ one }) => ({
+    user: one(users, {
+        fields: [taxProfiles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const taxDeductionsRelations = relations(taxDeductions, ({ one }) => ({
+    user: one(users, {
+        fields: [taxDeductions.userId],
+        references: [users.id],
+    }),
+    expense: one(expenses, {
+        fields: [taxDeductions.expenseId],
+        references: [expenses.id],
+    }),
+}));
+
+export const taxEstimatesRelations = relations(taxEstimates, ({ one }) => ({
+    user: one(users, {
+        fields: [taxEstimates.userId],
+        references: [users.id],
+    }),
+}));
+
+export const taxOptimizationSuggestionsRelations = relations(taxOptimizationSuggestions, ({ one }) => ({
+    user: one(users, {
+        fields: [taxOptimizationSuggestions.userId],
+        references: [users.id],
+    }),
+}));
+
+export const quarterlyTaxPaymentsRelations = relations(quarterlyTaxPayments, ({ one }) => ({
+    user: one(users, {
+        fields: [quarterlyTaxPayments.userId],
+        references: [users.id],
+    }),
+}));
+
+export const taxDeadlinesRelations = relations(taxDeadlines, ({ one }) => ({
+    user: one(users, {
+        fields: [taxDeadlines.userId],
+        references: [users.id],
+    }),
+}));
+
+export const taxAdvantagedAccountsRelations = relations(taxAdvantagedAccounts, ({ one }) => ({
+    user: one(users, {
+        fields: [taxAdvantagedAccounts.userId],
+        references: [users.id],
+    }),
+}));
+
+export const taxScenariosRelations = relations(taxScenarios, ({ one, many }) => ({
+    user: one(users, {
+        fields: [taxScenarios.userId],
+        references: [users.id],
+    }),
+    baseEstimate: one(taxEstimates, {
+        fields: [taxScenarios.baseEstimateId],
+        references: [taxEstimates.id],
+    }),
+    scenarioEstimate: one(taxEstimates, {
+        fields: [taxScenarios.scenarioEstimateId],
+        references: [taxEstimates.id],
+    }),
+}));
+
+export const taxDocumentsRelations = relations(taxDocuments, ({ one }) => ({
+    user: one(users, {
+        fields: [taxDocuments.userId],
+        references: [users.id],
+    }),
+    deduction: one(taxDeductions, {
+        fields: [taxDocuments.deductionId],
+        references: [taxDeductions.id],
     }),
 }));
 
