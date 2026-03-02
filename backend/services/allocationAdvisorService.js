@@ -14,6 +14,10 @@ import assetService from './assetService.js';
 import AppError from '../utils/AppError.js';
 
 class AllocationAdvisorService {
+    _clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
     /**
      * Generate recommended asset allocation for user
      * Based on risk score, time horizon, and modern portfolio theory
@@ -60,6 +64,87 @@ class AllocationAdvisorService {
             timeline,
             rationale: this._generateRationale(allocation, riskScore, timeline),
             alternatives: this._generateAlternatives(riskScore, timeline)
+        };
+    }
+
+    /**
+     * Generate ML-style allocation recommendation from profile features
+     * Issue #695 enhancement
+     */
+    async generateMLAllocationRecommendation(userId, options = {}) {
+        const riskProfile = await userProfilingService.getRiskTolerance(userId);
+        const capacity = await userProfilingService.getFinancialCapacity(userId);
+        const timeline = await userProfilingService.estimateRetirementTimeline(userId, options.retirementAge);
+
+        const features = {
+            riskScore: riskProfile.score,
+            yearsToRetirement: timeline.yearsToRetirement,
+            monthlySurplus: capacity.monthlySurplus,
+            emergencyFundMonths: capacity.emergencyFundMonths,
+            urgencyScore: timeline.urgencyScore,
+            marketVolatilityRegime: options.marketVolatilityRegime || 'neutral',
+            goalPriorityBias: options.goalPriorityBias || 'balanced'
+        };
+
+        let stocks =
+            15 +
+            (features.riskScore * 0.65) +
+            (Math.min(features.yearsToRetirement, 35) * 0.7) +
+            (Math.min(features.monthlySurplus, 5000) / 5000) * 10 -
+            (features.urgencyScore * 0.12);
+
+        let bonds =
+            65 -
+            (features.riskScore * 0.35) -
+            (Math.min(features.yearsToRetirement, 35) * 0.35) +
+            (features.urgencyScore * 0.1);
+
+        let alternatives = 6 + (features.riskScore > 70 ? 2 : 0);
+        let cash = 100 - (stocks + bonds + alternatives);
+
+        if (features.marketVolatilityRegime === 'high') {
+            stocks -= 6;
+            bonds += 4;
+            cash += 2;
+        } else if (features.marketVolatilityRegime === 'low') {
+            stocks += 3;
+            bonds -= 2;
+            cash -= 1;
+        }
+
+        if (features.goalPriorityBias === 'capital_preservation') {
+            bonds += 4;
+            stocks -= 3;
+            cash += 1;
+        } else if (features.goalPriorityBias === 'growth') {
+            stocks += 4;
+            bonds -= 3;
+            cash -= 1;
+        }
+
+        const raw = {
+            stocks: this._clamp(stocks, 5, 92),
+            bonds: this._clamp(bonds, 5, 88),
+            alternatives: this._clamp(alternatives, 0, 15),
+            cash: this._clamp(cash, 0, 20)
+        };
+
+        this._normalizeAllocation(raw);
+
+        return {
+            model: 'feature-weighted-allocation-v1',
+            modelVersion: '1.0.0',
+            riskScore: riskProfile.score,
+            riskLevel: riskProfile.level,
+            features,
+            recommendedAllocation: raw,
+            expectedAnnualReturn: parseFloat(this._calculateExpectedReturn(raw).toFixed(2)),
+            volatility: parseFloat(this._calculateVolatility(raw).toFixed(2)),
+            confidence: this._estimateRecommendationConfidence(features),
+            explanation: [
+                'Allocation is generated from weighted profile features (risk, timeline, capacity, urgency).',
+                `Market regime '${features.marketVolatilityRegime}' and goal bias '${features.goalPriorityBias}' were applied as tilts.`
+            ]
         };
     }
 
@@ -119,6 +204,67 @@ class AllocationAdvisorService {
                 expectedInitialReturn: path[0].expectedReturn,
                 expectedFinalReturn: path[path.length - 1].expectedReturn
             }
+        };
+    }
+
+    /**
+     * Generate dynamic glide path with regime-aware annual tilts
+     * Issue #695 enhancement
+     */
+    async generateDynamicGlidePath(userId, options = {}) {
+        const base = await this.generateGlidePath(userId, options);
+        const marketRegime = options.marketVolatilityRegime || 'neutral';
+        const inflationPressure = options.inflationPressure || 'moderate';
+
+        const adjustedProjectionYears = base.projectionYears.map((node) => {
+            const allocation = { ...node.allocation };
+            let stockTilt = 0;
+            let bondTilt = 0;
+            let cashTilt = 0;
+
+            if (marketRegime === 'high') {
+                stockTilt -= 4;
+                bondTilt += 3;
+                cashTilt += 1;
+            } else if (marketRegime === 'low') {
+                stockTilt += 2;
+                bondTilt -= 1;
+                cashTilt -= 1;
+            }
+
+            if (inflationPressure === 'high') {
+                stockTilt += 1;
+                bondTilt -= 1;
+            }
+
+            allocation.stocks = this._clamp(allocation.stocks + stockTilt, 5, 95);
+            allocation.bonds = this._clamp(allocation.bonds + bondTilt, 0, 90);
+            allocation.cash = this._clamp(allocation.cash + cashTilt, 0, 20);
+            this._normalizeAllocation(allocation);
+
+            return {
+                ...node,
+                allocation,
+                expectedReturn: parseFloat(this._calculateExpectedReturn(allocation).toFixed(2)),
+                dynamicAdjustments: {
+                    marketRegime,
+                    inflationPressure,
+                    stockTilt,
+                    bondTilt,
+                    cashTilt
+                }
+            };
+        });
+
+        return {
+            ...base,
+            glidePathType: 'dynamic',
+            assumptions: {
+                marketRegime,
+                inflationPressure
+            },
+            currentYear: adjustedProjectionYears[0],
+            projectionYears: adjustedProjectionYears
         };
     }
 
@@ -237,6 +383,88 @@ class AllocationAdvisorService {
         else if (rebalancing.totalRebalanceNeeded > 5) rebalancing.urgency = 'Low';
 
         return rebalancing;
+    }
+
+    /**
+     * Analyze drift with threshold and trade suggestions
+     * Issue #695 enhancement
+     */
+    async analyzeDrift(userId, currentAllocation, options = {}) {
+        const threshold = Number(options.threshold || 5);
+        const targetAllocation = options.targetAllocation || (await this.generateAllocationRecommendation(userId)).recommendedAllocation;
+
+        const analysis = await this.getRebalancingNeeds(userId, currentAllocation, targetAllocation);
+        const breached = analysis.assets.filter((asset) => Math.abs(asset.drift) >= threshold);
+
+        return {
+            threshold,
+            needsRebalance: breached.length > 0,
+            breachCount: breached.length,
+            breachedAssets: breached,
+            urgency: analysis.urgency,
+            summary: analysis,
+            recommendations: breached.map((asset) => ({
+                asset: asset.asset,
+                action: asset.drift > 0 ? 'trim' : 'add',
+                amountPercent: parseFloat(Math.abs(asset.drift).toFixed(2))
+            }))
+        };
+    }
+
+    /**
+     * Preview rebalance impact for user portfolio
+     * Issue #695 enhancement
+     */
+    async generateRebalancePreview(userId, currentAllocation, options = {}) {
+        const target = options.targetAllocation || (await this.generateMLAllocationRecommendation(userId, options)).recommendedAllocation;
+        const drift = await this.analyzeDrift(userId, currentAllocation, {
+            threshold: options.threshold || 5,
+            targetAllocation: target
+        });
+
+        const currentReturn = this._calculateExpectedReturn(currentAllocation);
+        const currentVolatility = this._calculateVolatility(currentAllocation);
+        const targetReturn = this._calculateExpectedReturn(target);
+        const targetVolatility = this._calculateVolatility(target);
+
+        return {
+            current: {
+                allocation: currentAllocation,
+                expectedAnnualReturn: parseFloat(currentReturn.toFixed(2)),
+                volatility: parseFloat(currentVolatility.toFixed(2))
+            },
+            target: {
+                allocation: target,
+                expectedAnnualReturn: parseFloat(targetReturn.toFixed(2)),
+                volatility: parseFloat(targetVolatility.toFixed(2))
+            },
+            delta: {
+                expectedReturnChange: parseFloat((targetReturn - currentReturn).toFixed(2)),
+                volatilityChange: parseFloat((targetVolatility - currentVolatility).toFixed(2))
+            },
+            drift,
+            trades: drift.recommendations
+        };
+    }
+
+    _estimateRecommendationConfidence(features) {
+        let confidence = 72;
+
+        if (features.emergencyFundMonths >= 6) confidence += 8;
+        else if (features.emergencyFundMonths < 2) confidence -= 8;
+
+        if (features.monthlySurplus > 1000) confidence += 6;
+        else if (features.monthlySurplus < 200) confidence -= 6;
+
+        if (features.yearsToRetirement > 10) confidence += 4;
+        else confidence -= 3;
+
+        if (features.marketVolatilityRegime === 'high') confidence -= 4;
+
+        return {
+            score: this._clamp(confidence, 55, 95),
+            band: confidence >= 85 ? 'high' : confidence >= 70 ? 'medium' : 'moderate'
+        };
     }
 
     // ====== PRIVATE ALLOCATION GENERATION METHODS ======
