@@ -200,6 +200,7 @@ import milestoneRoutes from "./routes/milestones.js";
 import forecastRoutes from "./routes/forecasts.js";
 import goalSharingRoutes from "./routes/goalSharing.js";
 import goalContributionSmoothingRoutes from "./routes/goalContributionSmoothing.js";
+import budgetGuardrailRoutes from "./routes/budgetGuardrails.js";
 import anomalyRoutes from "./routes/anomalies.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
 import logSnapshotJob from "./jobs/logSnapshotJob.js";
@@ -717,6 +718,7 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
     app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
     app.use("/api/v1/goal-smoothing", userLimiter, goalContributionSmoothingRoutes);
+    app.use("/api/v1/budget-guardrails", userLimiter, budgetGuardrailRoutes);
     app.use("/api/outbox", userLimiter, outboxRoutes);
     app.use("/api/soft-delete", userLimiter, softDeleteRoutes);
     app.use("/api/integrity", userLimiter, softDeleteRoutes);
