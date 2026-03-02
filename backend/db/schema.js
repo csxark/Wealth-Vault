@@ -5768,6 +5768,250 @@ export const merchantFrequencyPatternsRelations = relations(merchantFrequencyPat
     }),
 }));
 
+// ============================================================================
+// MULTI-ACCOUNT AGGREGATION & HOUSEHOLD PORTFOLIO MANAGEMENT (#656)
+// ============================================================================
+
+// Household Groups - Multi-account household aggregation
+export const households = pgTable('households', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    description: text('description'),
+    householdType: text('household_type').default('family'), // 'family', 'joint', 'business', 'trust'
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+    baseCurrency: text('base_currency').default('USD'),
+    aggregationFrequency: text('aggregation_frequency').default('daily'), // 'real_time', 'hourly', 'daily', 'weekly'
+    rebalancingEnabled: boolean('rebalancing_enabled').default(false),
+    collaborativeApprovalsRequired: boolean('collaborative_approvals_required').default(false),
+    minApproversRequired: integer('min_approvers_required').default(1),
+    isPrivate: boolean('is_private').default(true),
+    hiddenAssets: jsonb('hidden_assets').default([]),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    createdByIdx: index('idx_households_created_by').on(table.createdBy),
+    typeIdx: index('idx_households_type').on(table.householdType),
+}));
+
+// Household Members - Multi-member roles and permissions
+export const householdMembers = pgTable('household_members', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    role: text('role').notNull().default('member'), // 'primary', 'secondary', 'viewer', 'approver', 'advisor'
+    permissions: jsonb('permissions').default([]),
+    canApproveRebalancing: boolean('can_approve_rebalancing').default(false),
+    canApproveTransfers: boolean('can_approve_transfers').default(false),
+    canViewAllAccounts: boolean('can_view_all_accounts').default(true),
+    visibleVaultIds: jsonb('visible_vault_ids').default([]),
+    hiddenVaultIds: jsonb('hidden_vault_ids').default([]),
+    relationship: text('relationship'), // 'spouse', 'child', 'parent', 'business_partner', 'trustee', 'advisor', 'other'
+    joinedAt: timestamp('joined_at').defaultNow(),
+    status: text('status').default('active'), // 'active', 'pending', 'inactive', 'revoked'
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_household_members_household').on(table.householdId),
+    userIdx: index('idx_household_members_user').on(table.userId),
+    roleIdx: index('idx_household_members_role').on(table.role),
+    uniqueMembers: sql`CONSTRAINT unique_household_member UNIQUE (household_id, user_id)`,
+}));
+
+// Household Accounts - Links vaults to households
+export const householdAccounts = pgTable('household_accounts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').notNull(),
+    accountName: text('account_name').notNull(),
+    accountType: text('account_type').notNull(), // 'checking', 'savings', 'investment', 'retirement', 'real_estate', 'crypto'
+    primaryOwnerId: uuid('primary_owner_id').references(() => users.id, { onDelete: 'set null' }),
+    isJoint: boolean('is_joint').default(false),
+    jointOwnerIds: jsonb('joint_owner_ids').default([]),
+    requiredForTaxReporting: boolean('required_for_tax_reporting').default(false),
+    taxFileId: text('tax_file_id'),
+    isHidden: boolean('is_hidden').default(false),
+    hiddenFromMemberIds: jsonb('hidden_from_member_ids').default([]),
+    includeInNetWorth: boolean('include_in_net_worth').default(true),
+    weight: numeric('weight', { precision: 5, scale: 4 }).default('1.0'),
+    metadata: jsonb('metadata').default({}),
+    addedAt: timestamp('added_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_household_accounts_household').on(table.householdId),
+    vaultIdx: index('idx_household_accounts_vault').on(table.vaultId),
+    jointIdx: index('idx_household_accounts_joint').on(table.isJoint),
+    uniqueAccount: sql`CONSTRAINT unique_household_vault UNIQUE (household_id, vault_id)`,
+}));
+
+// Household Snapshots - Daily aggregated net worth & allocation snapshots
+export const householdSnapshots = pgTable('household_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: text('snapshot_date').notNull(), // YYYY-MM-DD format for easy querying
+    totalNetWorth: numeric('total_net_worth', { precision: 20, scale: 2 }).notNull(),
+    totalAssets: numeric('total_assets', { precision: 20, scale: 2 }).notNull(),
+    totalLiabilities: numeric('total_liabilities', { precision: 20, scale: 2 }).notNull(),
+    cashBalance: numeric('cash_balance', { precision: 20, scale: 2 }).default('0'),
+    investmentValue: numeric('investment_value', { precision: 20, scale: 2 }).default('0'),
+    realEstateValue: numeric('real_estate_value', { precision: 20, scale: 2 }).default('0'),
+    cryptoValue: numeric('crypto_value', { precision: 20, scale: 2 }).default('0'),
+    accountCount: integer('account_count').default(0),
+    baseCurrency: text('base_currency').default('USD'),
+    includesHiddenAccounts: boolean('includes_hidden_accounts').default(false),
+    assetAllocation: jsonb('asset_allocation').default({}),
+    allocationVsTarget: jsonb('allocation_vs_target').default({}),
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    householdDateIdx: index('idx_household_snapshots_household_date').on(table.householdId, table.snapshotDate),
+    dateIdx: index('idx_household_snapshots_date').on(table.snapshotDate),
+}));
+
+// Rebalancing Orders - Household-wide rebalancing moves
+export const householdRebalancingOrders = pgTable('household_rebalancing_orders', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    initiatedBy: uuid('initiated_by').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+    orderType: text('order_type').notNull(), // 'auto', 'manual', 'scenario'
+    targetAllocation: jsonb('target_allocation').notNull(),
+    currentAllocation: jsonb('current_allocation').notNull(),
+    suggestedMoves: jsonb('suggested_moves').notNull(),
+    estimatedTransactionCosts: numeric('estimated_transaction_costs', { precision: 20, scale: 2 }).default('0'),
+    estimatedTaxImpact: numeric('estimated_tax_impact', { precision: 20, scale: 2 }).default('0'),
+    requiresApproval: boolean('requires_approval').default(false),
+    approvals: jsonb('approvals').default([]),
+    allApprovalsReceived: boolean('all_approvals_received').default(false),
+    status: text('status').notNull().default('proposed'), // 'proposed', 'approved', 'executing', 'completed', 'cancelled'
+    executedAt: timestamp('executed_at'),
+    executionNotes: text('execution_notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_rebalancing_household').on(table.householdId),
+    initiatedByIdx: index('idx_rebalancing_initiated_by').on(table.initiatedBy),
+    statusIdx: index('idx_rebalancing_status').on(table.status),
+}));
+
+// Joint Goals - Household-level financial goals
+export const householdGoals = pgTable('household_goals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+    goalName: text('goal_name').notNull(),
+    goalType: text('goal_type').notNull(), // 'education', 'home', 'vacation', 'retirement', 'emergency', 'custom'
+    description: text('description'),
+    targetAmount: numeric('target_amount', { precision: 20, scale: 2 }).notNull(),
+    currentAmount: numeric('current_amount', { precision: 20, scale: 2 }).default('0'),
+    currency: text('currency').default('USD'),
+    deadline: timestamp('deadline').notNull(),
+    priority: text('priority').default('medium'), // 'low', 'medium', 'high', 'critical'
+    fundingStrategy: text('funding_strategy').default('proportional'), // 'proportional', 'equal', 'custom'
+    memberContributions: jsonb('member_contributions').default({}),
+    approvalRequired: boolean('approval_required').default(false),
+    requiresConsensus: boolean('requires_consensus').default(false),
+    approvedBy: jsonb('approved_by').default([]),
+    status: text('status').default('active'), // 'active', 'paused', 'completed', 'abandoned'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_household_goals_household').on(table.householdId),
+    deadlineIdx: index('idx_household_goals_deadline').on(table.deadline),
+    statusIdx: index('idx_household_goals_status').on(table.status),
+}));
+
+// Household Spending - Consolidated spending across all member accounts
+export const householdSpendingSummaries = pgTable('household_spending_summaries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    summaryDate: text('summary_date').notNull(), // YYYY-MM-DD format
+    summaryPeriod: text('summary_period').default('month'), // 'day', 'week', 'month', 'quarter', 'year'
+    totalSpending: numeric('total_spending', { precision: 20, scale: 2 }).notNull(),
+    totalIncome: numeric('total_income', { precision: 20, scale: 2 }).default('0'),
+    netCashFlow: numeric('net_cash_flow', { precision: 20, scale: 2 }).default('0'),
+    memberSpending: jsonb('member_spending').default({}),
+    memberIncome: jsonb('member_income').default({}),
+    categoryBreakdown: jsonb('category_breakdown').default({}),
+    percentChangeFromPrior: numeric('percent_change_from_prior', { precision: 5, scale: 2 }).default('0'),
+    forecastedMonthlySpend: numeric('forecasted_monthly_spend', { precision: 20, scale: 2 }).default('0'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    householdDateIdx: index('idx_household_spending_household_date').on(table.householdId, table.summaryDate),
+}));
+
+// Collaborative Approvals - General approval workflow for household changes
+export const householdApprovals = pgTable('household_approvals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    requestType: text('request_type').notNull(), // 'rebalancing', 'transfer', 'goal_change', 'member_add', 'account_link'
+    referenceId: uuid('reference_id'),
+    requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+    description: text('description'),
+    requiredApprovers: jsonb('required_approvers').notNull().default([]),
+    currentApprovals: jsonb('current_approvals').default([]),
+    rejections: jsonb('rejections').default([]),
+    minApprovalsRequired: integer('min_approvals_required').default(1),
+    status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected', 'withdrawn'
+    decidedAt: timestamp('decided_at'),
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_household_approvals_household').on(table.householdId),
+    statusIdx: index('idx_household_approvals_status').on(table.status),
+    typeIdx: index('idx_household_approvals_type').on(table.requestType),
+}));
+
+// Relations
+export const householdsRelations = relations(households, ({ one, many }) => ({
+    createdByUser: one(users, { fields: [households.createdBy], references: [users.id] }),
+    members: many(householdMembers),
+    accounts: many(householdAccounts),
+    snapshots: many(householdSnapshots),
+    rebalancingOrders: many(householdRebalancingOrders),
+    goals: many(householdGoals),
+    spendingSummaries: many(householdSpendingSummaries),
+    approvals: many(householdApprovals),
+}));
+
+export const householdMembersRelations = relations(householdMembers, ({ one }) => ({
+    household: one(households, { fields: [householdMembers.householdId], references: [households.id] }),
+    user: one(users, { fields: [householdMembers.userId], references: [users.id] }),
+}));
+
+export const householdAccountsRelations = relations(householdAccounts, ({ one }) => ({
+    household: one(households, { fields: [householdAccounts.householdId], references: [households.id] }),
+    primaryOwner: one(users, { fields: [householdAccounts.primaryOwnerId], references: [users.id] }),
+}));
+
+export const householdSnapshotsRelations = relations(householdSnapshots, ({ one }) => ({
+    household: one(households, { fields: [householdSnapshots.householdId], references: [households.id] }),
+}));
+
+export const householdRebalancingOrdersRelations = relations(householdRebalancingOrders, ({ one }) => ({
+    household: one(households, { fields: [householdRebalancingOrders.householdId], references: [households.id] }),
+    initiator: one(users, { fields: [householdRebalancingOrders.initiatedBy], references: [users.id] }),
+}));
+
+export const householdGoalsRelations = relations(householdGoals, ({ one }) => ({
+    household: one(households, { fields: [householdGoals.householdId], references: [households.id] }),
+    createdBy: one(users, { fields: [householdGoals.createdByUserId], references: [users.id] }),
+}));
+
+export const householdSpendingSummariesRelations = relations(householdSpendingSummaries, ({ one }) => ({
+    household: one(households, { fields: [householdSpendingSummaries.householdId], references: [households.id] }),
+}));
+
+export const householdApprovalsRelations = relations(householdApprovals, ({ one }) => ({
+    household: one(households, { fields: [householdApprovals.householdId], references: [households.id] }),
+    requestedByUser: one(users, { fields: [householdApprovals.requestedBy], references: [users.id] }),
+    decidedByUser: one(users, { fields: [householdApprovals.decidedBy], references: [users.id] }),
+}));
+
 // Export forecast schema tables
 export * from './schema-forecast.js';
 
