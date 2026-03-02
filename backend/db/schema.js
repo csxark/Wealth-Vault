@@ -5454,6 +5454,86 @@ export const strategyLegsRelations = relations(strategyLegs, ({ one, many }) => 
 export const impliedVolSurfacesRelations = relations(impliedVolSurfaces, ({ one }) => ({
     investment: one(investments, { fields: [impliedVolSurfaces.investmentId], references: [investments.id] }),
 }));
+
+// ============================================================================
+// NON-FINANCIAL "PASSION ASSET" INDEXING & COLLATERALIZATION ENGINE (#536)
+// ============================================================================
+
+export const passionAssets = pgTable('passion_assets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(), // e.g., "1962 Ferrari 250 GTO"
+    assetCategory: text('asset_category').notNull(), // 'art', 'car', 'watch', 'wine', 'collectible'
+    description: text('description'),
+    acquisitionDate: timestamp('acquisition_date'),
+    acquisitionCost: numeric('acquisition_cost', { precision: 20, scale: 2 }),
+    currentEstimatedValue: numeric('current_estimated_value', { precision: 20, scale: 2 }),
+    vaultId: uuid('vault_id').references(() => vaults.id), // Physical or digital representation in a vault
+    status: text('status').default('active'), // 'active', 'collateralized', 'sold', 'lost'
+    metadata: jsonb('metadata').default({}), // e.g., { make: 'Ferrari', model: '250 GTO', year: 1962 }
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const assetAppraisals = pgTable('asset_appraisals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    assetId: uuid('asset_id').references(() => passionAssets.id, { onDelete: 'cascade' }).notNull(),
+    appraisalValue: numeric('appraisal_value', { precision: 20, scale: 2 }).notNull(),
+    appraiserName: text('appraiser_name'), // e.g., "Sotheby's", "Hagerty"
+    appraisalDate: timestamp('appraisal_date').defaultNow(),
+    confidenceScore: numeric('confidence_score', { precision: 3, scale: 2 }), // 0.00 to 1.00
+    valuationSource: text('valuation_source').notNull(), // 'expert', 'index', 'auction_result'
+    metadata: jsonb('metadata').default({}),
+});
+
+export const provenanceRecords = pgTable('provenance_records', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    assetId: uuid('asset_id').references(() => passionAssets.id, { onDelete: 'cascade' }).notNull(),
+    recordType: text('record_type').notNull(), // 'ownership_change', 'restoration', 'storage_audit', 'insurance_update'
+    eventDate: timestamp('event_date').notNull(),
+    description: text('description'),
+    actorName: text('actor_name'), // Person or institution involved
+    isVerified: boolean('is_verified').default(false),
+    auditAnchorId: uuid('audit_anchor_id'), // Link to Merkle audit trail for immutability
+    metadata: jsonb('metadata').default({}),
+});
+
+export const passionLoanContracts = pgTable('passion_loan_contracts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    assetId: uuid('asset_id').references(() => passionAssets.id).notNull(),
+    loanAmount: numeric('loan_amount', { precision: 20, scale: 2 }).notNull(),
+    interestRate: numeric('interest_rate', { precision: 5, scale: 4 }).notNull(), // Annual %
+    ltvRatio: numeric('ltv_ratio', { precision: 5, scale: 4 }).notNull(), // Loan-to-Value at inception
+    status: text('status').default('active'), // 'active', 'liquidated', 'repaid'
+    expiryDate: timestamp('expiry_date'),
+    vaultId: uuid('vault_id').references(() => vaults.id), // The vault where the loan funds are held/issued
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Passion Asset Relations
+export const passionAssetsRelations = relations(passionAssets, ({ one, many }) => ({
+    user: one(users, { fields: [passionAssets.userId], references: [users.id] }),
+    vault: one(vaults, { fields: [passionAssets.vaultId], references: [vaults.id] }),
+    appraisals: many(assetAppraisals),
+    provenance: many(provenanceRecords),
+    loans: many(passionLoanContracts),
+}));
+
+export const assetAppraisalsRelations = relations(assetAppraisals, ({ one }) => ({
+    asset: one(passionAssets, { fields: [assetAppraisals.assetId], references: [passionAssets.id] }),
+}));
+
+export const provenanceRecordsRelations = relations(provenanceRecords, ({ one }) => ({
+    asset: one(passionAssets, { fields: [provenanceRecords.assetId], references: [passionAssets.id] }),
+}));
+
+export const passionLoanContractsRelations = relations(passionLoanContracts, ({ one }) => ({
+    user: one(users, { fields: [passionLoanContracts.userId], references: [users.id] }),
+    asset: one(passionAssets, { fields: [passionLoanContracts.assetId], references: [passionAssets.id] }),
+    vault: one(vaults, { fields: [passionLoanContracts.vaultId], references: [vaults.id] }),
+}));
 export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
     user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
 }));
