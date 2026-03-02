@@ -5098,3 +5098,60 @@ export const passionLoanContractsRelations = relations(passionLoanContracts, ({ 
     asset: one(passionAssets, { fields: [passionLoanContracts.assetId], references: [passionAssets.id] }),
     vault: one(vaults, { fields: [passionLoanContracts.vaultId], references: [vaults.id] }),
 }));
+
+// ============================================================================
+// PHILANTHROPIC "ALPHA" ENGINE & CRT OPTIMIZER (#535)
+// ============================================================================
+
+export const charitableTrusts = pgTable('charitable_trusts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    trustType: text('trust_type').notNull(), // 'CRAT' (Annuity), 'CRUT' (Unitrust)
+    initialContribution: numeric('initial_contribution', { precision: 20, scale: 2 }).notNull(),
+    currentValue: numeric('current_value', { precision: 20, scale: 2 }).notNull(),
+    payoutRate: numeric('payout_rate', { precision: 5, scale: 4 }).notNull(), // 5% min, but must pass 10% rule
+    termYears: integer('term_years').notNull(),
+    irsRate: numeric('irs_rate', { precision: 5, scale: 4 }).notNull(), // Section 7520 rate at inception
+    charityEntityId: uuid('charity_entity_id').references(() => entities.id),
+    vaultId: uuid('vault_id').references(() => vaults.id),
+    status: text('status').default('active'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const crtPayouts = pgTable('crt_payouts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    trustId: uuid('trust_id').references(() => charitableTrusts.id, { onDelete: 'cascade' }).notNull(),
+    amount: numeric('amount', { precision: 20, scale: 2 }).notNull(),
+    payoutDate: timestamp('payout_date').defaultNow(),
+    taxCharacter: text('tax_character'), // ordinary, capital_gain, tax_free
+    ledgerEntryId: uuid('ledger_entry_id'),
+});
+
+export const crtProjections = pgTable('crt_projections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    trustId: uuid('trust_id').references(() => charitableTrusts.id, { onDelete: 'cascade' }).notNull(),
+    projectionYear: integer('projection_year').notNull(),
+    estimatedRemainder: numeric('estimated_remainder', { precision: 20, scale: 2 }).notNull(),
+    estimatedIncomeToGrantor: numeric('estimated_income_to_grantor', { precision: 20, scale: 2 }),
+    growthRateAssumption: numeric('growth_rate_assumption', { precision: 5, scale: 4 }),
+});
+
+// Charitable Relations
+export const charitableTrustsRelations = relations(charitableTrusts, ({ one, many }) => ({
+    user: one(users, { fields: [charitableTrusts.userId], references: [users.id] }),
+    charity: one(entities, { fields: [charitableTrusts.charityEntityId], references: [entities.id] }),
+    vault: one(vaults, { fields: [charitableTrusts.vaultId], references: [vaults.id] }),
+    payouts: many(crtPayouts),
+    projections: many(crtProjections),
+}));
+
+export const crtPayoutsRelations = relations(crtPayouts, ({ one }) => ({
+    trust: one(charitableTrusts, { fields: [crtPayouts.trustId], references: [charitableTrusts.id] }),
+}));
+
+export const crtProjectionsRelations = relations(crtProjections, ({ one }) => ({
+    trust: one(charitableTrusts, { fields: [crtProjections.trustId], references: [charitableTrusts.id] }),
+}));
