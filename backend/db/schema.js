@@ -568,6 +568,211 @@ export const goalCashflowEvents = pgTable('goal_cashflow_events', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// ============================================================================
+// MULTI-GOAL BUDGET GUARDRAIL OPTIMIZER - Issue #714
+// ============================================================================
+
+// Budget Guardrail Policies - Define minimum essential expense coverage
+export const budgetGuardrailPolicies = pgTable('budget_guardrail_policies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    
+    // Policy Configuration
+    policyName: text('policy_name').notNull(),
+    description: text('description'),
+    
+    // Essential Expense Definition
+    protectedCategoryIds: jsonb('protected_category_ids').default([]),
+    minimumMonthlyLivingCost: numeric('minimum_monthly_living_cost', { precision: 12, scale: 2 }).notNull(),
+    livingCostCalculationMethod: text('living_cost_calculation_method').default('manual'),
+    
+    // Historical calculation parameters
+    historicalLookbackMonths: integer('historical_lookback_months').default(6),
+    percentileThreshold: numeric('percentile_threshold', { precision: 3, scale: 2 }).default('0.75'),
+    
+    // Buffer & Safety Settings
+    safetyBufferPercentage: numeric('safety_buffer_percentage', { precision: 5, scale: 2 }).default('15.00'),
+    includeEmergencyFundContribution: boolean('include_emergency_fund_contribution').default(true),
+    emergencyFundTargetMonths: integer('emergency_fund_target_months').default(3),
+    
+    // Goal Allocation Caps
+    maxGoalAllocationPercentage: numeric('max_goal_allocation_percentage', { precision: 5, scale: 2 }).default('50.00'),
+    priorityGoalIds: jsonb('priority_goal_ids').default([]),
+    
+    // Enforcement Flags
+    isActive: boolean('is_active').default(true),
+    enforceStrictly: boolean('enforce_strictly').default(true),
+    allowOverride: boolean('allow_override').default(false),
+    overrideRequireApproval: boolean('override_require_approval').default(true),
+    
+    // Metadata
+    lastCalculatedAt: timestamp('last_calculated_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Safe Allocation Calculations - Store calculated safe-to-allocate amounts
+export const safeAllocationCalculations = pgTable('safe_allocation_calculations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id').references(() => budgetGuardrailPolicies.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Calculation Period
+    calculationDate: timestamp('calculation_date').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    periodType: text('period_type').default('monthly'),
+    
+    // Income & Essential Expenses Breakdown
+    projectedIncome: numeric('projected_income', { precision: 15, scale: 2 }).notNull(),
+    projectedEssentialExpenses: numeric('projected_essential_expenses', { precision: 12, scale: 2 }).notNull(),
+    essentialExpenseBreakdown: jsonb('essential_expense_breakdown').default({}),
+    
+    // Safety Considerations
+    safetyBufferAmount: numeric('safety_buffer_amount', { precision: 12, scale: 2 }).notNull(),
+    emergencyFundContribution: numeric('emergency_fund_contribution', { precision: 12, scale: 2 }).default('0'),
+    discretionaryMinimum: numeric('discretionary_minimum', { precision: 12, scale: 2 }),
+    
+    // Allocation Limits
+    safeToAllocateAmount: numeric('safe_to_allocate_amount', { precision: 12, scale: 2 }).notNull(),
+    safeToAllocatePercentage: numeric('safe_to_allocate_percentage', { precision: 5, scale: 2 }).notNull(),
+    
+    // Goal Caps Per Goal
+    goalAllocationLimits: jsonb('goal_allocation_limits').notNull(),
+    
+    // Confidence & Coverage
+    confidenceLevel: text('confidence_level'),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }),
+    coverageStatus: text('coverage_status').notNull(),
+    
+    // Recommendations
+    recommendations: jsonb('recommendations').default([]),
+    
+    // Metadata
+    dataQuality: jsonb('data_quality').default({}),
+    calculationMetadata: jsonb('calculation_metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Guardrail Allocations - Track allocations made with guardrail enforcement
+export const guardrailAllocations = pgTable('guardrail_allocations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id').references(() => budgetGuardrailPolicies.id, { onDelete: 'cascade' }).notNull(),
+    calculationId: uuid('calculation_id').references(() => safeAllocationCalculations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Goal Allocation
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Requested vs. Approved
+    requestedAmount: numeric('requested_amount', { precision: 12, scale: 2 }).notNull(),
+    approvedAmount: numeric('approved_amount', { precision: 12, scale: 2 }).notNull(),
+    guardrailReducedAmount: numeric('guardrail_reduced_amount', { precision: 12, scale: 2 }),
+    reductionReason: text('reduction_reason'),
+    
+    // Allocation Details
+    allocationDate: timestamp('allocation_date').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    
+    // Status & Approval
+    status: text('status').default('pending'),
+    approvalStatus: text('approval_status'),
+    
+    // Override Information
+    overridden: boolean('overridden').default(false),
+    overrideApprovedBy: uuid('override_approved_by').references(() => users.id, { onDelete: 'set null' }),
+    overrideApprovedAt: timestamp('override_approved_at'),
+    overrideReason: text('override_reason'),
+    
+    // Implementation
+    allocatedAt: timestamp('allocated_at'),
+    actualAllocatedAmount: numeric('actual_allocated_amount', { precision: 12, scale: 2 }),
+    
+    // Metadata
+    complianceNotes: text('compliance_notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Guardrail Violations - Track instances where allocations would violate guardrails
+export const guardrailViolations = pgTable('guardrail_violations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id').references(() => budgetGuardrailPolicies.id, { onDelete: 'cascade' }).notNull(),
+    allocationId: uuid('allocation_id').references(() => guardrailAllocations.id, { onDelete: 'set null' }),
+    
+    // Violation Details
+    violationType: text('violation_type').notNull(),
+    severity: text('severity').notNull(),
+    
+    // Calculation Details
+    thresholdValue: numeric('threshold_value', { precision: 12, scale: 2 }).notNull(),
+    actualValue: numeric('actual_value', { precision: 12, scale: 2 }).notNull(),
+    shortfallAmount: numeric('shortfall_amount', { precision: 12, scale: 2 }),
+    shortfallPercentage: numeric('shortfall_percentage', { precision: 5, scale: 2 }),
+    
+    // Detection
+    detectedAt: timestamp('detected_at').notNull(),
+    violationDate: timestamp('violation_date').notNull(),
+    
+    // Resolution
+    resolved: boolean('resolved').default(false),
+    resolvedAt: timestamp('resolved_at'),
+    resolutionAction: text('resolution_action'),
+    
+    // Context
+    affectedCategories: jsonb('affected_categories').default([]),
+    affectedGoals: jsonb('affected_goals').default([]),
+    recommendedAction: text('recommended_action'),
+    
+    // Metadata
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Guardrail Compliance Snapshots - Track compliance over time
+export const guardrailComplianceSnapshots = pgTable('guardrail_compliance_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id').references(() => budgetGuardrailPolicies.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Period
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    periodType: text('period_type').default('monthly'),
+    
+    // Compliance Status
+    wasCompliant: boolean('was_compliant').notNull(),
+    compliancePercentage: numeric('compliance_percentage', { precision: 5, scale: 2 }),
+    violationsCount: integer('violations_count').default(0),
+    criticalViolationsCount: integer('critical_violations_count').default(0),
+    
+    // Financial Summary
+    actualIncome: numeric('actual_income', { precision: 15, scale: 2 }),
+    actualEssentialExpenses: numeric('actual_essential_expenses', { precision: 12, scale: 2 }),
+    actualGoalAllocations: numeric('actual_goal_allocations', { precision: 12, scale: 2 }),
+    actualDiscretionary: numeric('actual_discretionary', { precision: 12, scale: 2 }),
+    
+    // vs. Expected
+    varianceFromExpected: jsonb('variance_from_expected').default({}),
+    
+    // Health Score
+    guardrailHealthScore: numeric('guardrail_health_score', { precision: 5, scale: 2 }),
+    trend: text('trend'),
+    
+    // Metadata
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Device Sessions Table for token management
 export const deviceSessions = pgTable('device_sessions', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -1142,6 +1347,98 @@ export const goalCashflowEventsRelations = relations(goalCashflowEvents, ({ one 
     vault: one(vaults, {
         fields: [goalCashflowEvents.vaultId],
         references: [vaults.id],
+    }),
+}));
+
+// Relations for Multi-Goal Budget Guardrail Optimizer - Issue #714
+export const budgetGuardrailPoliciesRelations = relations(budgetGuardrailPolicies, ({ one, many }) => ({
+    user: one(users, {
+        fields: [budgetGuardrailPolicies.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [budgetGuardrailPolicies.vaultId],
+        references: [vaults.id],
+    }),
+    allocations: many(guardrailAllocations),
+    violations: many(guardrailViolations),
+    complianceSnapshots: many(guardrailComplianceSnapshots),
+    safeAllocations: many(safeAllocationCalculations),
+}));
+
+export const safeAllocationCalculationsRelations = relations(safeAllocationCalculations, ({ one }) => ({
+    user: one(users, {
+        fields: [safeAllocationCalculations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [safeAllocationCalculations.vaultId],
+        references: [vaults.id],
+    }),
+    policy: one(budgetGuardrailPolicies, {
+        fields: [safeAllocationCalculations.policyId],
+        references: [budgetGuardrailPolicies.id],
+    }),
+}));
+
+export const guardrailAllocationsRelations = relations(guardrailAllocations, ({ one }) => ({
+    user: one(users, {
+        fields: [guardrailAllocations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [guardrailAllocations.vaultId],
+        references: [vaults.id],
+    }),
+    policy: one(budgetGuardrailPolicies, {
+        fields: [guardrailAllocations.policyId],
+        references: [budgetGuardrailPolicies.id],
+    }),
+    calculation: one(safeAllocationCalculations, {
+        fields: [guardrailAllocations.calculationId],
+        references: [safeAllocationCalculations.id],
+    }),
+    goal: one(goals, {
+        fields: [guardrailAllocations.goalId],
+        references: [goals.id],
+    }),
+    approver: one(users, {
+        fields: [guardrailAllocations.overrideApprovedBy],
+        references: [users.id],
+    }),
+}));
+
+export const guardrailViolationsRelations = relations(guardrailViolations, ({ one }) => ({
+    user: one(users, {
+        fields: [guardrailViolations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [guardrailViolations.vaultId],
+        references: [vaults.id],
+    }),
+    policy: one(budgetGuardrailPolicies, {
+        fields: [guardrailViolations.policyId],
+        references: [budgetGuardrailPolicies.id],
+    }),
+    allocation: one(guardrailAllocations, {
+        fields: [guardrailViolations.allocationId],
+        references: [guardrailAllocations.id],
+    }),
+}));
+
+export const guardrailComplianceSnapshotsRelations = relations(guardrailComplianceSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [guardrailComplianceSnapshots.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [guardrailComplianceSnapshots.vaultId],
+        references: [vaults.id],
+    }),
+    policy: one(budgetGuardrailPolicies, {
+        fields: [guardrailComplianceSnapshots.policyId],
+        references: [budgetGuardrailPolicies.id],
     }),
 }));
 
