@@ -418,6 +418,156 @@ export const goalContributionLineItems = pgTable('goal_contribution_line_items',
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// ============================================================================
+// GOAL CONTRIBUTION VOLATILITY SMOOTHER - Issue #713
+// ============================================================================
+
+// Goal Contribution Smoothing Configs - Configuration for contribution smoothing per user/goal
+export const goalContributionSmoothingConfigs = pgTable('goal_contribution_smoothing_configs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    
+    // Smoothing Parameters
+    rollingWindowMonths: integer('rolling_window_months').default(3),
+    smoothingFactor: numeric('smoothing_factor', { precision: 3, scale: 2 }).default('0.70'),
+    varianceThresholdPercentage: numeric('variance_threshold_percentage', { precision: 5, scale: 2 }).default('25.00'),
+    
+    // Guardrails
+    minContributionAmount: numeric('min_contribution_amount', { precision: 12, scale: 2 }).default('0'),
+    maxContributionAmount: numeric('max_contribution_amount', { precision: 12, scale: 2 }),
+    maxMonthOverMonthChangePct: numeric('max_month_over_month_change_pct', { precision: 5, scale: 2 }).default('30.00'),
+    
+    // Flags
+    enableSmoothing: boolean('enable_smoothing').default(true),
+    enableCashflowDetection: boolean('enable_cashflow_detection').default(true),
+    requireManualOverride: boolean('require_manual_override').default(false),
+    
+    // Metadata
+    lastCalculatedAt: timestamp('last_calculated_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Goal Cashflow History - Rolling cashflow history for smoothing calculations
+export const goalCashflowHistory = pgTable('goal_cashflow_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    
+    // Cashflow Data
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    periodType: text('period_type').default('monthly'),
+    
+    // Financial Metrics
+    totalIncome: numeric('total_income', { precision: 15, scale: 2 }).default('0').notNull(),
+    totalExpenses: numeric('total_expenses', { precision: 15, scale: 2 }).default('0').notNull(),
+    netCashflow: numeric('net_cashflow', { precision: 15, scale: 2 }).notNull(),
+    discretionaryCashflow: numeric('discretionary_cashflow', { precision: 15, scale: 2 }),
+    
+    // Goal Contributions
+    totalGoalContributions: numeric('total_goal_contributions', { precision: 15, scale: 2 }).default('0'),
+    contributionCount: integer('contribution_count').default(0),
+    
+    // Volatility Metrics
+    incomeVolatility: numeric('income_volatility', { precision: 5, scale: 2 }),
+    expenseVolatility: numeric('expense_volatility', { precision: 5, scale: 2 }),
+    cashflowVolatility: numeric('cashflow_volatility', { precision: 5, scale: 2 }),
+    
+    // Metadata
+    dataSource: text('data_source').default('calculated'),
+    isComplete: boolean('is_complete').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Goal Contribution Recommendations - Smoothed contribution recommendations
+export const goalContributionRecommendations = pgTable('goal_contribution_recommendations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    configId: uuid('config_id').references(() => goalContributionSmoothingConfigs.id, { onDelete: 'set null' }),
+    
+    // Recommendation Period
+    recommendationDate: timestamp('recommendation_date').notNull(),
+    validFrom: timestamp('valid_from').notNull(),
+    validUntil: timestamp('valid_until').notNull(),
+    
+    // Smoothed Recommendation
+    rawCalculatedAmount: numeric('raw_calculated_amount', { precision: 12, scale: 2 }).notNull(),
+    smoothedAmount: numeric('smoothed_amount', { precision: 12, scale: 2 }).notNull(),
+    previousAmount: numeric('previous_amount', { precision: 12, scale: 2 }),
+    amountChange: numeric('amount_change', { precision: 12, scale: 2 }),
+    amountChangePercentage: numeric('amount_change_percentage', { precision: 5, scale: 2 }),
+    
+    // Variance Band
+    varianceBandLower: numeric('variance_band_lower', { precision: 12, scale: 2 }).notNull(),
+    varianceBandUpper: numeric('variance_band_upper', { precision: 12, scale: 2 }).notNull(),
+    varianceBandPercentage: numeric('variance_band_percentage', { precision: 5, scale: 2 }).default('15.00'),
+    
+    // Confidence Metrics
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }).notNull(),
+    confidenceLevel: text('confidence_level').notNull(),
+    stabilityIndex: numeric('stability_index', { precision: 5, scale: 2 }),
+    
+    // Supporting Data
+    rollingAvgCashflow: numeric('rolling_avg_cashflow', { precision: 12, scale: 2 }),
+    rollingAvgContributions: numeric('rolling_avg_contributions', { precision: 12, scale: 2 }),
+    cashflowTrend: text('cashflow_trend'),
+    majorCashflowShiftDetected: boolean('major_cashflow_shift_detected').default(false),
+    
+    // Recommendation Status
+    status: text('status').default('pending'),
+    userFeedback: text('user_feedback'),
+    overrideAmount: numeric('override_amount', { precision: 12, scale: 2 }),
+    overrideReason: text('override_reason'),
+    
+    // Metadata
+    algorithmVersion: text('algorithm_version').default('v1.0'),
+    calculationMetadata: jsonb('calculation_metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    acceptedAt: timestamp('accepted_at'),
+});
+
+// Goal Cashflow Events - Major cashflow shifts that trigger recalculation
+export const goalCashflowEvents = pgTable('goal_cashflow_events', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    
+    // Event Details
+    eventType: text('event_type').notNull(),
+    detectedAt: timestamp('detected_at').notNull(),
+    eventDate: timestamp('event_date').notNull(),
+    severity: text('severity').notNull(),
+    
+    // Event Metrics
+    previousAvgValue: numeric('previous_avg_value', { precision: 12, scale: 2 }),
+    newValue: numeric('new_value', { precision: 12, scale: 2 }),
+    percentageChange: numeric('percentage_change', { precision: 5, scale: 2 }),
+    deviationFromNorm: numeric('deviation_from_norm', { precision: 5, scale: 2 }),
+    
+    // Impact on Goals
+    affectedGoalIds: jsonb('affected_goal_ids').default([]),
+    recommendationInvalidated: boolean('recommendation_invalidated').default(false),
+    
+    // Event Resolution
+    acknowledged: boolean('acknowledged').default(false),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    requiresUserAction: boolean('requires_user_action').default(false),
+    resolved: boolean('resolved').default(false),
+    resolvedAt: timestamp('resolved_at'),
+    
+    // Metadata
+    description: text('description'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Device Sessions Table for token management
 export const deviceSessions = pgTable('device_sessions', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -934,6 +1084,64 @@ export const goalContributionLineItemsRelations = relations(goalContributionLine
     sourceExpense: one(expenses, {
         fields: [goalContributionLineItems.sourceExpenseId],
         references: [expenses.id],
+    }),
+}));
+
+// Relations for Goal Contribution Volatility Smoother - Issue #713
+export const goalContributionSmoothingConfigsRelations = relations(goalContributionSmoothingConfigs, ({ one, many }) => ({
+    user: one(users, {
+        fields: [goalContributionSmoothingConfigs.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalContributionSmoothingConfigs.goalId],
+        references: [goals.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalContributionSmoothingConfigs.vaultId],
+        references: [vaults.id],
+    }),
+    recommendations: many(goalContributionRecommendations),
+}));
+
+export const goalCashflowHistoryRelations = relations(goalCashflowHistory, ({ one }) => ({
+    user: one(users, {
+        fields: [goalCashflowHistory.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalCashflowHistory.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const goalContributionRecommendationsRelations = relations(goalContributionRecommendations, ({ one }) => ({
+    user: one(users, {
+        fields: [goalContributionRecommendations.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalContributionRecommendations.goalId],
+        references: [goals.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalContributionRecommendations.vaultId],
+        references: [vaults.id],
+    }),
+    config: one(goalContributionSmoothingConfigs, {
+        fields: [goalContributionRecommendations.configId],
+        references: [goalContributionSmoothingConfigs.id],
+    }),
+}));
+
+export const goalCashflowEventsRelations = relations(goalCashflowEvents, ({ one }) => ({
+    user: one(users, {
+        fields: [goalCashflowEvents.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalCashflowEvents.vaultId],
+        references: [vaults.id],
     }),
 }));
 
