@@ -9,7 +9,6 @@ import debtAmortizationService from '../services/debtAmortizationService.js';
 import debtPayoffTimelineService from '../services/debtPayoffTimelineService.js';
 import refinanceScout from '../services/refinanceScout.js';
 import db from '../config/db.js';
-import { debts } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import arbitrageEngine from '../services/arbitrageEngine.js';
 import refinanceService from '../services/refinanceService.js';
@@ -21,8 +20,8 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { signalAutopilot } from '../middleware/triggerInterceptor.js';
 import eventBus from '../events/eventBus.js';
 import defaultPredictorAI from '../services/defaultPredictorAI.js';
-
 import debtAvalancheSnowballOptimizer from '../services/debtAvalancheSnowballOptimizer.js';
+import emergencyFundAdequacyAnalyzer from '../services/emergencyFundAdequacyAnalyzer.js';
 
 const router = express.Router();
 
@@ -743,6 +742,77 @@ router.get('/optimizer/recommendation', protect, asyncHandler(async (req, res) =
             calculatedAt: result.calculatedAt
         },
         'Personalized recommendation generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/emergency-fund/analyze
+ * @desc    Analyze emergency fund adequacy with dynamic risk-adjusted sizing - Issue #739
+ */
+router.post('/emergency-fund/analyze', protect, [
+    body('monthlyEssentialExpenses').isNumeric().withMessage('monthlyEssentialExpenses must be a number greater than 0'),
+    body('currentEmergencyFund').optional().isNumeric().withMessage('currentEmergencyFund must be numeric'),
+    body('employmentType').optional().isIn(['salaried', 'hourly', 'contractor', 'self_employed', 'business_owner', 'unemployed', 'retired']).withMessage('Invalid employmentType'),
+    body('industryStability').optional().isNumeric().withMessage('industryStability must be numeric between 0 and 100'),
+    body('incomeVariability').optional().isNumeric().withMessage('incomeVariability must be numeric between 0 and 100'),
+    body('dependentCount').optional().isInt({ min: 0 }).withMessage('dependentCount must be a non-negative integer'),
+    body('healthRiskLevel').optional().isIn(['low', 'medium', 'high']).withMessage('Invalid healthRiskLevel'),
+    body('monthlyDebtObligations').optional().isNumeric().withMessage('monthlyDebtObligations must be numeric'),
+    body('monthlyNetIncome').optional().isNumeric().withMessage('monthlyNetIncome must be numeric'),
+    body('insuranceCoverage').optional().isObject().withMessage('insuranceCoverage must be an object'),
+    body('insuranceCoverage.health').optional().isNumeric().withMessage('insuranceCoverage.health must be numeric 0-100'),
+    body('insuranceCoverage.disability').optional().isNumeric().withMessage('insuranceCoverage.disability must be numeric 0-100'),
+    body('insuranceCoverage.home').optional().isNumeric().withMessage('insuranceCoverage.home must be numeric 0-100'),
+    body('insuranceCoverage.auto').optional().isNumeric().withMessage('insuranceCoverage.auto must be numeric 0-100'),
+    body('insuranceCoverage.life').optional().isNumeric().withMessage('insuranceCoverage.life must be numeric 0-100'),
+    body('spendingHistory').optional().isArray().withMessage('spendingHistory must be an array of monthly expense values'),
+    body('secondaryIncomeSources').optional().isArray().withMessage('secondaryIncomeSources must be an array'),
+    body('previousProfileSignature').optional().isString().withMessage('previousProfileSignature must be a string')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json(new ApiResponse(400, { errors: errors.array() }, 'Validation failed'));
+    }
+
+    if (Number(req.body.monthlyEssentialExpenses) <= 0) {
+        return res.status(400).json(new ApiResponse(400, null, 'monthlyEssentialExpenses must be greater than 0'));
+    }
+
+    const result = emergencyFundAdequacyAnalyzer.analyze(req.body);
+
+    return new ApiResponse(
+        200,
+        result,
+        'Emergency fund adequacy analysis completed'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/emergency-fund/recalibrate
+ * @desc    Recalculate emergency fund target after profile changes - Issue #739
+ */
+router.post('/emergency-fund/recalibrate', protect, [
+    body('monthlyEssentialExpenses').isNumeric().withMessage('monthlyEssentialExpenses must be a number greater than 0'),
+    body('previousProfileSignature').optional().isString().withMessage('previousProfileSignature must be a string')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json(new ApiResponse(400, { errors: errors.array() }, 'Validation failed'));
+    }
+
+    if (Number(req.body.monthlyEssentialExpenses) <= 0) {
+        return res.status(400).json(new ApiResponse(400, null, 'monthlyEssentialExpenses must be greater than 0'));
+    }
+
+    const result = emergencyFundAdequacyAnalyzer.analyze(req.body);
+
+    return new ApiResponse(
+        200,
+        {
+            ...result,
+            recalibrated: true
+        },
+        'Emergency fund recommendation recalibrated'
     ).send(res);
 }));
 
