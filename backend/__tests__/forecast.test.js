@@ -12,7 +12,6 @@
  * Issue #609: Category Budget Forecasting with Confidence Intervals
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import db from '../config/db.js';
 import forecastService from '../services/forecastService.js';
 import * as cacheService from '../services/cacheService.js';

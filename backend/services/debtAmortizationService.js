@@ -1,12 +1,19 @@
 /**
- * Debt Amortization Service
+ * Enhanced Debt Amortization Service
  * Generates complex amortization schedules with support for PIK interest, 
- * irregular payments, conversions, and prepayments
+ * irregular payments, conversions, prepayments, and simulations
  */
 
-import { db } from '../config/db.js';
-import { debts, debtPayments } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import db from '../config/db.js';
+import {
+    debts,
+    debtPayments,
+    amortizationSchedules,
+    amortizationItems,
+    prepaymentAnalyses
+} from '../db/schema.js';
+import { eq, and, desc } from 'drizzle-orm';
+import { logInfo, logError } from '../utils/logger.js';
 
 /**
  * Generate standard amortization schedule
