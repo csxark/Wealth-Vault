@@ -58,6 +58,25 @@ router.get('/recommendation', protect, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   GET /api/advisor/recommendation/ml
+ * @desc    Get ML-style allocation recommendation
+ * @query   ?retirementAge=67&marketVolatilityRegime=neutral&goalPriorityBias=balanced
+ * @access  Private
+ */
+router.get('/recommendation/ml', protect, asyncHandler(async (req, res) => {
+    const retirementAge = req.query.retirementAge ? parseInt(req.query.retirementAge) : 67;
+    const marketVolatilityRegime = req.query.marketVolatilityRegime || 'neutral';
+    const goalPriorityBias = req.query.goalPriorityBias || 'balanced';
+
+    const recommendation = await allocationAdvisorService.generateMLAllocationRecommendation(
+        req.user.id,
+        { retirementAge, marketVolatilityRegime, goalPriorityBias }
+    );
+
+    new ApiResponse(200, recommendation, 'ML allocation recommendation generated').send(res);
+}));
+
+/**
  * @route   GET /api/advisor/glide-path
  * @desc    Get target-date glide path (30-year projection)
  * @query   ?retirementAge=67&targetType=glidePathModerate
@@ -73,6 +92,25 @@ router.get('/glide-path', protect, asyncHandler(async (req, res) => {
     );
 
     new ApiResponse(200, glidePath, 'Glide path generated').send(res);
+}));
+
+/**
+ * @route   GET /api/advisor/glide-path/dynamic
+ * @desc    Get dynamic glide path adjusted for regime assumptions
+ * @query   ?retirementAge=67&marketVolatilityRegime=neutral&inflationPressure=moderate
+ * @access  Private
+ */
+router.get('/glide-path/dynamic', protect, asyncHandler(async (req, res) => {
+    const retirementAge = req.query.retirementAge ? parseInt(req.query.retirementAge) : 67;
+    const marketVolatilityRegime = req.query.marketVolatilityRegime || 'neutral';
+    const inflationPressure = req.query.inflationPressure || 'moderate';
+
+    const glidePath = await allocationAdvisorService.generateDynamicGlidePath(
+        req.user.id,
+        { retirementAge, marketVolatilityRegime, inflationPressure }
+    );
+
+    new ApiResponse(200, glidePath, 'Dynamic glide path generated').send(res);
 }));
 
 /**
@@ -116,6 +154,61 @@ router.post('/rebalancing-needs', protect, [
     );
 
     new ApiResponse(200, rebalancing, 'Rebalancing analysis complete').send(res);
+}));
+
+/**
+ * @route   POST /api/advisor/drift-analysis
+ * @desc    Analyze allocation drift against target recommendation
+ * @body    { currentAllocation: {...}, targetAllocation?: {...}, threshold?: number }
+ * @access  Private
+ */
+router.post('/drift-analysis', protect, [
+    body('currentAllocation').isObject().notEmpty(),
+    body('targetAllocation').optional().isObject(),
+    body('threshold').optional().isFloat({ min: 1, max: 25 })
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { currentAllocation, targetAllocation, threshold } = req.body;
+    const result = await allocationAdvisorService.analyzeDrift(req.user.id, currentAllocation, {
+        targetAllocation,
+        threshold
+    });
+
+    new ApiResponse(200, result, 'Drift analysis complete').send(res);
+}));
+
+/**
+ * @route   POST /api/advisor/rebalance-preview
+ * @desc    Preview expected impact before portfolio rebalancing
+ * @body    { currentAllocation: {...}, targetAllocation?: {...}, threshold?: number, marketVolatilityRegime?: string, goalPriorityBias?: string }
+ * @access  Private
+ */
+router.post('/rebalance-preview', protect, [
+    body('currentAllocation').isObject().notEmpty(),
+    body('targetAllocation').optional().isObject(),
+    body('threshold').optional().isFloat({ min: 1, max: 25 }),
+    body('marketVolatilityRegime').optional().isString(),
+    body('goalPriorityBias').optional().isString()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { currentAllocation, targetAllocation, threshold, marketVolatilityRegime, goalPriorityBias } = req.body;
+
+    const preview = await allocationAdvisorService.generateRebalancePreview(req.user.id, currentAllocation, {
+        targetAllocation,
+        threshold,
+        marketVolatilityRegime,
+        goalPriorityBias
+    });
+
+    new ApiResponse(200, preview, 'Rebalance preview generated').send(res);
 }));
 
 /**
