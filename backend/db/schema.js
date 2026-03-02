@@ -8549,6 +8549,36 @@ export const multiSigApprovalsRelations = relations(multiSigApprovals, ({ one })
 }));
 
 // ============================================================================
+// GRACE PERIOD STATE MACHINE (#676)
+// ============================================================================
+
+export const successionGracePeriods = pgTable('succession_grace_periods', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    successionRuleId: uuid('succession_rule_id').references(() => successionRules.id, { onDelete: 'cascade' }).notNull(),
+    currentState: text('current_state').notNull(), // 'active', 'critical_inactivity', 'grace_period', 'transition_triggered', 'cancelled'
+    previousState: text('previous_state'),
+    stateChangedAt: timestamp('state_changed_at').defaultNow(),
+    gracePeriodEndsAt: timestamp('grace_period_ends_at'),
+    transitionTriggeredAt: timestamp('transition_triggered_at'),
+    cancelledAt: timestamp('cancelled_at'),
+    cancelReason: text('cancel_reason'), // 'owner_reauthenticated', 'manual_override', 'rule_deactivated'
+    inactivityScore: numeric('inactivity_score', { precision: 5, scale: 2 }),
+    daysInactive: integer('days_inactive'),
+    triggerEventData: jsonb('trigger_event_data').default({}), // Original CRITICAL_INACTIVITY event data
+    stateHistory: jsonb('state_history').default([]), // Array of state transitions with timestamps
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations for Grace Period State Machine
+export const successionGracePeriodsRelations = relations(successionGracePeriods, ({ one }) => ({
+    user: one(users, { fields: [successionGracePeriods.userId], references: [users.id] }),
+    successionRule: one(successionRules, { fields: [successionGracePeriods.successionRuleId], references: [successionRules.id] }),
+}));
+
+// ============================================================================
 // PROBABILISTIC FORECASTING & ADAPTIVE REBALANCING (L3) (#361)
 // ============================================================================
 
