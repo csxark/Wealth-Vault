@@ -511,5 +511,4 @@ router.post('/run-monitoring', requireRole(['admin']), async (req, res) => {
     }
 });
 
-export default router;</content>
-<parameter name="filePath">c:\Users\Gupta\Downloads\Wealth-Vault\backend\routes\logLifecycle.js
+export default router;

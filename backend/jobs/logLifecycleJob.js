@@ -99,5 +99,4 @@ const logLifecycleJob = new LogLifecycleJob();
 export default logLifecycleJob;
 
 // Export for direct execution if needed
-export { LogLifecycleJob };</content>
-<parameter name="filePath">c:\Users\Gupta\Downloads\Wealth-Vault\backend\jobs\logLifecycleJob.js
+export { LogLifecycleJob };
