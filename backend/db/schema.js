@@ -11175,6 +11175,353 @@ export const allocationChangeHistoryRelations = relations(allocationChangeHistor
     }),
 }));
 
+// ============================================================================
+// RECURRING TRANSACTIONS & BILL TRACKING (#663)
+// ============================================================================
+
+// Recurring Transactions - Auto-detected and manual recurring charges
+export const recurringTransactions = pgTable('recurring_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    merchantId: uuid('merchant_id'),
+    transactionName: text('transaction_name').notNull(),
+    description: text('description'),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    category: text('category'),
+    frequency: text('frequency').notNull(),
+    customFrequencyDays: integer('custom_frequency_days'),
+    customFrequencyCount: integer('custom_frequency_count').default(1),
+    nextDueDate: timestamp('next_due_date'),
+    lastPaymentDate: timestamp('last_payment_date'),
+    status: text('status').default('active'),
+    detectionMethod: text('detection_method').default('manual'),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }).default('0'),
+    notes: text('notes'),
+    autoDetectedAt: timestamp('auto_detected_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_recurring_transactions_user_id').on(table.userId),
+    vaultIdx: index('idx_recurring_transactions_vault_id').on(table.vaultId),
+    statusIdx: index('idx_recurring_transactions_status').on(table.status),
+    dueIdx: index('idx_recurring_transactions_next_due').on(table.nextDueDate),
+}));
+
+// Bill Payments - Individual bill payment tracking
+export const billPayments = pgTable('bill_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    billDate: timestamp('bill_date').notNull(),
+    dueDate: timestamp('due_date').notNull(),
+    status: text('status').default('scheduled'),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    actualAmount: numeric('actual_amount', { precision: 15, scale: 2 }),
+    paymentDate: timestamp('payment_date'),
+    paymentMethod: text('payment_method'),
+    notes: text('notes'),
+    relatedTransactionId: uuid('related_transaction_id').references(() => transactions.id),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_bill_payments_user_id').on(table.userId),
+    recurringIdx: index('idx_bill_payments_recurring_id').on(table.recurringTransactionId),
+    statusIdx: index('idx_bill_payments_status').on(table.status),
+    dueIdx: index('idx_bill_payments_due_date').on(table.dueDate),
+}));
+
+// Subscription Metadata - Details about subscriptions
+export const subscriptionMetadata = pgTable('subscription_metadata', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    recurringTransactionId: uuid('recurring_transaction_id').unique().references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    subscriptionType: text('subscription_type'),
+    accountId: text('account_id'),
+    accountEmail: text('account_email'),
+    serviceProvider: text('service_provider'),
+    businessName: text('business_name'),
+    cancellationUrl: text('cancellation_url'),
+    contactInfo: text('contact_info'),
+    autoRenewal: boolean('auto_renewal').default(true),
+    renewalDate: timestamp('renewal_date'),
+    estimatedYearlyValue: numeric('estimated_yearly_value', { precision: 15, scale: 2 }),
+    features: jsonb('features').default('[]'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Duplicate Subscriptions - Flag potential duplicate charges
+export const duplicateSubscriptions = pgTable('duplicate_subscriptions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    primaryRecurringId: uuid('primary_recurring_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    duplicateRecurringId: uuid('duplicate_recurring_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }),
+    reason: text('reason'),
+    status: text('status').default('pending_review'),
+    createdAt: timestamp('created_at').defaultNow(),
+    reviewedAt: timestamp('reviewed_at'),
+    reviewedBy: uuid('reviewed_by').references(() => users.id),
+}, (table) => ({
+    userIdx: index('idx_duplicate_subscriptions_user_id').on(table.userId),
+    primaryIdx: index('idx_duplicate_subscriptions_primary_id').on(table.primaryRecurringId),
+}));
+
+// Recurring Alerts - Notifications for bills and subscriptions
+export const recurringAlerts = pgTable('recurring_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }),
+    alertType: text('alert_type').notNull(),
+    alertDate: timestamp('alert_date').notNull(),
+    dueDate: timestamp('due_date'),
+    message: text('message').notNull(),
+    severity: text('severity').default('medium'),
+    isRead: boolean('is_read').default(false),
+    isResolved: boolean('is_resolved').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    resolvedAt: timestamp('resolved_at'),
+}, (table) => ({
+    userIdx: index('idx_recurring_alerts_user_id').on(table.userId),
+    typeIdx: index('idx_recurring_alerts_type').on(table.alertType),
+    readIdx: index('idx_recurring_alerts_is_read').on(table.isRead),
+}));
+
+// Bill Categories - User-defined bill categories
+export const billCategories = pgTable('bill_categories', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryName: text('category_name').notNull(),
+    categoryType: text('category_type').notNull(),
+    budgetLimit: numeric('budget_limit', { precision: 15, scale: 2 }),
+    description: text('description'),
+    color: text('color').default('#3B82F6'),
+    icon: text('icon'),
+    isDefault: boolean('is_default').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_bill_categories_user_id').on(table.userId),
+}));
+
+// Payment Reminders - Notification scheduling
+export const paymentReminders = pgTable('payment_reminders', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    reminderDays: integer('reminder_days').default(7),
+    lastReminderDate: timestamp('last_reminder_date'),
+    nextReminderDate: timestamp('next_reminder_date'),
+    isActive: boolean('is_active').default(true),
+    reminderChannels: jsonb('reminder_channels').default('["email"]'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_payment_reminders_user_id').on(table.userId),
+    nextReminderIdx: index('idx_payment_reminders_next_reminder').on(table.nextReminderDate),
+}));
+
+// Recurring Transaction History - Change audit trail
+export const recurringTransactionHistory = pgTable('recurring_transaction_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    previousAmount: numeric('previous_amount', { precision: 15, scale: 2 }),
+    newAmount: numeric('new_amount', { precision: 15, scale: 2 }),
+    previousFrequency: text('previous_frequency'),
+    newFrequency: text('new_frequency'),
+    previousStatus: text('previous_status'),
+    newStatus: text('new_status'),
+    changeType: text('change_type').notNull(),
+    reason: text('reason'),
+    changedDate: timestamp('changed_date').defaultNow(),
+    changedBy: uuid('changed_by').references(() => users.id),
+}, (table) => ({
+    recurringIdx: index('idx_recurring_transaction_history_recurring_id').on(table.recurringTransactionId),
+    userIdx: index('idx_recurring_transaction_history_user_id').on(table.userId),
+}));
+
+// Merchant Info - Known merchants for subscription detection
+export const merchantInfo = pgTable('merchant_info', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantName: text('merchant_name').notNull().unique(),
+    displayName: text('display_name'),
+    logoUrl: text('logo_url'),
+    websiteUrl: text('website_url'),
+    industry: text('industry'),
+    category: text('category'),
+    subscriptionType: text('subscription_type'),
+    commonFrequency: text('common_frequency'),
+    isKnownSubscription: boolean('is_known_subscription').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    nameIdx: index('idx_merchant_info_name').on(table.merchantName),
+    categoryIdx: index('idx_merchant_info_category').on(table.category),
+}));
+
+// Bill Reports - Monthly/yearly bill summaries
+export const billReports = pgTable('bill_reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    reportMonth: text('report_month').notNull(),
+    totalRecurring: numeric('total_recurring', { precision: 15, scale: 2 }),
+    totalPaid: numeric('total_paid', { precision: 15, scale: 2 }),
+    billCount: integer('bill_count').default(0),
+    paidCount: integer('paid_count').default(0),
+    overdueCount: integer('overdue_count').default(0),
+    skippedCount: integer('skipped_count').default(0),
+    categoryBreakdown: jsonb('category_breakdown').default('{}'),
+    generatedAt: timestamp('generated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_bill_reports_user_id').on(table.userId),
+    monthIdx: index('idx_bill_reports_month').on(table.reportMonth),
+}));
+
+// Relations for Recurring Transactions
+export const recurringTransactionsRelations = relations(recurringTransactions, ({ one, many }) => ({
+    user: one(users, {
+        fields: [recurringTransactions.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [recurringTransactions.vaultId],
+        references: [vaults.id],
+    }),
+    billPayments: many(billPayments),
+    subscriptionMetadata: one(subscriptionMetadata, {
+        fields: [recurringTransactions.id],
+        references: [subscriptionMetadata.recurringTransactionId],
+    }),
+    alerts: many(recurringAlerts),
+    reminders: many(paymentReminders),
+    history: many(recurringTransactionHistory),
+}));
+
+export const billPaymentsRelations = relations(billPayments, ({ one }) => ({
+    user: one(users, {
+        fields: [billPayments.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [billPayments.vaultId],
+        references: [vaults.id],
+    }),
+    recurringTransaction: one(recurringTransactions, {
+        fields: [billPayments.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+    relatedTransaction: one(transactions, {
+        fields: [billPayments.relatedTransactionId],
+        references: [transactions.id],
+    }),
+}));
+
+export const subscriptionMetadataRelations = relations(subscriptionMetadata, ({ one }) => ({
+    recurringTransaction: one(recurringTransactions, {
+        fields: [subscriptionMetadata.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+}));
+
+export const duplicateSubscriptionsRelations = relations(duplicateSubscriptions, ({ one }) => ({
+    user: one(users, {
+        fields: [duplicateSubscriptions.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [duplicateSubscriptions.vaultId],
+        references: [vaults.id],
+    }),
+    primaryRecurring: one(recurringTransactions, {
+        fields: [duplicateSubscriptions.primaryRecurringId],
+        references: [recurringTransactions.id],
+    }),
+    duplicateRecurring: one(recurringTransactions, {
+        fields: [duplicateSubscriptions.duplicateRecurringId],
+        references: [recurringTransactions.id],
+    }),
+    reviewedByUser: one(users, {
+        fields: [duplicateSubscriptions.reviewedBy],
+        references: [users.id],
+    }),
+}));
+
+export const recurringAlertsRelations = relations(recurringAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [recurringAlerts.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [recurringAlerts.vaultId],
+        references: [vaults.id],
+    }),
+    recurringTransaction: one(recurringTransactions, {
+        fields: [recurringAlerts.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+}));
+
+export const billCategoriesRelations = relations(billCategories, ({ one }) => ({
+    user: one(users, {
+        fields: [billCategories.userId],
+        references: [users.id],
+    }),
+}));
+
+export const paymentRemindersRelations = relations(paymentReminders, ({ one }) => ({
+    user: one(users, {
+        fields: [paymentReminders.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [paymentReminders.vaultId],
+        references: [vaults.id],
+    }),
+    recurringTransaction: one(recurringTransactions, {
+        fields: [paymentReminders.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+}));
+
+export const recurringTransactionHistoryRelations = relations(recurringTransactionHistory, ({ one }) => ({
+    recurringTransaction: one(recurringTransactions, {
+        fields: [recurringTransactionHistory.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+    user: one(users, {
+        fields: [recurringTransactionHistory.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [recurringTransactionHistory.vaultId],
+        references: [vaults.id],
+    }),
+    changedByUser: one(users, {
+        fields: [recurringTransactionHistory.changedBy],
+        references: [users.id],
+    }),
+}));
+
+export const billReportsRelations = relations(billReports, ({ one }) => ({
+    user: one(users, {
+        fields: [billReports.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [billReports.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
 // Export forecast schema tables
 export * from './schema-forecast.js';
 
