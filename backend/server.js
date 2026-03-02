@@ -200,6 +200,7 @@ import goalContributionSmoothingRoutes from "./routes/goalContributionSmoothing.
 import budgetGuardrailRoutes from "./routes/budgetGuardrails.js";
 import anomalyRoutes from "./routes/anomalies.js";
 import lifestyleInflationRoutes from "./routes/lifestyleInflation.js";
+import retirementMonteCarloRoutes from "./routes/retirementMonteCarlo.js";
 import goalEarlyWarningRoutes from "./routes/goalEarlyWarning.js";
 import deadlineReforecastRoutes from "./routes/deadlineReforecast.js";
 import savingsVelocityRoutes from "./routes/savingsVelocity.js";
@@ -507,6 +508,7 @@ app.use("/api/users", userLimiter, userRoutes);
 app.use("/api/expenses", userLimiter, securityGuard, expenseRoutes);
 app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/lifestyle-inflation", userLimiter, lifestyleInflationRoutes);
+app.use("/api/retirement-monte-carlo", userLimiter, retirementMonteCarloRoutes);
 app.use("/api/goal-early-warning", userLimiter, goalEarlyWarningRoutes);
 app.use("/api/deadline-reforecast", userLimiter, deadlineReforecastRoutes);
 app.use("/api/savings-velocity", userLimiter, savingsVelocityRoutes);

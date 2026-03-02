@@ -13133,6 +13133,65 @@ export const lifestyleInflationAlertsRelations = relations(lifestyleInflationAle
     snapshot: one(lifestyleInflationSnapshots, { fields: [lifestyleInflationAlerts.snapshotId], references: [lifestyleInflationSnapshots.id] }),
 }));
 
+// ====================
+// Multi-Scenario Retirement Planning Engine (ISSUE-737)
+// ====================
+
+// Retirement Simulations - Monte Carlo simulation results
+export const retirementSimulations = pgTable('retirement_simulations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    simulationParams: jsonb('simulation_params').notNull(), // Input parameters
+    numSimulations: integer('num_simulations').notNull(),
+    successRate: numeric('success_rate', { precision: 5, scale: 2 }).notNull(), // Percentage
+    medianFinalBalance: numeric('median_final_balance', { precision: 15, scale: 2 }),
+    confidenceIntervals: jsonb('confidence_intervals').default({}), // p10, p25, p50, p75, p90
+    failureModes: jsonb('failure_modes').default({}), // Analysis of failure scenarios
+    recommendations: jsonb('recommendations').default([]), // Actionable recommendations
+    survivalCurve: jsonb('survival_curve').default([]), // Year-by-year survival probability
+    executionTimeMs: integer('execution_time_ms'),
+    withdrawalStrategy: text('withdrawal_strategy').notNull(), // 'fixed_real', 'percentage', etc
+    includeRecession: boolean('include_recession').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_retirement_simulations_user').on(table.userId),
+    tenantIdx: index('idx_retirement_simulations_tenant').on(table.tenantId),
+    successRateIdx: index('idx_retirement_simulations_success_rate').on(table.successRate),
+    createdAtIdx: index('idx_retirement_simulations_created_at').on(table.createdAt),
+}));
+
+// Retirement Scenarios - Individual scenario details (optional detailed storage)
+export const retirementScenarios = pgTable('retirement_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    simulationId: uuid('simulation_id').references(() => retirementSimulations.id, { onDelete: 'cascade' }).notNull(),
+    scenarioNumber: integer('scenario_number').notNull(),
+    success: boolean('success').notNull(),
+    finalBalance: numeric('final_balance', { precision: 15, scale: 2 }).notNull(),
+    depletionYear: integer('depletion_year'), // Year when funds depleted (null if successful)
+    yearlyBalances: jsonb('yearly_balances').default([]), // Array of yearly balance values
+    yearlyWithdrawals: jsonb('yearly_withdrawals').default([]), // Array of yearly withdrawal amounts
+    averageReturn: numeric('average_return', { precision: 5, scale: 4 }),
+    worstYearReturn: numeric('worst_year_return', { precision: 5, scale: 4 }),
+    sequenceRiskScore: numeric('sequence_risk_score', { precision: 5, scale: 4 }), // First 10 years avg return
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    simulationIdx: index('idx_retirement_scenarios_simulation').on(table.simulationId),
+    successIdx: index('idx_retirement_scenarios_success').on(table.success),
+}));
+
+// Relations for Retirement Planning System
+export const retirementSimulationsRelations = relations(retirementSimulations, ({ one, many }) => ({
+    user: one(users, { fields: [retirementSimulations.userId], references: [users.id] }),
+    tenant: one(tenants, { fields: [retirementSimulations.tenantId], references: [tenants.id] }),
+    scenarios: many(retirementScenarios),
+}));
+
+export const retirementScenariosRelations = relations(retirementScenarios, ({ one }) => ({
+    simulation: one(retirementSimulations, { fields: [retirementScenarios.simulationId], references: [retirementSimulations.id] }),
+}));
+
 // Export forecast schema tables
 export * from './schema-forecast.js';
 
