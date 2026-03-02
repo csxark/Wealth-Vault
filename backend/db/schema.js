@@ -7067,6 +7067,236 @@ export const taxBrackets = pgTable('tax_brackets', {
 }));
 
 // ============================================================================
+// ADVANCED PORTFOLIO ANALYTICS & PERFORMANCE ATTRIBUTION (#653)
+// ============================================================================
+
+// Portfolio Snapshots - Daily portfolio valuations
+export const portfolioSnapshots = pgTable('portfolio_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    snapshotDate: timestamp('snapshot_date').notNull(),
+    totalValue: numeric('total_value', { precision: 18, scale: 2 }).notNull(),
+    liquidValue: numeric('liquid_value', { precision: 18, scale: 2 }),
+    investedValue: numeric('invested_value', { precision: 18, scale: 2 }),
+    cashBalance: numeric('cash_balance', { precision: 18, scale: 2 }),
+    netDeposits: numeric('net_deposits', { precision: 18, scale: 2 }).default('0'),
+    dailyChange: numeric('daily_change', { precision: 18, scale: 2 }),
+    dailyChangePercent: numeric('daily_change_percent', { precision: 8, scale: 4 }),
+    holdingsSnapshot: jsonb('holdings_snapshot').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userDateIdx: index('idx_portfolio_snapshots_user_date').on(table.userId, table.snapshotDate),
+    vaultDateIdx: index('idx_portfolio_snapshots_vault_date').on(table.vaultId, table.snapshotDate),
+}));
+
+// Performance Metrics - Calculated returns and performance indicators
+export const performanceMetrics = pgTable('performance_metrics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    periodType: text('period_type').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    beginningValue: numeric('beginning_value', { precision: 18, scale: 2 }).notNull(),
+    endingValue: numeric('ending_value', { precision: 18, scale: 2 }).notNull(),
+    netCashFlow: numeric('net_cash_flow', { precision: 18, scale: 2 }).default('0'),
+    simpleReturn: numeric('simple_return', { precision: 10, scale: 6 }),
+    timeWeightedReturn: numeric('time_weighted_return', { precision: 10, scale: 6 }),
+    moneyWeightedReturn: numeric('money_weighted_return', { precision: 10, scale: 6 }),
+    annualizedReturn: numeric('annualized_return', { precision: 10, scale: 6 }),
+    totalGainLoss: numeric('total_gain_loss', { precision: 18, scale: 2 }),
+    realizedGains: numeric('realized_gains', { precision: 18, scale: 2 }),
+    unrealizedGains: numeric('unrealized_gains', { precision: 18, scale: 2 }),
+    dividendIncome: numeric('dividend_income', { precision: 18, scale: 2 }),
+    interestIncome: numeric('interest_income', { precision: 18, scale: 2 }),
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userPeriodIdx: index('idx_performance_metrics_user_period').on(table.userId, table.periodType, table.periodEnd),
+    vaultPeriodIdx: index('idx_performance_metrics_vault_period').on(table.vaultId, table.periodType, table.periodEnd),
+}));
+
+// Benchmark Prices - Historical benchmark index prices
+export const benchmarkPrices = pgTable('benchmark_prices', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    benchmarkSymbol: text('benchmark_symbol').notNull(),
+    benchmarkName: text('benchmark_name').notNull(),
+    priceDate: timestamp('price_date').notNull(),
+    openPrice: numeric('open_price', { precision: 12, scale: 4 }),
+    highPrice: numeric('high_price', { precision: 12, scale: 4 }),
+    lowPrice: numeric('low_price', { precision: 12, scale: 4 }),
+    closePrice: numeric('close_price', { precision: 12, scale: 4 }).notNull(),
+    adjustedClose: numeric('adjusted_close', { precision: 12, scale: 4 }),
+    volume: numeric('volume', { precision: 20, scale: 0 }),
+    dailyReturn: numeric('daily_return', { precision: 10, scale: 6 }),
+    dataSource: text('data_source').default('yahoo_finance'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    symbolDateIdx: index('idx_benchmark_prices_symbol_date').on(table.benchmarkSymbol, table.priceDate),
+}));
+
+// Benchmark Comparisons - Portfolio vs benchmark analysis
+export const benchmarkComparisons = pgTable('benchmark_comparisons', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    benchmarkSymbol: text('benchmark_symbol').notNull(),
+    periodType: text('period_type').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    portfolioReturn: numeric('portfolio_return', { precision: 10, scale: 6 }).notNull(),
+    benchmarkReturn: numeric('benchmark_return', { precision: 10, scale: 6 }).notNull(),
+    relativeReturn: numeric('relative_return', { precision: 10, scale: 6 }),
+    trackingError: numeric('tracking_error', { precision: 10, scale: 6 }),
+    informationRatio: numeric('information_ratio', { precision: 10, scale: 6 }),
+    upCaptureRatio: numeric('up_capture_ratio', { precision: 10, scale: 6 }),
+    downCaptureRatio: numeric('down_capture_ratio', { precision: 10, scale: 6 }),
+    correlation: numeric('correlation', { precision: 8, scale: 6 }),
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userBenchmarkIdx: index('idx_benchmark_comparisons_user_benchmark').on(table.userId, table.benchmarkSymbol, table.periodEnd),
+}));
+
+// Risk Metrics - Calculated risk measures
+export const riskMetrics = pgTable('risk_metrics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    periodType: text('period_type').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    volatility: numeric('volatility', { precision: 10, scale: 6 }),
+    downsideDeviation: numeric('downside_deviation', { precision: 10, scale: 6 }),
+    sharpeRatio: numeric('sharpe_ratio', { precision: 10, scale: 6 }),
+    sortinoRatio: numeric('sortino_ratio', { precision: 10, scale: 6 }),
+    maxDrawdown: numeric('max_drawdown', { precision: 10, scale: 6 }),
+    maxDrawdownStart: timestamp('max_drawdown_start'),
+    maxDrawdownEnd: timestamp('max_drawdown_end'),
+    maxDrawdownRecoveryDate: timestamp('max_drawdown_recovery_date'),
+    currentDrawdown: numeric('current_drawdown', { precision: 10, scale: 6 }),
+    beta: numeric('beta', { precision: 10, scale: 6 }),
+    alpha: numeric('alpha', { precision: 10, scale: 6 }),
+    var95: numeric('var_95', { precision: 18, scale: 2 }),
+    cvar95: numeric('cvar_95', { precision: 18, scale: 2 }),
+    calmarRatio: numeric('calmar_ratio', { precision: 10, scale: 6 }),
+    riskFreeRate: numeric('risk_free_rate', { precision: 6, scale: 4 }).default('0.045'),
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userPeriodIdx: index('idx_risk_metrics_user_period').on(table.userId, table.periodType, table.periodEnd),
+}));
+
+// Performance Attributions - Return decomposition by asset/sector
+export const performanceAttributions = pgTable('performance_attributions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    attributionType: text('attribution_type').notNull(),
+    categoryName: text('category_name').notNull(),
+    beginningValue: numeric('beginning_value', { precision: 18, scale: 2 }),
+    endingValue: numeric('ending_value', { precision: 18, scale: 2 }),
+    weightPercent: numeric('weight_percent', { precision: 8, scale: 4 }),
+    totalReturn: numeric('total_return', { precision: 10, scale: 6 }),
+    contributionToReturn: numeric('contribution_to_return', { precision: 10, scale: 6 }),
+    capitalGain: numeric('capital_gain', { precision: 18, scale: 2 }),
+    dividendIncome: numeric('dividend_income', { precision: 18, scale: 2 }),
+    realizedGain: numeric('realized_gain', { precision: 18, scale: 2 }),
+    unrealizedGain: numeric('unrealized_gain', { precision: 18, scale: 2 }),
+    details: jsonb('details').default({}),
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userTypeIdx: index('idx_performance_attributions_user_type').on(table.userId, table.attributionType, table.periodEnd),
+}));
+
+// Sector Allocations - Sector exposure tracking
+export const sectorAllocations = pgTable('sector_allocations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    allocationDate: timestamp('allocation_date').notNull(),
+    sectorName: text('sector_name').notNull(),
+    allocationValue: numeric('allocation_value', { precision: 18, scale: 2 }).notNull(),
+    allocationPercent: numeric('allocation_percent', { precision: 8, scale: 4 }).notNull(),
+    numberOfHoldings: integer('number_of_holdings').default(0),
+    topHoldings: jsonb('top_holdings').default([]),
+    sectorReturnYtd: numeric('sector_return_ytd', { precision: 10, scale: 6 }),
+    benchmarkSectorWeight: numeric('benchmark_sector_weight', { precision: 8, scale: 4 }),
+    overUnderWeight: numeric('over_under_weight', { precision: 8, scale: 4 }),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userDateIdx: index('idx_sector_allocations_user_date').on(table.userId, table.allocationDate),
+}));
+
+// Geographic Allocations - Geographic exposure tracking
+export const geographicAllocations = pgTable('geographic_allocations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    allocationDate: timestamp('allocation_date').notNull(),
+    region: text('region').notNull(),
+    country: text('country'),
+    allocationValue: numeric('allocation_value', { precision: 18, scale: 2 }).notNull(),
+    allocationPercent: numeric('allocation_percent', { precision: 8, scale: 4 }).notNull(),
+    numberOfHoldings: integer('number_of_holdings').default(0),
+    currencyExposure: text('currency_exposure'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userDateIdx: index('idx_geographic_allocations_user_date').on(table.userId, table.allocationDate),
+}));
+
+// Performance Alerts - Alert configurations and history
+export const performanceAlerts = pgTable('performance_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    alertType: text('alert_type').notNull(),
+    alertName: text('alert_name').notNull(),
+    description: text('description'),
+    thresholdValue: numeric('threshold_value', { precision: 10, scale: 6 }),
+    comparisonOperator: text('comparison_operator').default('greater_than'),
+    benchmarkSymbol: text('benchmark_symbol'),
+    isActive: boolean('is_active').default(true),
+    priority: text('priority').default('medium'),
+    notificationChannels: jsonb('notification_channels').default(['email', 'push']),
+    triggeredAt: timestamp('triggered_at'),
+    triggerCount: integer('trigger_count').default(0),
+    lastTriggeredValue: numeric('last_triggered_value', { precision: 10, scale: 6 }),
+    triggerDetails: jsonb('trigger_details'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userActiveIdx: index('idx_performance_alerts_user_active').on(table.userId, table.isActive),
+}));
+
+// Performance Reports - Generated report metadata
+export const performanceReports = pgTable('performance_reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    reportType: text('report_type').notNull(),
+    reportPeriodStart: timestamp('report_period_start').notNull(),
+    reportPeriodEnd: timestamp('report_period_end').notNull(),
+    reportFormat: text('report_format').default('pdf'),
+    fileUrl: text('file_url'),
+    fileName: text('file_name'),
+    fileSize: integer('file_size'),
+    reportSections: jsonb('report_sections').default([]),
+    generationStatus: text('generation_status').default('pending'),
+    generatedAt: timestamp('generated_at'),
+    errorMessage: text('error_message'),
+    downloadCount: integer('download_count').default(0),
+    lastDownloadedAt: timestamp('last_downloaded_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userStatusIdx: index('idx_performance_reports_user_status').on(table.userId, table.generationStatus, table.createdAt),
+}));
+
+// ============================================================================
 // MULTI-CURRENCY PORTFOLIO MANAGER (#297)
 // ============================================================================
 
@@ -10470,6 +10700,109 @@ export const taxDocumentsRelations = relations(taxDocuments, ({ one }) => ({
     deduction: one(taxDeductions, {
         fields: [taxDocuments.deductionId],
         references: [taxDeductions.id],
+    }),
+}));
+
+// ============================================================================
+// RELATIONS FOR ISSUE #653: ADVANCED PORTFOLIO ANALYTICS & PERFORMANCE ATTRIBUTION
+// ============================================================================
+
+export const portfolioSnapshotsRelations = relations(portfolioSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [portfolioSnapshots.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [portfolioSnapshots.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const performanceMetricsRelations = relations(performanceMetrics, ({ one }) => ({
+    user: one(users, {
+        fields: [performanceMetrics.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [performanceMetrics.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const benchmarkComparisonsRelations = relations(benchmarkComparisons, ({ one }) => ({
+    user: one(users, {
+        fields: [benchmarkComparisons.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [benchmarkComparisons.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const riskMetricsRelations = relations(riskMetrics, ({ one }) => ({
+    user: one(users, {
+        fields: [riskMetrics.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [riskMetrics.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const performanceAttributionsRelations = relations(performanceAttributions, ({ one }) => ({
+    user: one(users, {
+        fields: [performanceAttributions.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [performanceAttributions.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const sectorAllocationsRelations = relations(sectorAllocations, ({ one }) => ({
+    user: one(users, {
+        fields: [sectorAllocations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [sectorAllocations.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const geographicAllocationsRelations = relations(geographicAllocations, ({ one }) => ({
+    user: one(users, {
+        fields: [geographicAllocations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [geographicAllocations.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const performanceAlertsRelations = relations(performanceAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [performanceAlerts.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [performanceAlerts.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const performanceReportsRelations = relations(performanceReports, ({ one }) => ({
+    user: one(users, {
+        fields: [performanceReports.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [performanceReports.vaultId],
+        references: [vaults.id],
     }),
 }));
 
