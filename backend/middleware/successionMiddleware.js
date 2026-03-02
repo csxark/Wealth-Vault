@@ -7,8 +7,11 @@ import successionService from '../services/successionService.js';
 export const presenceTracker = async (req, res, next) => {
     if (req.user && req.user.id) {
         // Run in background to avoid blocking response
-        successionService.trackActivity(req.user.id, 'api_interaction')
-            .catch(err => console.error('[Presence Tracker] Failed:', err));
+        successionService.trackActivity(req.user.id, 'api_interaction', {
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.get('User-Agent'),
+            sessionId: req.session?.id
+        }).catch(err => console.error('[Presence Tracker] Failed:', err));
     }
     next();
 };

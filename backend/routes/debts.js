@@ -4,6 +4,9 @@ import { protect } from '../middleware/auth.js';
 import { validateDebt, validateDebtPayment, validatePayoffStrategy, validateDebtId } from '../middleware/debtValidator.js';
 import debtEngine from '../services/debtEngine.js';
 import payoffOptimizer from '../services/payoffOptimizer.js';
+import payoffStrategyService from '../services/payoffStrategyService.js';
+import debtAmortizationService from '../services/debtAmortizationService.js';
+import debtPayoffTimelineService from '../services/debtPayoffTimelineService.js';
 import refinanceScout from '../services/refinanceScout.js';
 import db from '../config/db.js';
 import { debts } from '../db/schema.js';
@@ -335,6 +338,311 @@ router.post('/restructure/approve/:id', protect, asyncHandler(async (req, res) =
         .where(eq(debtRestructuringPlans.id, req.params.id));
 
     return new ApiResponse(200, null, "Plan approved and scheduled for execution").send(res);
+}));
+
+// ============================================
+// AMORTIZATION SCHEDULES
+// ============================================
+
+/**
+ * @route   GET /api/debts/:id/amortization
+ * @desc    Get amortization schedule for a specific debt
+ */
+router.get('/:id/amortization', protect, asyncHandler(async (req, res) => {
+    const debt = await db.query.debts.findFirst({
+        where: and(eq(debts.id, req.params.id), eq(debts.userId, req.user.id))
+    });
+
+    if (!debt) {
+        return res.status(404).json(new ApiResponse(404, null, 'Debt not found'));
+    }
+
+    const schedule = debtAmortizationService.generateAmortizationSchedule(
+        parseFloat(debt.currentBalance),
+        parseFloat(debt.annualRate),
+        parseFloat(debt.monthlyPayment)
+    );
+
+    return new ApiResponse(200, {
+        debt: { id: debt.id, name: debt.name },
+        schedule
+    }, 'Amortization schedule generated').send(res);
+}));
+
+/**
+ * @route   GET /api/debts/:id/amortization/export
+ * @desc    Export amortization schedule as CSV
+ */
+router.get('/:id/amortization/export', protect, asyncHandler(async (req, res) => {
+    const debt = await db.query.debts.findFirst({
+        where: and(eq(debts.id, req.params.id), eq(debts.userId, req.user.id))
+    });
+
+    if (!debt) {
+        return res.status(404).json(new ApiResponse(404, null, 'Debt not found'));
+    }
+
+    // Generate CSV
+    const schedule = debtAmortizationService.generateAmortizationSchedule(
+        parseFloat(debt.currentBalance),
+        parseFloat(debt.annualRate),
+        parseFloat(debt.monthlyPayment)
+    );
+
+    const headers = ['Payment #', 'Payment Date', 'Beginning Balance', 'Payment', 'Principal', 'Interest', 'Ending Balance'];
+    const rows = schedule.schedule.map(item => [
+        item.paymentNumber,
+        item.paymentDate.toLocaleDateString(),
+        item.beginningBalance,
+        item.paymentAmount,
+        item.principalAmount,
+        item.interestAmount,
+        item.endingBalance
+    ]);
+
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+    res.set('Content-Type', 'text/csv');
+    res.set('Content-Disposition', `attachment; filename="amortization-${debt.id}.csv"`);
+    res.send(csv);
+}));
+
+// ============================================
+// PAYOFF STRATEGIES
+// ============================================
+
+/**
+ * @route   POST /api/debts/strategies/avalanche
+ * @desc    Generate avalanche strategy (highest APR first)
+ */
+router.post('/strategies/avalanche', protect, asyncHandler(async (req, res) => {
+    const { extraMonthlyPayment = 0 } = req.body;
+    
+    const strategy = await payoffStrategyService.generateAvalancheStrategy(
+        req.user.tenantId,
+        req.user.id,
+        parseFloat(extraMonthlyPayment)
+    );
+
+    if (!strategy) {
+        return res.status(400).json(new ApiResponse(400, null, 'No active debts found'));
+    }
+
+    const saved = await payoffStrategyService.createStrategy(req.user.tenantId, req.user.id, {
+        strategyType: 'avalanche',
+        name: 'Avalanche Strategy',
+        description: strategy.description,
+        extraMonthlyPayment: strategy.extraMonthlyPayment,
+        priorityOrder: strategy.priorityOrder
+    });
+
+    return new ApiResponse(201, saved, 'Avalanche strategy created').send(res);
+}));
+
+/**
+ * @route   POST /api/debts/strategies/snowball
+ * @desc    Generate snowball strategy (smallest balance first)
+ */
+router.post('/strategies/snowball', protect, asyncHandler(async (req, res) => {
+    const { extraMonthlyPayment = 0 } = req.body;
+    
+    const strategy = await payoffStrategyService.generateSnowballStrategy(
+        req.user.tenantId,
+        req.user.id,
+        parseFloat(extraMonthlyPayment)
+    );
+
+    if (!strategy) {
+        return res.status(400).json(new ApiResponse(400, null, 'No active debts found'));
+    }
+
+    const saved = await payoffStrategyService.createStrategy(req.user.tenantId, req.user.id, {
+        strategyType: 'snowball',
+        name: 'Snowball Strategy',
+        description: strategy.description,
+        extraMonthlyPayment: strategy.extraMonthlyPayment,
+        priorityOrder: strategy.priorityOrder
+    });
+
+    return new ApiResponse(201, saved, 'Snowball strategy created').send(res);
+}));
+
+/**
+ * @route   POST /api/debts/strategies/hybrid
+ * @desc    Generate hybrid strategy (balanced approach)
+ */
+router.post('/strategies/hybrid', protect, asyncHandler(async (req, res) => {
+    const { extraMonthlyPayment = 0 } = req.body;
+    
+    const strategy = await payoffStrategyService.generateHybridStrategy(
+        req.user.tenantId,
+        req.user.id,
+        parseFloat(extraMonthlyPayment)
+    );
+
+    if (!strategy) {
+        return res.status(400).json(new ApiResponse(400, null, 'No active debts found'));
+    }
+
+    const saved = await payoffStrategyService.createStrategy(req.user.tenantId, req.user.id, {
+        strategyType: 'hybrid',
+        name: 'Hybrid Strategy',
+        description: strategy.description,
+        extraMonthlyPayment: strategy.extraMonthlyPayment,
+        priorityOrder: strategy.priorityOrder
+    });
+
+    return new ApiResponse(201, saved, 'Hybrid strategy created').send(res);
+}));
+
+/**
+ * @route   GET /api/debts/strategies/recommendations
+ * @desc    Get recommended payoff strategy based on debt profile
+ */
+router.get('/strategies/recommendations', protect, asyncHandler(async (req, res) => {
+    const recommendations = await payoffStrategyService.getRecommendations(req.user.tenantId, req.user.id);
+
+    if (!recommendations) {
+        return res.status(400).json(new ApiResponse(400, null, 'No active debts found'));
+    }
+
+    return new ApiResponse(200, recommendations, 'Strategy recommendations generated').send(res);
+}));
+
+/**
+ * @route   GET /api/debts/strategies/compare
+ * @desc    Compare all active strategies
+ */
+router.get('/strategies/compare', protect, asyncHandler(async (req, res) => {
+    const comparison = await payoffStrategyService.compareStrategies(req.user.tenantId, req.user.id);
+
+    return new ApiResponse(200, comparison, 'Strategy comparison complete').send(res);
+}));
+
+// ============================================
+// PAYOFF SIMULATIONS
+// ============================================
+
+/**
+ * @route   POST /api/debts/simulate
+ * @desc    Run a payoff simulation with extra payments
+ */
+router.post('/simulate', protect, asyncHandler(async (req, res) => {
+    const { strategyId, monthsToSimulate = 360 } = req.body;
+
+    if (!strategyId) {
+        return res.status(400).json(new ApiResponse(400, null, 'strategyId is required'));
+    }
+
+    const simulation = await payoffStrategyService.simulateStrategy(
+        req.user.tenantId,
+        req.user.id,
+        strategyId,
+        monthsToSimulate
+    );
+
+    if (!simulation) {
+        return res.status(400).json(new ApiResponse(400, null, 'Simulation failed'));
+    }
+
+    return new ApiResponse(200, simulation, 'Payoff simulation completed').send(res);
+}));
+
+// ============================================
+// PREPAYMENT ANALYSIS
+// ============================================
+
+/**
+ * @route   POST /api/debts/:id/prepayment-analysis
+ * @desc    Analyze prepayment opportunities
+ */
+router.post('/:id/prepayment-analysis', protect, asyncHandler(async (req, res) => {
+    const { extraPaymentAmount } = req.body;
+
+    if (!extraPaymentAmount || extraPaymentAmount <= 0) {
+        return res.status(400).json(new ApiResponse(400, null, 'extraPaymentAmount must be greater than 0'));
+    }
+
+    const analysis = await debtAmortizationService.analyzePrepayment(
+        req.user.tenantId,
+        req.user.id,
+        req.params.id,
+        parseFloat(extraPaymentAmount)
+    );
+
+    return new ApiResponse(200, analysis, 'Prepayment analysis complete').send(res);
+}));
+
+// ============================================
+// PAYOFF TIMELINE & FREEDOM DATE
+// ============================================
+
+/**
+ * @route   GET /api/debts/timeline/all
+ * @desc    Get comprehensive payoff timeline for all debts
+ */
+router.get('/timeline/all', protect, asyncHandler(async (req, res) => {
+    const timeline = await debtPayoffTimelineService.generateTimelineForAllDebts(
+        req.user.tenantId,
+        req.user.id
+    );
+
+    return new ApiResponse(200, timeline, 'Payoff timeline generated').send(res);
+}));
+
+/**
+ * @route   GET /api/debts/:id/timeline
+ * @desc    Get detailed timeline for a specific debt
+ */
+router.get('/:id/timeline', protect, asyncHandler(async (req, res) => {
+    const timeline = await debtPayoffTimelineService.generateTimelineForDebt(
+        req.user.tenantId,
+        req.user.id,
+        req.params.id
+    );
+
+    return new ApiResponse(200, timeline, 'Debt timeline generated').send(res);
+}));
+
+/**
+ * @route   GET /api/debts/countdown
+ * @desc    Get payoff countdown to financial freedom
+ */
+router.get('/countdown', protect, asyncHandler(async (req, res) => {
+    const countdown = await debtPayoffTimelineService.getPayoffCountdown(
+        req.user.tenantId,
+        req.user.id
+    );
+
+    if (!countdown) {
+        return res.status(400).json(new ApiResponse(400, null, 'No active debts found'));
+    }
+
+    return new ApiResponse(200, countdown, 'Payoff countdown calculated').send(res);
+}));
+
+/**
+ * @route   POST /api/debts/project-balance
+ * @desc    Project remaining balance at a future date
+ */
+router.post('/project-balance', protect, asyncHandler(async (req, res) => {
+    const { targetDate } = req.body;
+
+    if (!targetDate) {
+        return res.status(400).json(new ApiResponse(400, null, 'targetDate is required'));
+    }
+
+    const projection = await debtPayoffTimelineService.projectBalanceAtDate(
+        req.user.tenantId,
+        req.user.id,
+        new Date(targetDate)
+    );
+
+    if (!projection) {
+        return res.status(400).json(new ApiResponse(400, null, 'Projection failed'));
+    }
+
+    return new ApiResponse(200, projection, 'Balance projection calculated').send(res);
 }));
 
 export default router;

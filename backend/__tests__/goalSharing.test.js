@@ -12,7 +12,6 @@
  * Issue #611: Collaborative Goal Sharing with Permission Inheritance
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import db from '../config/db.js';
 import goalSharingService from '../services/goalSharingService.js';
 import * as cacheService from '../services/cacheService.js';
