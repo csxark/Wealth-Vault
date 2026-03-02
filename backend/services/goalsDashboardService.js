@@ -17,6 +17,11 @@ class GoalsDashboardService {
     return diff;
   }
 
+  _monthsRemaining(daysRemaining) {
+    if (daysRemaining == null) return null;
+    return Math.max(1, Math.ceil(daysRemaining / 30));
+  }
+
   _urgency(daysRemaining) {
     if (daysRemaining == null) return { level: "none", color: "gray", label: "No deadline" };
     if (daysRemaining < 0) return { level: "overdue", color: "red", label: "Overdue" };
@@ -31,6 +36,214 @@ class GoalsDashboardService {
       where: eq(goals.userId, userId),
       orderBy: [desc(goals.updatedAt)],
     });
+  }
+
+  async _getContributionStats(userId, lookbackDays = 90) {
+    const since = new Date();
+    since.setDate(since.getDate() - lookbackDays);
+
+    const rows = await db
+      .select({
+        goalId: goalContributionLineItems.goalId,
+        amountCents: goalContributionLineItems.amountCents,
+        createdAt: goalContributionLineItems.createdAt,
+      })
+      .from(goalContributionLineItems)
+      .where(and(eq(goalContributionLineItems.userId, userId), gte(goalContributionLineItems.createdAt, since)))
+      .orderBy(desc(goalContributionLineItems.createdAt));
+
+    const now = new Date();
+    const map = new Map();
+
+    for (const row of rows) {
+      if (!row.goalId) continue;
+      const createdAt = new Date(row.createdAt);
+      const ageDays = Math.max(0, Math.ceil((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24)));
+      const amount = this._toNumber(row.amountCents) / 100;
+
+      if (!map.has(row.goalId)) {
+        map.set(row.goalId, {
+          contributionsLast30: 0,
+          contributionsLast60: 0,
+          contributionsLast90: 0,
+          amountLast30: 0,
+          amountLast60: 0,
+          amountLast90: 0,
+          lastContributionAt: null,
+        });
+      }
+
+      const stats = map.get(row.goalId);
+
+      if (!stats.lastContributionAt || createdAt > new Date(stats.lastContributionAt)) {
+        stats.lastContributionAt = createdAt.toISOString();
+      }
+
+      if (ageDays <= 90) {
+        stats.contributionsLast90 += 1;
+        stats.amountLast90 += amount;
+      }
+      if (ageDays <= 60) {
+        stats.contributionsLast60 += 1;
+        stats.amountLast60 += amount;
+      }
+      if (ageDays <= 30) {
+        stats.contributionsLast30 += 1;
+        stats.amountLast30 += amount;
+      }
+    }
+
+    for (const stats of map.values()) {
+      stats.amountLast30 = Number(stats.amountLast30.toFixed(2));
+      stats.amountLast60 = Number(stats.amountLast60.toFixed(2));
+      stats.amountLast90 = Number(stats.amountLast90.toFixed(2));
+    }
+
+    return map;
+  }
+
+  _expectedContributionsPer30Days(goal) {
+    const recurring = goal?.recurringContribution || {};
+    const frequency = recurring?.frequency;
+
+    if (frequency === "weekly") return 4;
+    if (frequency === "biweekly") return 2;
+    if (frequency === "monthly") return 1;
+    return 0;
+  }
+
+  _buildRecoveryRecommendation({ goal, requiredMonthly, currentVelocityMonthly, additionalMonthlyNeeded, daysRemaining, riskLevel }) {
+    const roundedRequired = Number(requiredMonthly.toFixed(2));
+    const roundedVelocity = Number(currentVelocityMonthly.toFixed(2));
+    const roundedAdditional = Number(additionalMonthlyNeeded.toFixed(2));
+
+    const actions = [];
+
+    if (roundedAdditional > 0) {
+      actions.push(`Increase monthly contribution by ${roundedAdditional} (${goal.currency || "USD"})`);
+    } else {
+      actions.push("Maintain current contribution pace to stay on track");
+    }
+
+    if (daysRemaining != null && daysRemaining <= 60) {
+      actions.push("Prioritize this goal in your next 2 pay cycles");
+    }
+
+    if (riskLevel === "high") {
+      actions.push("Consider reducing target amount or extending deadline if flexibility exists");
+    }
+
+    return {
+      monthlyRequired: roundedRequired,
+      currentVelocityMonthly: roundedVelocity,
+      additionalMonthlyNeeded: roundedAdditional,
+      recommended30DayContribution: roundedAdditional > 0 ? roundedRequired : roundedVelocity,
+      suggestedActions: actions,
+    };
+  }
+
+  _computeGoalFailureRisk(goal, contributionStats) {
+    const targetAmount = this._toNumber(goal.targetAmount);
+    const currentAmount = this._toNumber(goal.currentAmount);
+    const remainingAmount = Math.max(0, targetAmount - currentAmount);
+    const progress = targetAmount > 0 ? (currentAmount / targetAmount) * 100 : 0;
+    const daysRemaining = this._daysRemaining(goal.deadline);
+    const monthsRemaining = this._monthsRemaining(daysRemaining);
+
+    const currentVelocityMonthly = this._toNumber(contributionStats?.amountLast30);
+    const requiredMonthly = monthsRemaining ? remainingAmount / monthsRemaining : 0;
+    const velocityRatio = requiredMonthly > 0 ? currentVelocityMonthly / requiredMonthly : 1;
+
+    let score = 0;
+    const whyFactors = [];
+
+    if (daysRemaining != null) {
+      if (daysRemaining < 0) {
+        score += 50;
+        whyFactors.push("Goal deadline has passed");
+      } else if (daysRemaining <= 30) {
+        score += 40;
+        whyFactors.push("Critical deadline pressure (30 days or less)");
+      } else if (daysRemaining <= 60) {
+        score += 30;
+        whyFactors.push("High deadline pressure (60 days or less)");
+      } else if (daysRemaining <= 120) {
+        score += 20;
+        whyFactors.push("Moderate deadline pressure");
+      } else if (daysRemaining <= 180) {
+        score += 10;
+      }
+    }
+
+    if (requiredMonthly > 0) {
+      if (velocityRatio < 0.3) {
+        score += 35;
+        whyFactors.push("Contribution velocity is far below required pace");
+      } else if (velocityRatio < 0.6) {
+        score += 25;
+        whyFactors.push("Contribution velocity is below required pace");
+      } else if (velocityRatio < 0.9) {
+        score += 15;
+        whyFactors.push("Contribution pace is slightly behind target");
+      } else if (velocityRatio < 1) {
+        score += 8;
+      }
+    }
+
+    const expected30 = this._expectedContributionsPer30Days(goal);
+    const actual30 = contributionStats?.contributionsLast30 || 0;
+
+    if (expected30 > 0) {
+      const missedStreak = Math.max(0, expected30 - actual30);
+      if (missedStreak > 0) {
+        score += Math.min(24, missedStreak * 8);
+        whyFactors.push(`Missed expected contribution cadence (${missedStreak} missed in last 30 days)`);
+      }
+    } else {
+      const lastContributionAt = contributionStats?.lastContributionAt ? new Date(contributionStats.lastContributionAt) : null;
+      if (!lastContributionAt) {
+        score += 20;
+        whyFactors.push("No recent contributions detected");
+      } else {
+        const inactivityDays = Math.ceil((Date.now() - lastContributionAt.getTime()) / (1000 * 60 * 60 * 24));
+        if (inactivityDays > 45) {
+          score += 20;
+          whyFactors.push("Long contribution inactivity streak");
+        } else if (inactivityDays > 21) {
+          score += 12;
+          whyFactors.push("Contribution activity is intermittent");
+        } else if (inactivityDays > 14) {
+          score += 8;
+        }
+      }
+    }
+
+    if (progress < 25 && daysRemaining != null && daysRemaining <= 90) {
+      score += 12;
+      whyFactors.push("Low progress relative to near-term deadline");
+    }
+
+    score = Math.min(100, Math.max(0, Math.round(score)));
+
+    let level = "low";
+    if (score >= 67) level = "high";
+    else if (score >= 34) level = "medium";
+
+    const additionalMonthlyNeeded = Math.max(0, requiredMonthly - currentVelocityMonthly);
+
+    return {
+      score,
+      level,
+      whyFactors: whyFactors.slice(0, 4),
+      recoveryRecommendation: this._buildRecoveryRecommendation({
+        goal,
+        requiredMonthly,
+        currentVelocityMonthly,
+        additionalMonthlyNeeded,
+        daysRemaining,
+        riskLevel: level,
+      }),
+    };
   }
 
   _buildSummary(goalsList) {
@@ -55,7 +268,7 @@ class GoalsDashboardService {
     };
   }
 
-  _buildGoalsOverview(goalsList) {
+  _buildGoalsOverview(goalsList, contributionStatsByGoal = new Map()) {
     return goalsList.map((goal) => {
       const targetAmount = this._toNumber(goal.targetAmount);
       const currentAmount = this._toNumber(goal.currentAmount);
@@ -63,6 +276,8 @@ class GoalsDashboardService {
       const remainingAmount = Math.max(0, targetAmount - currentAmount);
       const daysRemaining = this._daysRemaining(goal.deadline);
       const urgency = this._urgency(daysRemaining);
+      const contributionStats = contributionStatsByGoal.get(goal.id);
+      const risk = goal.status === "active" ? this._computeGoalFailureRisk(goal, contributionStats) : null;
 
       return {
         id: goal.id,
@@ -77,6 +292,7 @@ class GoalsDashboardService {
         daysRemaining,
         deadline: goal.deadline,
         urgency,
+        risk,
       };
     });
   }
@@ -148,7 +364,24 @@ class GoalsDashboardService {
       (goal) => goal.daysRemaining != null && goal.daysRemaining <= 90 && goal.progressPercentage < 50 && goal.status === "active",
     );
 
+    const highRisk = goalsOverview.filter((goal) => goal.status === "active" && goal.risk?.level === "high");
+    const mediumRisk = goalsOverview.filter((goal) => goal.status === "active" && goal.risk?.level === "medium");
+
     const insights = [];
+    if (highRisk.length) {
+      insights.push({
+        type: "high_risk_goals",
+        severity: "high",
+        message: `${highRisk.length} active goal(s) have a high failure risk and need immediate recovery actions.`,
+      });
+    }
+    if (mediumRisk.length) {
+      insights.push({
+        type: "medium_risk_goals",
+        severity: "medium",
+        message: `${mediumRisk.length} active goal(s) have medium failure risk and need pace corrections.`,
+      });
+    }
     if (overdue.length) {
       insights.push({
         type: "overdue",
@@ -186,6 +419,10 @@ class GoalsDashboardService {
     return goalsOverview
       .filter((goal) => goal.status === "active")
       .sort((a, b) => {
+        const riskScoreA = a.risk?.score || 0;
+        const riskScoreB = b.risk?.score || 0;
+        if (riskScoreA !== riskScoreB) return riskScoreB - riskScoreA;
+
         const urgencyScoreA = a.daysRemaining == null ? 9999 : a.daysRemaining;
         const urgencyScoreB = b.daysRemaining == null ? 9999 : b.daysRemaining;
         if (urgencyScoreA !== urgencyScoreB) return urgencyScoreA - urgencyScoreB;
@@ -196,14 +433,15 @@ class GoalsDashboardService {
         priority: index + 1,
         goalId: goal.id,
         title: goal.title,
-        action: goal.progressPercentage >= 80 ? "Finish goal" : "Increase contribution",
-        reason: goal.daysRemaining != null && goal.daysRemaining <= 30 ? "Deadline approaching" : "Improve completion pace",
+        action: goal.risk?.recoveryRecommendation?.suggestedActions?.[0] || (goal.progressPercentage >= 80 ? "Finish goal" : "Increase contribution"),
+        reason: goal.risk?.whyFactors?.[0] || (goal.daysRemaining != null && goal.daysRemaining <= 30 ? "Deadline approaching" : "Improve completion pace"),
       }));
   }
 
   async getGoalsDashboard(userId) {
     const goalsList = await this._getUserGoals(userId);
-    const goalsOverview = this._buildGoalsOverview(goalsList);
+    const contributionStatsByGoal = await this._getContributionStats(userId, 90);
+    const goalsOverview = this._buildGoalsOverview(goalsList, contributionStatsByGoal);
 
     const [progressTrend, autoAllocation] = await Promise.all([
       this._buildProgressTrend(userId),
