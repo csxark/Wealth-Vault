@@ -28,6 +28,7 @@ import { authAPI } from '../../services/api';
 import { useLoading } from '../../context/LoadingContext';
 import { useToast } from '../../context/ToastContext';
 import type { User } from '../../types';
+import { MFASection } from './MFASection';
 
 // Mock dev profile with complete data
 const DEV_PROFILE: User = {
@@ -622,6 +623,9 @@ export const Profile: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* MFA Security Section */}
+      <MFASection />
 
       {/* Theme Preferences */}
       <div className="bg-white dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl shadow-2xl 

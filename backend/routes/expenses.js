@@ -9,23 +9,13 @@ import { protect, checkOwnership } from "../middleware/auth.js";
 import { checkVaultAccess } from "../middleware/vaultAuth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { parseListQuery } from "../utils/pagination.js";
-import { securityInterceptor, auditBulkOperation } from "../middleware/auditMiddleware.js";
-import { logAudit, AuditActions, ResourceTypes } from "../services/auditService.js";
-import { securityGuard } from "../middleware/securityGuard.js";
-import eventBus from "../events/eventBus.js";
-import { AppError } from "../utils/AppError.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { liquidityGuard } from "../middleware/liquidityGuard.js";
-import { riskInterceptor } from "../middleware/riskInterceptor.js";
-import { signalAutopilot } from "../middleware/triggerInterceptor.js";
-import { enforceInstitutionalGovernance } from "../middleware/govGuard.js";
-import fxEngine from "../services/fxEngine.js";
-import taxLotService from "../services/taxLotService.js";
-import currencyService from "../services/currencyService.js";
-import { logInfo, logWarn } from "../utils/logger.js";
-
-// Side-effects like updateCategoryStats, monitorBudget, matchSubscription
-// are now handled by event listeners in ../listeners/
+import cacheService from "../services/cacheService.js";
+import { routeCache, cacheInvalidation } from "../middleware/cache.js";
+import { executeQuery } from "../utils/queryOptimization.js";
+import { trackQuery } from "../utils/queryPerformanceTracker.js";
+import sagaCoordinator from "../services/sagaCoordinator.js";
+import distributedTransactionService from "../services/distributedTransactionService.js";
+import anomalyDetectionService from "../services/anomalyDetectionService.js";
 
 const router = express.Router();
 
@@ -110,7 +100,7 @@ const router = express.Router();
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  */
-router.get("/", protect, asyncHandler(async (req, res) => {
+router.get("/", protect, routeCache.list('expenses', cacheService.TTL.SHORT), asyncHandler(async (req, res) => {
   const queryOptions = {
     allowedSortFields: ['date', 'amount', 'createdAt'],
     defaultSortField: 'date',
@@ -119,24 +109,24 @@ router.get("/", protect, asyncHandler(async (req, res) => {
   };
 
   const { pagination, sorting, search, filters, dateRange } = parseListQuery(req.query, queryOptions);
-
-  const conditions = [];
-
-  // Default to personal expenses if no vaultId provided
-  if (req.query.vaultId) {
-    // Check if user is member of the vault
-    const [membership] = await db
-      .select()
-      .from(vaultMembers)
-      .where(and(eq(vaultMembers.vaultId, req.query.vaultId), eq(vaultMembers.userId, req.user.id)));
-
-    if (!membership) {
-      return next(new AppError(403, 'You do not have access to this vault'));
-    }
-    conditions.push(eq(expenses.vaultId, req.query.vaultId));
-  } else {
-    conditions.push(eq(expenses.userId, req.user.id), sql`${expenses.vaultId} IS NULL`);
+  
+  // Generate cache key
+  const cacheKey = cacheService.cacheKeys.expensesList(req.user.id, {
+    ...filters,
+    ...pagination,
+    ...sorting,
+    search: search.search,
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+  });
+  
+  // Try to get from cache
+  const cachedResult = await cacheService.get(cacheKey);
+  if (cachedResult) {
+    return res.paginated(cachedResult.items, cachedResult.pagination, 'Expenses retrieved successfully (cached)');
   }
+  
+  const conditions = [eq(expenses.userId, req.user.id)];
 
   // Apply filters
   if (filters.category) conditions.push(eq(expenses.categoryId, filters.category));
@@ -162,28 +152,36 @@ router.get("/", protect, asyncHandler(async (req, res) => {
   if (sorting.sortBy === "amount") orderByColumn = expenses.amount;
   if (sorting.sortBy === "createdAt") orderByColumn = expenses.createdAt;
 
-  const [expensesList, countResult] = await Promise.all([
-    db.query.expenses.findMany({
-      where: and(...conditions),
-      orderBy: [sortFn(orderByColumn)],
-      limit: pagination.limit,
-      offset: pagination.offset,
-      with: {
-        category: {
-          columns: { name: true, color: true, icon: true },
-        },
-      },
-    }),
-    db
-      .select({ count: sql`count(*)` })
-      .from(expenses)
-      .where(and(...conditions)),
-  ]);
+  // Execute query with performance tracking
+  const [expensesList, countResult] = await executeQuery(async () => {
+    return await trackQuery('expenses.list', { userId: req.user.id })(async () => {
+      return await Promise.all([
+        db.query.expenses.findMany({
+          where: and(...conditions),
+          orderBy: [sortFn(orderByColumn)],
+          limit: pagination.limit,
+          offset: pagination.offset,
+          with: {
+            category: {
+              columns: { name: true, color: true, icon: true },
+            },
+          },
+        }),
+        db
+          .select({ count: sql`count(*)` })
+          .from(expenses)
+          .where(and(...conditions)),
+      ]);
+    });
+  }, 'expenses.list');
 
   const total = Number(countResult[0]?.count || 0);
   const paginatedData = req.buildPaginatedResponse(expensesList, total);
 
-  return new ApiResponse(200, paginatedData, 'Expenses retrieved successfully').send(res);
+  // Cache the result
+  await cacheService.set(cacheKey, paginatedData, cacheService.TTL.SHORT);
+
+  return res.paginated(paginatedData.items, paginatedData.pagination, 'Expenses retrieved successfully');
 }));
 
 // @route   GET /api/expenses/:id
@@ -223,10 +221,225 @@ router.post(
     body("category").notEmpty(), // Assuming validation checks ID format if strictly needed
     body("date").optional().isISO8601(),
   ],
-  asyncHandler(async (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return next(new AppError(400, "Validation failed", errors.array()));
+  async (req, res) => {
+    let txLog = null;
+    let operationKey = null;
+
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty())
+        return res.status(400).json({ success: false, errors: errors.array() });
+
+      const idempotencyKey = req.headers["idempotency-key"];
+
+      if (!idempotencyKey || String(idempotencyKey).trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Idempotency-Key header is required for financial operations",
+        });
+      }
+
+      const {
+        amount,
+        description,
+        category,
+        date,
+        paymentMethod,
+        location,
+        tags,
+        isRecurring,
+        recurringPattern,
+        notes,
+        subcategory,
+      } = req.body;
+
+      operationKey = distributedTransactionService.buildOperationKey({
+        tenantId: req.user.tenantId || req.user.id,
+        userId: req.user.id,
+        operation: "expense.create",
+        idempotencyKey: String(idempotencyKey).trim(),
+      });
+
+      const idempotencyLock = await distributedTransactionService.acquireIdempotencyLock({
+        tenantId: req.user.tenantId || req.user.id,
+        userId: req.user.id,
+        operation: "expense.create",
+        operationKey,
+        requestPayload: req.body,
+        resourceType: "expense",
+      });
+
+      if (!idempotencyLock.acquired) {
+        if (idempotencyLock.reason === "replay") {
+          res.setHeader("Idempotent-Replay", "true");
+          return res.status(idempotencyLock.record.responseCode || 200).json(
+            idempotencyLock.record.responseBody || {
+              success: true,
+              message: "Request replayed from idempotency store",
+            }
+          );
+        }
+
+        if (idempotencyLock.reason === "in_progress") {
+          return res.status(409).json({
+            success: false,
+            message: "An operation with this idempotency key is already in progress",
+          });
+        }
+
+        return res.status(409).json({
+          success: false,
+          message: "Idempotency key reuse with different payload is not allowed",
+        });
+      }
+
+      txLog = await distributedTransactionService.startDistributedTransaction({
+        tenantId: req.user.tenantId || req.user.id,
+        userId: req.user.id,
+        transactionType: "financial_expense_create",
+        operationKey,
+        payload: {
+          amount,
+          description,
+          category,
+          date,
+          paymentMethod,
+          location,
+          tags,
+          isRecurring,
+          recurringPattern,
+          notes,
+          subcategory,
+        },
+        timeoutMs: 30000,
+      });
+
+      await distributedTransactionService.markPrepared({ txLogId: txLog.id });
+
+      // Verify category with tracking
+      const [categoryDoc] = await trackQuery('expenses.verifyCategory', { userId: req.user.id })(async () => {
+        return await db
+          .select()
+          .from(categories)
+          .where(
+            and(eq(categories.id, category), eq(categories.userId, req.user.id))
+          );
+      });
+
+      if (!categoryDoc) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid category" });
+      }
+
+      const sagaResult = await trackQuery('expenses.create', { userId: req.user.id })(async () => {
+        return await sagaCoordinator.startSaga({
+          sagaType: 'financial_expense_operation',
+          tenantId: req.user.tenantId || req.user.id,
+          payload: {
+            tenantId: req.user.tenantId || req.user.id,
+            userId: req.user.id,
+            amount,
+            description,
+            categoryId: category,
+            date: date ? new Date(date).toISOString() : new Date().toISOString(),
+            paymentMethod,
+            location,
+            tags,
+            isRecurring,
+            recurringPattern,
+            notes,
+            subcategory,
+            idempotencyKey,
+            operationKey,
+          },
+          executeAsync: false,
+          timeoutMs: 25000,
+        });
+      });
+
+      if (!sagaResult || sagaResult.status !== 'completed') {
+        throw new Error(sagaResult?.error || 'Financial operation saga failed');
+      }
+
+      const createdExpenseId = sagaResult.stepResults?.[0]?.expenseId;
+
+      if (!createdExpenseId) {
+        throw new Error('Saga completed without expense id');
+      }
+
+      // Update category stats (async, don't block response necessarily, but good to wait)
+      await updateCategoryStats(category);
+
+      const expenseWithCategory = await db.query.expenses.findFirst({
+        where: eq(expenses.id, createdExpenseId),
+        with: {
+          category: { columns: { name: true, color: true, icon: true } },
+        },
+      });
+
+      // Run anomaly detection asynchronously (don't block response)
+      anomalyDetectionService.detectAnomaly(createdExpenseId, req.user.tenantId || req.user.id).catch(err => {
+        console.error('Anomaly detection error:', err);
+        // Don't throw - anomaly detection is non-blocking
+      });
+
+      await distributedTransactionService.commitDistributedTransaction({
+        txLogId: txLog.id,
+        result: {
+          sagaId: sagaResult.id,
+          expenseId: createdExpenseId,
+        },
+      });
+
+      const responseBody = {
+        success: true,
+        message: "Expense created successfully",
+        data: { expense: expenseWithCategory },
+      };
+
+      await distributedTransactionService.completeIdempotency({
+        operationKey,
+        statusCode: 201,
+        responseBody,
+        resourceType: "expense",
+        resourceId: createdExpenseId,
+      });
+
+      // Invalidate caches
+      await cacheService.invalidateExpenseCache(req.user.id, req.user.tenantId || req.user.id, createdExpenseId);
+
+      res.status(201).json(responseBody);
+    } catch (error) {
+      if (txLog?.id) {
+        await distributedTransactionService.markFailedTransaction({
+          txLogId: txLog.id,
+          errorMessage: error.message,
+        });
+      }
+
+      if (operationKey) {
+        await distributedTransactionService.failIdempotency({
+          operationKey,
+          statusCode: error.message?.toLowerCase().includes('timed out') ? 504 : 500,
+          responseBody: {
+            success: false,
+            message: error.message?.toLowerCase().includes('timed out')
+              ? "Financial operation timed out; reconciliation will verify final state"
+              : "Server error while creating expense",
+          },
+          reason: error.message,
+        });
+      }
+
+      console.error("Create expense error:", error);
+      const timeout = error.message?.toLowerCase().includes('timed out');
+      res.status(timeout ? 504 : 500).json({
+        success: false,
+        message: timeout
+          ? "Financial operation timed out; reconciliation will verify final state"
+          : "Server error while creating expense",
+      });
     }
 
     const {
@@ -433,59 +646,15 @@ router.post("/import", protect, auditBulkOperation('EXPENSE_IMPORT', 'expense'),
       continue;
     }
 
-    if (!expense.description || typeof expense.description !== 'string' || expense.description.trim().length === 0) {
-      errors.push(`Row ${rowNumber}: Invalid or missing description`);
-      continue;
-    }
+    // Invalidate caches
+    await cacheService.invalidateExpenseCache(req.user.id, req.user.tenantId || req.user.id, req.params.id);
 
-    if (!expense.category || typeof expense.category !== 'string') {
-      errors.push(`Row ${rowNumber}: Invalid or missing category`);
-      continue;
-    }
-
-    // Validate category exists and belongs to user
-    const [categoryDoc] = await db
-      .select()
-      .from(categories)
-      .where(
-        and(eq(categories.id, expense.category), eq(categories.userId, req.user.id))
-      );
-
-    if (!categoryDoc) {
-      errors.push(`Row ${rowNumber}: Invalid category "${expense.category}"`);
-      continue;
-    }
-
-    // Validate date
-    let expenseDate;
-    if (expense.date) {
-      expenseDate = new Date(expense.date);
-      if (isNaN(expenseDate.getTime())) {
-        errors.push(`Row ${rowNumber}: Invalid date format`);
-        continue;
-      }
-    } else {
-      expenseDate = new Date();
-    }
-
-    validExpenses.push({
-      userId: req.user.id,
-      amount: parseFloat(expense.amount).toString(),
-      description: expense.description.trim(),
-      categoryId: expense.category,
-      date: expenseDate,
-      paymentMethod: expense.paymentMethod || "other",
-      location: expense.location || null,
-      tags: expense.tags || [],
-      isRecurring: expense.isRecurring || false,
-      recurringPattern: expense.recurringPattern || null,
-      notes: expense.notes || null,
-      subcategory: expense.subcategory || null,
-    });
-  }
-
-  if (validExpenses.length === 0) {
-    return next(new AppError(400, "No valid expenses to import", errors));
+    res.json({ success: true, message: "Expense deleted successfully" });
+  } catch (error) {
+    console.error("Delete expense error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error while deleting expense" });
   }
 
   // Bulk insert valid expenses
@@ -574,249 +743,59 @@ router.get("/stats/summary", protect, asyncHandler(async (req, res, next) => {
   return new ApiResponse(200, data, "Expense statistics retrieved successfully").send(res);
 }));
 
-// @route   GET /api/expenses/recurring/status
-// @desc    Get recurring expense job status
-// @access  Private
-router.get("/recurring/status", protect, asyncHandler(async (req, res, next) => {
-  const status = getJobStatus();
-  return new ApiResponse(200, { status }, "Recurring expense job status retrieved successfully").send(res);
-}));
+    // Generate cache key for stats
+    const cacheKey = cacheService.cacheKeys.analytics(req.user.id, 'expenseSummary', `${start.toISOString()}-${end.toISOString()}`);
+    
+    // Try to get from cache
+    const result = await cacheService.cacheQuery(cacheKey, async () => {
+      const conditions = [
+        eq(expenses.userId, req.user.id),
+        eq(expenses.status, "completed"),
+        gte(expenses.date, start),
+        lte(expenses.date, end),
+      ];
 
-// @route   POST /api/expenses/recurring/execute
-// @desc    Manually trigger recurring expense execution
-// @access  Private (admin only in production)
-router.post("/recurring/execute", protect, asyncHandler(async (req, res, next) => {
-  console.log(`Manual recurring execution triggered by user: ${req.user.id}`);
-  const results = await runManualExecution();
+      // Total expenses
+      const [totalResult] = await db
+        .select({
+          total: sql`sum(${expenses.amount})`,
+          count: sql`count(*)`,
+        })
+        .from(expenses)
+        .where(and(...conditions));
 
-  // Log the manual execution
-  logAudit(req, {
-    userId: req.user.id,
-    action: 'RECURRING_MANUAL_EXECUTE',
-    resourceType: ResourceTypes.EXPENSE,
-    metadata: {
-      processed: results?.processed || 0,
-      created: results?.created || 0,
-      failed: results?.failed || 0,
-    },
-    status: results ? 'success' : 'failure',
-  });
+      // By Category
+      const byCategory = await db
+        .select({
+          categoryId: expenses.categoryId,
+          categoryName: categories.name,
+          categoryColor: categories.color,
+          total: sql`sum(${expenses.amount})`,
+          count: sql`count(*)`,
+        })
+        .from(expenses)
+        .leftJoin(categories, eq(expenses.categoryId, categories.id))
+        .where(and(...conditions))
+        .groupBy(expenses.categoryId, categories.name, categories.color) // Ensure grouping correctness
+        .orderBy(desc(sql`sum(${expenses.amount})`)); // Sort by total amount
 
-  return new ApiResponse(200, results, "Recurring expense execution completed").send(res);
-}));
-
-// @route   PUT /api/expenses/:id/recurring
-// @desc    Update recurring settings for an expense
-// @access  Private
-router.put("/:id/recurring", protect, checkOwnership("Expense"), asyncHandler(async (req, res, next) => {
-  const { isRecurring, recurringPattern } = req.body;
-  const expenseId = req.params.id;
-
-  if (isRecurring && recurringPattern) {
-    // Enable/update recurring
-    await db
-      .update(expenses)
-      .set({
-        isRecurring: true,
-        recurringPattern,
-        updatedAt: new Date(),
-      })
-      .where(eq(expenses.id, expenseId));
-
-    // Initialize the next execution date
-    const nextDate = await initializeRecurringExpense(expenseId, recurringPattern);
-
-    return new ApiResponse(200, { nextExecutionDate: nextDate }, "Recurring settings updated").send(res);
-  } else {
-    // Disable recurring
-    await disableRecurring(expenseId);
-
-    return new ApiResponse(200, null, "Recurring disabled for this expense").send(res);
-  }
-}));
-
-// @route   GET /api/expenses/recurring/list
-// @desc    Get all recurring expenses for the user
-// @access  Private
-router.get("/recurring/list", protect, asyncHandler(async (req, res, next) => {
-  const recurringExpenses = await db.query.expenses.findMany({
-    where: and(
-      eq(expenses.userId, req.user.id),
-      eq(expenses.isRecurring, true)
-    ),
-    orderBy: [asc(expenses.nextExecutionDate)],
-    with: {
-      category: {
-        columns: { name: true, color: true, icon: true },
-      },
-    },
-  });
-
-  return new ApiResponse(200, recurringExpenses, "Recurring expenses retrieved successfully").send(res);
-}));
-
-/**
- * POST /api/expenses/categorize
- * Bulk categorize expenses using ML
- */
-router.post('/categorize', protect, asyncHandler(async (req, res, next) => {
-  const userId = req.user.id;
-  const { expenseIds, autoApply = true } = req.body;
-
-  if (!expenseIds || !Array.isArray(expenseIds) || expenseIds.length === 0) {
-    return next(new AppError(400, "expenseIds array is required and must not be empty"));
-  }
-
-  if (expenseIds.length > 100) {
-    return next(new AppError(400, "Cannot categorize more than 100 expenses at once"));
-  }
-
-  const results = await bulkCategorizeExpenses(userId, expenseIds);
-
-  // Log audit event
-  await logAuditEventAsync({
-    userId,
-    action: AuditActions.EXPENSE_UPDATE,
-    resourceType: ResourceTypes.EXPENSE,
-    resourceId: null, // Bulk operation
-    metadata: {
-      bulkCategorization: true,
-      expenseCount: expenseIds.length,
-      appliedCount: results.filter(r => r.applied).length,
-      autoApply
-    },
-    status: 'success',
-    ipAddress: req.ip,
-    userAgent: req.get('User-Agent')
-  });
-
-  return new ApiResponse(200, {
-    results,
-    summary: {
-      total: results.length,
-      applied: results.filter(r => r.applied).length,
-      skipped: results.filter(r => !r.applied).length
-    }
-  }, "Bulk categorization completed").send(res);
-}));
-
-/**
- * POST /api/expenses/train-model
- * Train the categorization model for the user
- */
-router.post('/train-model', protect, asyncHandler(async (req, res, next) => {
-  const userId = req.user.id;
-
-  const result = await trainCategorizationModel(userId);
-
-  if (result.success) {
-    // Log audit event
-    await logAuditEventAsync({
-      userId,
-      action: 'MODEL_TRAIN',
-      resourceType: 'AI_MODEL',
-      resourceId: null,
-      metadata: {
-        modelType: 'expense_categorization',
-        trainingDataSize: result.status.trainingDataSize,
-        categoriesCount: result.status.categoriesCount
-      },
-      status: 'success',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-
-    return new ApiResponse(200, result.status, 'Model trained successfully').send(res);
-  } else {
-    return next(new AppError(400, result.error || 'Failed to train model'));
-  }
-}));
-
-/**
- * POST /api/expenses/retrain-model
- * Retrain the model with user corrections
- */
-router.post('/retrain-model', protect, asyncHandler(async (req, res, next) => {
-  const userId = req.user.id;
-  const { corrections } = req.body;
-
-  if (!corrections || !Array.isArray(corrections)) {
-    return next(new AppError(400, "corrections array is required"));
-  }
-
-  const result = await retrainWithCorrections(userId, corrections);
-
-  if (result.success) {
-    // Log audit event
-    await logAuditEventAsync({
-      userId,
-      action: 'MODEL_RETRAIN',
-      resourceType: 'AI_MODEL',
-      resourceId: null,
-      metadata: {
-        modelType: 'expense_categorization',
-        correctionsCount: corrections.length,
-        trainingDataSize: result.status.trainingDataSize
-      },
-      status: 'success',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-
-    return new ApiResponse(200, result.status, 'Model retrained successfully with corrections').send(res);
-  } else {
-    return next(new AppError(400, result.error || 'Failed to retrain model'));
-  }
-}));
-
-/**
- * POST /api/expenses/upload-receipt
- * Upload and process receipt image for OCR and auto-categorization
- */
-router.post('/upload-receipt', async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    // Check if file was uploaded
-    if (!req.files || !req.files.receipt) {
-      return res.status(400).json({
-        error: 'No receipt image uploaded'
-      });
-    }
-
-    const receiptFile = req.files.receipt;
-
-    // Validate image
-    if (!receiptService.validateImage(receiptFile.data)) {
-      return res.status(400).json({
-        error: 'Invalid image file. Please upload a valid image under 10MB.'
-      });
-    }
-
-    // Process receipt
-    const processedData = await receiptService.processReceipt(receiptFile.data, userId);
-
-    // Log audit event
-    await logAuditEventAsync({
-      userId,
-      action: 'RECEIPT_UPLOAD',
-      resourceType: 'RECEIPT',
-      resourceId: null,
-      metadata: {
-        fileName: receiptFile.name,
-        fileSize: receiptFile.size,
-        extractedAmount: processedData.amount,
-        extractedMerchant: processedData.merchant,
-        suggestedCategory: processedData.suggestedCategory
-      },
-      status: 'success',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
+      return {
+        summary: {
+          total: Number(totalResult?.total || 0),
+          count: Number(totalResult?.count || 0),
+        },
+        byCategory: byCategory.map((item) => ({
+          categoryName: item.categoryName,
+          categoryColor: item.categoryColor,
+          total: Number(item.total),
+          count: Number(item.count),
+        })),
+      };
+    }, cacheService.TTL.ANALYTICS);
 
     res.json({
-      data: processedData,
-      message: 'Receipt processed successfully'
+      success: true,
+      data: result,
     });
   } catch (error) {
     console.error('Error uploading receipt:', error);

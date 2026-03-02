@@ -1951,5 +1951,74 @@ router.get("/global-net-worth", protect, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /analytics/smart-spending-analysis:
+ *   get:
+ *     summary: Get AI-powered smart spending analysis with behavioral insights
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [30days, 90days, 6months, 1year]
+ *           default: 90days
+ *         description: Time range for analysis
+ *     responses:
+ *       200:
+ *         description: Smart spending analysis results
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     status:
+ *                       type: string
+ *                       enum: [success, insufficient_data]
+ *                     patternAnalysis:
+ *                       type: object
+ *                       description: Safe/Impulsive/Anxious spending patterns
+ *                     behavioralInsights:
+ *                       type: array
+ *                       description: Behavioral pattern insights
+ *                     riskAssessment:
+ *                       type: object
+ *                       description: Spending risk evaluation
+ *                     recommendations:
+ *                       type: array
+ *                       description: Personalized recommendations
+ */
+router.get('/smart-spending-analysis', protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { timeRange = '90days' } = req.query;
+
+    // Import the service dynamically to avoid circular dependencies
+    const smartSpendingAnalysisService = (await import('../services/smartSpendingAnalysisService.js')).default;
+
+    const analysis = await smartSpendingAnalysisService.analyzeSpendingPatterns(userId, timeRange);
+
+    res.json({
+      success: true,
+      data: analysis
+    });
+
+  } catch (error) {
+    console.error('Smart spending analysis error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to generate spending analysis'
+    });
+  }
+});
+
 export default router;
 

@@ -1,232 +1,373 @@
 import express from 'express';
 import { protect } from '../middleware/auth.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import replayEngine from '../services/replayEngine.js';
-import forensicAI from '../services/forensicAI.js';
-import { AppError } from '../utils/AppError.js';
-import { ApiResponse } from '../utils/ApiResponse.js';
-import db from '../config/db.js';
-import { forensicQueries, auditSnapshots, auditLogs } from '../db/schema.js';
-import { eq, desc, and, isNotNull } from 'drizzle-orm';
+import { validateTenantAccess, requireTenantPermission } from '../middleware/tenantMiddleware.js';
+import {
+  exportAuditLogsAsCsv,
+  getSecurityAlerts,
+  searchAuditLogs,
+  verifyAuditLogIntegrity
+} from '../services/auditLogService.js';
+import tamperProofAuditService from '../services/tamperProofAuditService.js';
+import tenantAwareAuditService from '../services/tenantAwareAuditService.js';
+import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
-/**
- * @route   GET /api/audit/snapshots
- * @desc    Get user's audit snapshots
- * @access  Private
- */
-router.get('/snapshots', protect, asyncHandler(async (req, res, next) => {
-  const { limit = 10 } = req.query;
+router.get(
+  '/tenants/:tenantId/logs',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:view', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      // Use tenant-aware audit service for enhanced access control
+      const result = await tenantAwareAuditService.queryTenantAuditLogs(
+        req.user.id,
+        req.params.tenantId,
+        {
+          actorUserId: req.query.actorUserId,
+          action: req.query.action,
+          category: req.query.category,
+          outcome: req.query.outcome,
+          severity: req.query.severity,
+          method: req.query.method,
+          statusCode: req.query.statusCode,
+          from: req.query.from,
+          to: req.query.to,
+          q: req.query.q,
+          limit: req.query.limit,
+          offset: req.query.offset
+        }
+      );
 
-  const snapshots = await db
-    .select({
-      id: auditSnapshots.id,
-      snapshotDate: auditSnapshots.snapshotDate,
-      totalBalance: auditSnapshots.totalBalance,
-      transactionCount: auditSnapshots.transactionCount,
-      metadata: auditSnapshots.metadata,
-      createdAt: auditSnapshots.createdAt,
-    })
-    .from(auditSnapshots)
-    .where(eq(auditSnapshots.userId, req.user.id))
-    .orderBy(desc(auditSnapshots.snapshotDate))
-    .limit(parseInt(limit));
-
-  return new ApiResponse(200, snapshots, 'Snapshots retrieved successfully').send(res);
-}));
-
-/**
- * @route   POST /api/audit/replay
- * @desc    Replay financial state at a specific date (Time Machine)
- * @access  Private
- */
-router.post('/replay', protect, asyncHandler(async (req, res, next) => {
-  const { targetDate } = req.body;
-
-  if (!targetDate) {
-    return next(new AppError(400, 'targetDate is required'));
-  }
-
-  const date = new Date(targetDate);
-  if (isNaN(date.getTime())) {
-    return next(new AppError(400, 'Invalid date format'));
-  }
-
-  const result = await replayEngine.replayToDate(req.user.id, date);
-
-  // Save forensic query
-  await db.insert(forensicQueries).values({
-    userId: req.user.id,
-    queryType: 'replay',
-    targetDate: date,
-    queryParams: { targetDate },
-    resultSummary: {
-      expensesCount: result.state.expenses?.length || 0,
-      goalsCount: result.state.goals?.length || 0,
-      categoriesCount: result.state.categories?.length || 0,
-    },
-    executionTime: result.metadata.executionTime,
-    status: 'completed',
-    completedAt: new Date(),
-  });
-
-  return new ApiResponse(200, result, 'State replayed successfully').send(res);
-}));
-
-/**
- * @route   POST /api/audit/trace/:resourceId
- * @desc    Trace a specific transaction's history
- * @access  Private
- */
-router.post('/trace/:resourceId', protect, asyncHandler(async (req, res, next) => {
-  const { resourceId } = req.params;
-
-  const trace = await replayEngine.traceTransaction(req.user.id, resourceId);
-
-  return new ApiResponse(200, trace, 'Transaction traced successfully').send(res);
-}));
-
-/**
- * @route   POST /api/audit/explain/:resourceId
- * @desc    Get AI explanation of a transaction chain
- * @access  Private
- */
-router.post('/explain/:resourceId', protect, asyncHandler(async (req, res, next) => {
-  const { resourceId } = req.params;
-
-  const explanation = await forensicAI.explainTransactionChain(req.user.id, resourceId);
-
-  // Save forensic query
-  await db.insert(forensicQueries).values({
-    userId: req.user.id,
-    queryType: 'explain',
-    targetResourceId: resourceId,
-    queryParams: { resourceId },
-    aiExplanation: explanation,
-    status: 'completed',
-    completedAt: new Date(),
-  });
-
-  return new ApiResponse(200, { explanation }, 'Explanation generated successfully').send(res);
-}));
-
-/**
- * @route   POST /api/audit/forensic-report
- * @desc    Generate comprehensive forensic report for a period
- * @access  Private
- */
-router.post('/forensic-report', protect, asyncHandler(async (req, res, next) => {
-  const { startDate, endDate } = req.body;
-
-  if (!startDate || !endDate) {
-    return next(new AppError(400, 'startDate and endDate are required'));
-  }
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    return next(new AppError(400, 'Invalid date format'));
-  }
-
-  const report = await forensicAI.generateForensicReport(req.user.id, start, end);
-
-  return new ApiResponse(200, report, 'Forensic report generated successfully').send(res);
-}));
-
-/**
- * @route   POST /api/audit/analyze-discrepancy
- * @desc    Analyze balance discrepancy between two dates
- * @access  Private
- */
-router.post('/analyze-discrepancy', protect, asyncHandler(async (req, res, next) => {
-  const { date1, date2 } = req.body;
-
-  if (!date1 || !date2) {
-    return next(new AppError(400, 'date1 and date2 are required'));
-  }
-
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
-
-  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
-    return next(new AppError(400, 'Invalid date format'));
-  }
-
-  const analysis = await forensicAI.analyzeBalanceDiscrepancy(req.user.id, d1, d2);
-
-  return new ApiResponse(200, analysis, 'Discrepancy analysis completed successfully').send(res);
-}));
-
-/**
- * @route   GET /api/audit/queries
- * @desc    Get user's forensic query history
- * @access  Private
- */
-router.get('/queries', protect, asyncHandler(async (req, res, next) => {
-  const { limit = 20 } = req.query;
-
-  const queries = await db
-    .select()
-    .from(forensicQueries)
-    .where(eq(forensicQueries.userId, req.user.id))
-    .orderBy(desc(forensicQueries.createdAt))
-    .limit(parseInt(limit));
-
-  return new ApiResponse(200, queries, 'Forensic queries retrieved successfully').send(res);
-}));
-
-/**
- * @route   GET /api/audit/deltas
- * @desc    Get recent state deltas for the user
- * @access  Private
- */
-router.get('/deltas', protect, asyncHandler(async (req, res, next) => {
-  const { limit = 50, resourceType } = req.query;
-
-  const conditions = [
-    eq(auditLogs.userId, req.user.id),
-    isNotNull(auditLogs.delta) // Only return logs with deltas
-  ];
-
-  if (resourceType) {
-    conditions.push(eq(auditLogs.resourceType, resourceType));
-  }
-
-  const deltas = await db
-    .select()
-    .from(auditLogs)
-    .where(and(...conditions))
-    .orderBy(desc(auditLogs.performedAt))
-    .limit(parseInt(limit));
-
-  return new ApiResponse(200, deltas, 'State deltas retrieved successfully').send(res);
-}));
-
-/**
- * @route   GET /api/audit/balance-history
- * @desc    Get balance at specific points in time
- * @access  Private
- */
-router.get('/balance-history', protect, asyncHandler(async (req, res, next) => {
-  const { dates } = req.query; // Comma-separated dates
-
-  if (!dates) {
-    return next(new AppError(400, 'dates parameter is required'));
-  }
-
-  const dateArray = dates.split(',').map(d => new Date(d.trim()));
-  const balances = [];
-
-  for (const date of dateArray) {
-    if (!isNaN(date.getTime())) {
-      const balance = await replayEngine.calculateBalanceAtDate(req.user.id, date);
-      balances.push({ date, balance });
+      return res.status(200).json({
+        success: true,
+        data: result,
+        pagination: {
+          limit: req.query.limit || 50,
+          offset: req.query.offset || 0,
+          hasMore: result.length === (req.query.limit || 50)
+        }
+      });
+    } catch (error) {
+      logger.error('Error querying tenant audit logs', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to query tenant audit logs'
+      });
     }
   }
+);
 
-  return new ApiResponse(200, balances, 'Balance history retrieved successfully').send(res);
-}));
+router.get(
+  '/tenants/:tenantId/logs/export',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:export', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const csv = await exportAuditLogsAsCsv({
+        tenantId: req.params.tenantId,
+        actorUserId: req.query.actorUserId,
+        action: req.query.action,
+        category: req.query.category,
+        outcome: req.query.outcome,
+        severity: req.query.severity,
+        method: req.query.method,
+        statusCode: req.query.statusCode,
+        from: req.query.from,
+        to: req.query.to,
+        q: req.query.q
+      });
+
+      const fileName = `audit-logs-${req.params.tenantId}-${Date.now()}.csv`;
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+      return res.status(200).send(csv);
+    } catch (error) {
+      logger.error('Error exporting audit logs', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to export audit logs'
+      });
+    }
+  }
+);
+
+router.get(
+  '/tenants/:tenantId/alerts',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:alert:view', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const result = await getSecurityAlerts({
+        tenantId: req.params.tenantId,
+        from: req.query.from,
+        to: req.query.to,
+        page: req.query.page,
+        limit: req.query.limit
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result.items,
+        pagination: result.pagination
+      });
+    } catch (error) {
+      logger.error('Error fetching security alerts', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to fetch security alerts'
+      });
+    }
+  }
+);
+
+router.get(
+  '/tenants/:tenantId/integrity',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:integrity:verify', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const report = await verifyAuditLogIntegrity({
+        tenantId: req.params.tenantId,
+        limit: req.query.limit
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: report
+      });
+    } catch (error) {
+      logger.error('Error verifying audit log integrity', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to verify audit log integrity'
+      });
+    }
+  }
+);
+
+// Tamper-Proof Audit Trail Endpoints (#627)
+
+// Anchor latest Merkle root externally
+router.post(
+  '/tenants/:tenantId/anchor-external',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:integrity:anchor', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const { anchorId, externalService = 'blockchain' } = req.body;
+
+      if (!anchorId) {
+        return res.status(400).json({
+          success: false,
+          message: 'anchorId is required'
+        });
+      }
+
+      const result = await tamperProofAuditService.anchorExternally(anchorId, externalService);
+
+      return res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      logger.error('Error anchoring externally', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to anchor externally'
+      });
+    }
+  }
+);
+
+// Verify external anchoring
+router.get(
+  '/tenants/:tenantId/anchors/:anchorId/verify-external',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:integrity:verify', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const result = await tamperProofAuditService.verifyExternalAnchoring(req.params.anchorId);
+
+      return res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      logger.error('Error verifying external anchoring', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to verify external anchoring'
+      });
+    }
+  }
+);
+
+// Get comprehensive integrity report
+router.get(
+  '/tenants/:tenantId/integrity-report',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:integrity:verify', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const includeExternal = req.query.includeExternal !== 'false';
+      const report = await tamperProofAuditService.getIntegrityReport(
+        req.params.tenantId,
+        includeExternal
+      );
+
+      return res.status(200).json({
+        success: true,
+        data: report
+      });
+    } catch (error) {
+      logger.error('Error generating integrity report', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to generate integrity report'
+      });
+    }
+  }
+);
+
+// Schedule periodic anchoring
+router.post(
+  '/tenants/:tenantId/schedule-anchoring',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:integrity:anchor', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const { intervalHours = 24 } = req.body;
+
+      const result = await tamperProofAuditService.schedulePeriodicAnchoring(
+        req.params.tenantId,
+        intervalHours
+      );
+
+      return res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      logger.error('Error scheduling anchoring', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to schedule anchoring'
+      });
+    }
+  }
+);
+
+// Tenant-Aware Audit Isolation Endpoints (#629)
+
+// Get tenant audit summary with isolation verification
+router.get(
+  '/tenants/:tenantId/summary',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:view', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const summary = await tenantAwareAuditService.getTenantAuditSummary(
+        req.user.id,
+        req.params.tenantId
+      );
+
+      return res.status(200).json({
+        success: true,
+        data: summary
+      });
+    } catch (error) {
+      logger.error('Error getting tenant audit summary', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to get tenant audit summary'
+      });
+    }
+  }
+);
+
+// Get audit access violations for security monitoring
+router.get(
+  '/tenants/:tenantId/violations',
+  protect,
+  validateTenantAccess,
+  requireTenantPermission(['audit:alert:view', 'rbac:role:manage']),
+  async (req, res) => {
+    try {
+      const hours = parseInt(req.query.hours) || 24;
+      const violations = await tenantAwareAuditService.getAuditAccessViolations(
+        req.params.tenantId,
+        hours
+      );
+
+      return res.status(200).json({
+        success: true,
+        data: violations,
+        period: `${hours} hours`
+      });
+    } catch (error) {
+      logger.error('Error getting audit violations', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to get audit violations'
+      });
+    }
+  }
+);
+
+// Validate tenant isolation integrity
+router.get(
+  '/system/isolation-check',
+  protect,
+  requireTenantPermission(['*']), // Only system admins
+  async (req, res) => {
+    try {
+      const isolationStatus = await tenantAwareAuditService.validateTenantIsolation();
+
+      return res.status(200).json({
+        success: true,
+        data: isolationStatus
+      });
+    } catch (error) {
+      logger.error('Error checking tenant isolation', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to check tenant isolation'
+      });
+    }
+  }
+);
+
+// Get user's accessible tenants for audit operations
+router.get(
+  '/user/accessible-tenants',
+  protect,
+  async (req, res) => {
+    try {
+      const accessibleTenants = await tenantAwareAuditService.getUserAccessibleTenants(req.user.id);
+
+      return res.status(200).json({
+        success: true,
+        data: accessibleTenants
+      });
+    } catch (error) {
+      logger.error('Error getting accessible tenants', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to get accessible tenants'
+      });
+    }
+  }
+);
 
 export default router;

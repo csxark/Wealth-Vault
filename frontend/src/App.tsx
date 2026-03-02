@@ -9,6 +9,8 @@ import { DevAuthBypass } from "./components/DevAuthBypass";
 import { LoadingOverlay } from "./components/Loading/LoadingSpinner";
 import { useLoading } from "./context/LoadingContext";
 import ChatWidget from "./components/chatbot/ChatWidget";
+import { usePushNotifications } from "./hooks/usePushNotifications";
+import { useAuth } from "./hooks/useAuth";
 
 function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -16,6 +18,10 @@ function AppLayout() {
   const isAuthPage = location.pathname === "/auth";
   const isHomePage = location.pathname === "/";
   const { isLoading, loadingMessage } = useLoading();
+  const { user } = useAuth();
+
+  // Initialize push notifications for authenticated users
+  usePushNotifications();
 
   if (isAuthPage) {
     return (

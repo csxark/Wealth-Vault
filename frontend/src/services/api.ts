@@ -475,15 +475,20 @@ export const authAPI = {
   },
 
   // Login user
-  login: async (credentials: { email: string; password: string }) => {
+  login: async (credentials: { email: string; password: string; mfaToken?: string }) => {
     // Validate required fields
     if (!credentials.email || !credentials.password) {
       throw new Error('Email and password are required');
     }
 
-    console.log('Logging in user:', { email: credentials.email });
+    console.log('Logging in user:', { email: credentials.email, hasMfaToken: !!credentials.mfaToken });
 
-    return apiRequest<{ success: boolean; data: { user: User; token: string } }>('/auth/login', {
+    return apiRequest<{
+      success: boolean;
+      data?: { user: User; token: string };
+      mfaRequired?: boolean;
+      message?: string;
+    }>('/auth/login', {
       method: 'POST',
       data: credentials,
     });
@@ -530,6 +535,66 @@ export const authAPI = {
     return apiRequest<{ success: boolean; message: string }>('/auth/logout', {
       method: 'POST',
     });
+  },
+
+  // MFA Setup - Generate secret and QR code
+  setupMFA: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        secret: string;
+        otpauth_url: string;
+        qr_code: string;
+      }
+    }>('/auth/mfa/setup', {
+      method: 'POST',
+    });
+  },
+
+  // MFA Verify - Enable MFA after setup
+  verifyMFA: async (token: string) => {
+    return apiRequest<{ success: boolean; message: string }>('/auth/mfa/verify', {
+      method: 'POST',
+      data: { token },
+    });
+  },
+
+  // MFA Disable
+  disableMFA: async (password: string) => {
+    return apiRequest<{ success: boolean; message: string }>('/auth/mfa/disable', {
+      method: 'POST',
+      data: { password },
+    });
+  },
+
+  // Get MFA recovery codes
+  getRecoveryCodes: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: { codes: string[] }
+    }>('/auth/mfa/recovery-codes');
+  },
+
+  // Regenerate MFA recovery codes
+  regenerateRecoveryCodes: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: { codes: string[] }
+    }>('/auth/mfa/regenerate-recovery-codes', {
+      method: 'POST',
+    });
+  },
+
+  // Get MFA status
+  getMFAStatus: async () => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        enabled: boolean;
+        hasRecoveryCodes: boolean;
+        recoveryCodesCount: number;
+      }
+    }>('/auth/mfa/status');
   },
 };
 
@@ -1005,6 +1070,53 @@ export const analyticsAPI = {
     }
 
     return response;
+  },
+
+  // Get smart spending analysis with AI-powered insights
+  getSmartSpendingAnalysis: async (params?: {
+    timeRange?: '30days' | '90days' | '6months' | '1year';
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        status: 'success' | 'insufficient_data';
+        patternAnalysis: {
+          patterns: {
+            safe: { score: number; indicators: string[]; transactions: string[] };
+            impulsive: { score: number; indicators: string[]; transactions: string[] };
+            anxious: { score: number; indicators: string[]; transactions: string[] };
+          };
+          dominantPattern: string;
+          dominantScore: number;
+          patternDistribution: { safe: number; impulsive: number; anxious: number };
+        };
+        behavioralInsights: Array<{
+          type: string;
+          title: string;
+          description: string;
+          severity: 'low' | 'medium' | 'high';
+          data: any;
+        }>;
+        riskAssessment: {
+          riskLevel: 'low' | 'medium' | 'high';
+          riskFactors: string[];
+          riskScore: number;
+          recommendations: string[];
+        };
+        recommendations: Array<{
+          type: string;
+          priority: 'low' | 'medium' | 'high';
+          title: string;
+          description: string;
+          actions: string[];
+        }>;
+        totalTransactions: number;
+        totalAmount: number;
+      };
+    }>('/analytics/smart-spending-analysis', {
+      method: 'GET',
+      params,
+    });
   },
 };
 
@@ -1782,6 +1894,7 @@ const gamificationAPI = {
 };
 
 // Export all APIs
+export { api };
 export default {
   auth: authAPI,
   expenses: expensesAPI,
