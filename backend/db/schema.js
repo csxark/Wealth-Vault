@@ -8891,6 +8891,26 @@ export const successionRulesRelations = relations(successionRules, ({ one }) => 
 }));
 
 // ============================================================================
+// SUCCESSION HEARTBEAT ENGINE (#675)
+// ============================================================================
+
+export const userHeartbeats = pgTable('user_heartbeats', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    channel: text('channel').notNull(), // 'email_confirmation', 'in_app_checkin', 'on_chain_activity', 'hardware_wallet'
+    timestamp: timestamp('timestamp').defaultNow().notNull(),
+    weight: numeric('weight', { precision: 3, scale: 2 }).default('1.00'), // Weight for inactivity calculation (0.00-1.00)
+    metadata: jsonb('metadata').default({}), // Additional context (e.g., transaction hash, email type)
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const userHeartbeatRelations = relations(userHeartbeats, ({ one }) => ({
+    user: one(users, { fields: [userHeartbeats.userId], references: [users.id] }),
+}));
+
+// ============================================================================
 // AUTONOMOUS YIELD OPTIMIZER & LIQUIDITY REBALANCER (L3) (#370)
 // ============================================================================
 

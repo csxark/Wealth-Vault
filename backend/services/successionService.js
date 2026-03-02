@@ -3,6 +3,7 @@ import { successionRules, users, entities, interCompanyLedger } from '../db/sche
 import { eq, and, sql } from 'drizzle-orm';
 import notificationService from './notificationService.js';
 import auditService from './auditService.js';
+import successionHeartbeatService from './successionHeartbeatService.js';
 
 /**
  * Institutional Succession Service (L3)
@@ -64,12 +65,10 @@ class SuccessionService {
     /**
      * Records presence to delay the inactivity trigger (Internal call)
      */
-    async trackActivity(userId, activityType = 'api_interaction') {
+    async trackActivity(userId, activityType = 'api_interaction', requestInfo = {}) {
         try {
-            await db.update(users)
-                .set({ lastPresenceAt: new Date() })
-                .where(eq(users.id, userId));
-            // logInfo(`[Succession] Activity tracked for user ${userId}: ${activityType}`);
+            // Record in-app check-in heartbeat
+            await successionHeartbeatService.recordInAppCheckin(userId, activityType, requestInfo);
         } catch (error) {
             console.error('[Succession Service] Failed to track activity:', error);
         }
