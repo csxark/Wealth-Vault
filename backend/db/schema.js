@@ -215,6 +215,22 @@ export const capacityAlerts = pgTable('capacity_alerts', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Log Redaction Rules - Configurable field-level redaction for PII protection
+export const logRedactionRules = pgTable('log_redaction_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    fieldPath: text('field_path').notNull(), // JSON path to the field (e.g., 'user.email', 'request.headers.authorization')
+    redactionType: text('redaction_type').notNull(), // mask, hash, tokenize, remove
+    fieldType: text('field_type'), // email, phone, ssn, credit_card, ip_address, name, address, custom
+    pattern: text('pattern'), // Optional regex pattern for custom field detection
+    priority: integer('priority').default(50), // 0-100, higher priority rules are applied first
+    description: text('description'),
+    isActive: boolean('is_active').default(true),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Users Table
 export const users = pgTable('users', {
     id: uuid('id').defaultRandom().primaryKey(),
