@@ -7297,6 +7297,165 @@ export const performanceReports = pgTable('performance_reports', {
 }));
 
 // ============================================================================
+// AI-POWERED SMART ASSET ALLOCATION ADVISOR (#654)
+// ============================================================================
+
+// User Profiles - Risk tolerance and financial profiling
+export const userProfiles = pgTable('user_profiles', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    riskTolerance: text('risk_tolerance').notNull().default('moderate'),
+    riskScore: numeric('risk_score', { precision: 5, scale: 2 }).notNull().default('50'),
+    ageGroup: text('age_group'),
+    incomeLevel: text('income_level'),
+    jobStability: text('job_stability'),
+    employmentType: text('employment_type'),
+    debtRatio: numeric('debt_ratio', { precision: 5, scale: 2 }).default('0'),
+    liquidityRatio: numeric('liquidity_ratio', { precision: 5, scale: 2 }).default('0'),
+    netWorth: numeric('net_worth', { precision: 15, scale: 2 }).default('0'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_user_profiles_user_id').on(table.userId),
+    riskIdx: index('idx_user_profiles_risk_tolerance').on(table.riskTolerance),
+}));
+
+// Allocation Recommendations - AI-powered portfolio recommendations
+export const allocationRecommendations = pgTable('allocation_recommendations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    recommendationDate: timestamp('recommendation_date').defaultNow(),
+    equityPercentage: numeric('equity_percentage', { precision: 5, scale: 2 }).notNull(),
+    bondPercentage: numeric('bond_percentage', { precision: 5, scale: 2 }).notNull(),
+    cashPercentage: numeric('cash_percentage', { precision: 5, scale: 2 }).notNull(),
+    alternativesPercentage: numeric('alternatives_percentage', { precision: 5, scale: 2 }).default('0'),
+    realEstatePercentage: numeric('real_estate_percentage', { precision: 5, scale: 2 }).default('0'),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }).default('80'),
+    expectedReturn: numeric('expected_return', { precision: 5, scale: 2 }).notNull(),
+    expectedVolatility: numeric('expected_volatility', { precision: 5, scale: 2 }).notNull(),
+    sharpeRatio: numeric('sharpe_ratio', { precision: 5, scale: 2 }),
+    status: text('status').default('active'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_allocation_recommendations_user_id').on(table.userId),
+    vaultIdx: index('idx_allocation_recommendations_vault_id').on(table.vaultId),
+    statusIdx: index('idx_allocation_recommendations_status').on(table.status),
+}));
+
+// Allocation Targets - Goal-specific allocation targets
+export const allocationTargets = pgTable('allocation_targets', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    goalId: uuid('goal_id'),
+    equityPercentage: numeric('equity_percentage', { precision: 5, scale: 2 }).notNull(),
+    bondPercentage: numeric('bond_percentage', { precision: 5, scale: 2 }).notNull(),
+    cashPercentage: numeric('cash_percentage', { precision: 5, scale: 2 }).notNull(),
+    alternativesPercentage: numeric('alternatives_percentage', { precision: 5, scale: 2 }).default('0'),
+    targetDate: timestamp('target_date').notNull(),
+    expectedReturn: numeric('expected_return', { precision: 5, scale: 2 }).notNull(),
+    fundingGap: numeric('funding_gap', { precision: 15, scale: 2 }),
+    probability: numeric('probability', { precision: 5, scale: 2 }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_allocation_targets_user_id').on(table.userId),
+    goalIdx: index('idx_allocation_targets_goal_id').on(table.goalId),
+    dateIdx: index('idx_allocation_targets_target_date').on(table.targetDate),
+}));
+
+// Glide Paths - Automatic allocation adjustments over time
+export const glidePaths = pgTable('glide_paths', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    goalId: uuid('goal_id'),
+    startAllocation: jsonb('start_allocation').notNull(),
+    endAllocation: jsonb('end_allocation').notNull(),
+    startDate: timestamp('start_date').notNull(),
+    targetDate: timestamp('target_date').notNull(),
+    adjustmentFrequency: text('adjustment_frequency').default('yearly'),
+    currentAllocation: jsonb('current_allocation').notNull(),
+    nextAdjustmentDate: timestamp('next_adjustment_date'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_glide_paths_user_id').on(table.userId),
+    goalIdx: index('idx_glide_paths_goal_id').on(table.goalId),
+    adjustIdx: index('idx_glide_paths_next_adjustment').on(table.nextAdjustmentDate),
+}));
+
+// Scenario Projections - Monte Carlo scenario analysis
+export const scenarioProjections = pgTable('scenario_projections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    scenarioType: text('scenario_type').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    projections: jsonb('projections').notNull(),
+    successProbability: numeric('success_probability', { precision: 5, scale: 2 }),
+    endingValue: numeric('ending_value', { precision: 15, scale: 2 }),
+    volatility: numeric('volatility', { precision: 5, scale: 2 }),
+    maxDrawdown: numeric('max_drawdown', { precision: 5, scale: 2 }),
+    monteCarloIterations: integer('monte_carlo_iterations').default(1000),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_scenario_projections_user_id').on(table.userId),
+    typeIdx: index('idx_scenario_projections_scenario_type').on(table.scenarioType),
+}));
+
+// Asset Class Allocations - Granular asset class tracking
+export const assetClassAllocations = pgTable('asset_class_allocations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    allocationId: uuid('allocation_id').references(() => allocationRecommendations.id, { onDelete: 'cascade' }),
+    assetClass: text('asset_class').notNull(),
+    percentage: numeric('percentage', { precision: 5, scale: 2 }).notNull(),
+    targetValue: numeric('target_value', { precision: 15, scale: 2 }),
+    currentValue: numeric('current_value', { precision: 15, scale: 2 }),
+    variance: numeric('variance', { precision: 5, scale: 2 }),
+    drift: numeric('drift', { precision: 5, scale: 2 }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_asset_class_allocations_user_id').on(table.userId),
+    allocIdx: index('idx_asset_class_allocations_allocation_id').on(table.allocationId),
+}));
+
+// Peer Benchmarks - Allocation benchmarking data
+export const peerBenchmarks = pgTable('peer_benchmarks', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    profileGroup: text('profile_group').notNull(),
+    assetClass: text('asset_class').notNull(),
+    medianAllocation: numeric('median_allocation', { precision: 5, scale: 2 }).notNull(),
+    p25Allocation: numeric('p25_allocation', { precision: 5, scale: 2 }),
+    p75Allocation: numeric('p75_allocation', { precision: 5, scale: 2 }),
+    count: integer('count').default(0),
+    lastUpdated: timestamp('last_updated').defaultNow(),
+});
+
+// Allocation Change History - Track allocation modifications
+export const allocationChangeHistory = pgTable('allocation_change_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    allocationId: uuid('allocation_id').references(() => allocationRecommendations.id, { onDelete: 'cascade' }),
+    previousAllocation: jsonb('previous_allocation'),
+    newAllocation: jsonb('new_allocation').notNull(),
+    reason: text('reason'),
+    changedDate: timestamp('changed_date').defaultNow(),
+    changedBy: uuid('changed_by').references(() => users.id),
+}, (table) => ({
+    userIdx: index('idx_allocation_change_history_user_id').on(table.userId),
+    allocIdx: index('idx_allocation_change_history_allocation_id').on(table.allocationId),
+}));
+
+// ============================================================================
 // MULTI-CURRENCY PORTFOLIO MANAGER (#297)
 // ============================================================================
 
@@ -10803,6 +10962,94 @@ export const performanceReportsRelations = relations(performanceReports, ({ one 
     vault: one(vaults, {
         fields: [performanceReports.vaultId],
         references: [vaults.id],
+    }),
+}));
+
+// Asset Allocation Relations
+export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
+    user: one(users, {
+        fields: [userProfiles.userId],
+        references: [users.id],
+    }),
+}));
+
+export const allocationRecommendationsRelations = relations(allocationRecommendations, ({ one, many }) => ({
+    user: one(users, {
+        fields: [allocationRecommendations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [allocationRecommendations.vaultId],
+        references: [vaults.id],
+    }),
+    assetClasses: many(assetClassAllocations),
+    changeHistory: many(allocationChangeHistory),
+}));
+
+export const allocationTargetsRelations = relations(allocationTargets, ({ one }) => ({
+    user: one(users, {
+        fields: [allocationTargets.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [allocationTargets.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const glidePathsRelations = relations(glidePaths, ({ one }) => ({
+    user: one(users, {
+        fields: [glidePaths.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [glidePaths.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const scenarioProjectionsRelations = relations(scenarioProjections, ({ one }) => ({
+    user: one(users, {
+        fields: [scenarioProjections.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [scenarioProjections.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const assetClassAllocationsRelations = relations(assetClassAllocations, ({ one }) => ({
+    user: one(users, {
+        fields: [assetClassAllocations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [assetClassAllocations.vaultId],
+        references: [vaults.id],
+    }),
+    allocation: one(allocationRecommendations, {
+        fields: [assetClassAllocations.allocationId],
+        references: [allocationRecommendations.id],
+    }),
+}));
+
+export const allocationChangeHistoryRelations = relations(allocationChangeHistory, ({ one }) => ({
+    user: one(users, {
+        fields: [allocationChangeHistory.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [allocationChangeHistory.vaultId],
+        references: [vaults.id],
+    }),
+    allocation: one(allocationRecommendations, {
+        fields: [allocationChangeHistory.allocationId],
+        references: [allocationRecommendations.id],
+    }),
+    changedByUser: one(users, {
+        fields: [allocationChangeHistory.changedBy],
+        references: [users.id],
     }),
 }));
 
