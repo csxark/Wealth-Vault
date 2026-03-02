@@ -1,6 +1,7 @@
 import db from '../config/db.js';
 import { and, eq, gte, lte, desc } from 'drizzle-orm';
 import { goals, users, expenses } from '../db/schema.js';
+import goalDependencyService from './goalDependencyService.js';
 
 class SmartSavingsAllocationService {
   _daysBetween(from, to) {
@@ -167,9 +168,25 @@ class SmartSavingsAllocationService {
     const strategy = options.strategy || 'balanced';
     const providedSurplus = options.monthlySurplus != null ? this._toNumber(options.monthlySurplus, 0) : null;
     const monthlySurplus = providedSurplus != null ? providedSurplus : await this.getMonthlySurplus(userId);
+    const respectDependencies = options.respectDependencies !== false; // Default true
 
     const prioritized = await this.getPrioritizedGoals(userId);
-    const goalsList = prioritized.priorities;
+    let goalsList = prioritized.priorities;
+
+    // Filter locked goals if dependency enforcement is enabled
+    let dependencyStatus = null;
+    if (respectDependencies) {
+      const activeGoals = await this._activeGoals(userId);
+      const allStatuses = await Promise.all(
+        activeGoals.map((goal) => goalDependencyService.evaluateGoalDependencies(userId, goal))
+      );
+      dependencyStatus = allStatuses;
+      const statusById = new Map(allStatuses.map((s) => [s.goal.id, s]));
+      goalsList = goalsList.filter((goal) => {
+        const status = statusById.get(goal.goalId);
+        return status?.isUnlocked !== false;
+      });
+    }
 
     if (!goalsList.length || monthlySurplus <= 0) {
       return {
@@ -178,6 +195,7 @@ class SmartSavingsAllocationService {
         totalAllocated: 0,
         unallocated: monthlySurplus,
         allocations: [],
+        dependencyStatus,
       };
     }
 
@@ -212,6 +230,28 @@ class SmartSavingsAllocationService {
       totalAllocated: Number(totalAllocated.toFixed(2)),
       unallocated,
       allocations: rawAllocations,
+      dependencyStatus,
+    };
+  }
+
+  async recommendDependencyAwareAllocation(userId, options = {}) {
+    const allocationResult = await this.recommendAutoAllocation(userId, {
+      ...options,
+      respectDependencies: true,
+    });
+
+    const dependencyOverview = await goalDependencyService.getDependencyStatusForAllGoals(userId);
+
+    return {
+      ...allocationResult,
+      dependencyEnforcement: {
+        enabled: true,
+        totalGoals: dependencyOverview.totalGoals,
+        unlockedGoals: dependencyOverview.unlockedGoals,
+        lockedGoals: dependencyOverview.lockedGoals,
+        fundingSequence: dependencyOverview.fundingSequence,
+      },
+      lockedGoals: dependencyOverview.goals.filter((g) => !g.isUnlocked),
     };
   }
 

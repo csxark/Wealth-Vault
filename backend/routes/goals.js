@@ -10,6 +10,7 @@ import { FXConversionService } from "../services/fxConversionService.js";
 import smartSavingsAllocationService from "../services/smartSavingsAllocationService.js";
 import goalsDashboardService from "../services/goalsDashboardService.js";
 import goalProgressTrackingService from "../services/goalProgressTrackingService.js";
+import goalDependencyService from "../services/goalDependencyService.js";
 
 const router = express.Router();
 const recurringPaymentService = new RecurringPaymentService();
@@ -1110,6 +1111,34 @@ router.get("/smart/reminders", protect, async (req, res) => {
   } catch (error) {
     console.error("Smart reminders error:", error);
     res.status(500).json({ success: false, message: error.message || "Failed to get reminders" });
+  }
+});
+
+// ============================================================
+// GOAL DEPENDENCY PLANNER ENDPOINTS (Issue #708)
+// ============================================================
+
+router.get("/smart/dependencies", protect, async (req, res) => {
+  try {
+    const data = await goalDependencyService.getDependencyStatusForAllGoals(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart dependencies error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get dependency status" });
+  }
+});
+
+router.post("/smart/allocation-with-dependencies", protect, async (req, res) => {
+  try {
+    const { monthlySurplus, strategy = "balanced" } = req.body || {};
+    const data = await smartSavingsAllocationService.recommendDependencyAwareAllocation(req.user.id, {
+      monthlySurplus,
+      strategy,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart allocation with dependencies error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to generate dependency-aware allocation" });
   }
 });
 
