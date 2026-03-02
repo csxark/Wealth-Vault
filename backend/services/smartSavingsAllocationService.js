@@ -1,6 +1,6 @@
 import db from '../config/db.js';
-import { and, eq } from 'drizzle-orm';
-import { goals, users } from '../db/schema.js';
+import { and, eq, gte, lte, desc } from 'drizzle-orm';
+import { goals, users, expenses } from '../db/schema.js';
 
 class SmartSavingsAllocationService {
   _daysBetween(from, to) {
@@ -11,6 +11,36 @@ class SmartSavingsAllocationService {
   _toNumber(value, fallback = 0) {
     const num = Number(value);
     return Number.isFinite(num) ? num : fallback;
+  }
+
+  _addMonths(date, months) {
+    const next = new Date(date);
+    next.setMonth(next.getMonth() + months);
+    return next;
+  }
+
+  _estimateCompletion(goal, monthlyContribution) {
+    const remaining = Math.max(0, this._toNumber(goal.targetAmount, 0) - this._toNumber(goal.currentAmount, 0));
+    const pace = Math.max(0, this._toNumber(monthlyContribution, 0));
+    if (remaining <= 0) {
+      return {
+        monthsToComplete: 0,
+        estimatedCompletionDate: new Date().toISOString(),
+      };
+    }
+
+    if (pace <= 0) {
+      return {
+        monthsToComplete: null,
+        estimatedCompletionDate: null,
+      };
+    }
+
+    const monthsToComplete = Math.ceil(remaining / pace);
+    return {
+      monthsToComplete,
+      estimatedCompletionDate: this._addMonths(new Date(), monthsToComplete).toISOString(),
+    };
   }
 
   _priorityForGoal(goal) {
@@ -88,8 +118,49 @@ class SmartSavingsAllocationService {
   async getMonthlySurplus(userId) {
     const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
     const income = this._toNumber(user?.monthlyIncome, 0);
-    const expenses = this._toNumber(user?.monthlyExpenses, 0);
-    return Math.max(0, income - expenses);
+    const expenseValue = this._toNumber(user?.monthlyExpenses ?? user?.monthlyBudget, 0);
+    return Math.max(0, income - expenseValue);
+  }
+
+  async getLatestCashFlowContext(userId) {
+    const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+    const monthlyIncome = this._toNumber(user?.monthlyIncome, 0);
+    const profileMonthlyExpenses = this._toNumber(user?.monthlyExpenses ?? user?.monthlyBudget, 0);
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const last30Start = new Date(now);
+    last30Start.setDate(last30Start.getDate() - 30);
+
+    const [currentMonthExpensesRows, last30DaysExpensesRows] = await Promise.all([
+      db
+        .select({ amount: expenses.amount })
+        .from(expenses)
+        .where(and(eq(expenses.userId, userId), gte(expenses.date, monthStart), lte(expenses.date, now))),
+      db
+        .select({ amount: expenses.amount })
+        .from(expenses)
+        .where(and(eq(expenses.userId, userId), gte(expenses.date, last30Start), lte(expenses.date, now)))
+        .orderBy(desc(expenses.date)),
+    ]);
+
+    const currentMonthExpenses = currentMonthExpensesRows.reduce((sum, row) => sum + this._toNumber(row.amount), 0);
+    const last30DaysExpenses = last30DaysExpensesRows.reduce((sum, row) => sum + this._toNumber(row.amount), 0);
+
+    const latestMonthlyExpenses = Math.max(profileMonthlyExpenses, last30DaysExpenses);
+    const baselineSurplus = Math.max(0, monthlyIncome - profileMonthlyExpenses);
+    const latestMonthlySurplus = Math.max(0, monthlyIncome - latestMonthlyExpenses);
+
+    return {
+      monthlyIncome: Number(monthlyIncome.toFixed(2)),
+      profileMonthlyExpenses: Number(profileMonthlyExpenses.toFixed(2)),
+      currentMonthExpenses: Number(currentMonthExpenses.toFixed(2)),
+      last30DaysExpenses: Number(last30DaysExpenses.toFixed(2)),
+      latestMonthlyExpenses: Number(latestMonthlyExpenses.toFixed(2)),
+      baselineMonthlySurplus: Number(baselineSurplus.toFixed(2)),
+      latestMonthlySurplus: Number(latestMonthlySurplus.toFixed(2)),
+      surplusDelta: Number((latestMonthlySurplus - baselineSurplus).toFixed(2)),
+    };
   }
 
   async recommendAutoAllocation(userId, options = {}) {
@@ -215,6 +286,117 @@ class SmartSavingsAllocationService {
         monthlySurplusChange: Number((scenarioSurplus - monthlySurplus).toFixed(2)),
         allocatedChange: Number((scenario.totalAllocated - base.totalAllocated).toFixed(2)),
       },
+    };
+  }
+
+  async suggestContributionAutoAdjustments(userId, options = {}) {
+    const strategy = options.strategy || 'balanced';
+    const cashflow = await this.getLatestCashFlowContext(userId);
+
+    const [prioritized, beforeAllocation, afterAllocation] = await Promise.all([
+      this.getPrioritizedGoals(userId),
+      this.recommendAutoAllocation(userId, {
+        strategy,
+        monthlySurplus: cashflow.baselineMonthlySurplus,
+      }),
+      this.recommendAutoAllocation(userId, {
+        strategy,
+        monthlySurplus: cashflow.latestMonthlySurplus,
+      }),
+    ]);
+
+    const priorityByGoal = new Map(prioritized.priorities.map((p) => [p.goalId, p]));
+    const beforeByGoal = new Map((beforeAllocation.allocations || []).map((a) => [a.goalId, a]));
+    const afterByGoal = new Map((afterAllocation.allocations || []).map((a) => [a.goalId, a]));
+
+    const adjustments = prioritized.priorities.map((goalPriority) => {
+      const before = beforeByGoal.get(goalPriority.goalId);
+      const after = afterByGoal.get(goalPriority.goalId);
+
+      const beforeContribution = this._toNumber(before?.recommendedAmount, 0);
+      const afterContribution = this._toNumber(after?.recommendedAmount, 0);
+      const contributionDelta = Number((afterContribution - beforeContribution).toFixed(2));
+
+      const beforeProjection = this._estimateCompletion(goalPriority, beforeContribution);
+      const afterProjection = this._estimateCompletion(goalPriority, afterContribution);
+
+      const beforeMonths = beforeProjection.monthsToComplete;
+      const afterMonths = afterProjection.monthsToComplete;
+      const completionMonthsDelta =
+        beforeMonths == null || afterMonths == null
+          ? null
+          : beforeMonths - afterMonths;
+
+      const rationale = [];
+      if (cashflow.surplusDelta < 0) {
+        rationale.push(`Latest cashflow shows reduced available surplus by ${Math.abs(cashflow.surplusDelta)}`);
+      } else if (cashflow.surplusDelta > 0) {
+        rationale.push(`Latest cashflow shows increased available surplus by ${cashflow.surplusDelta}`);
+      } else {
+        rationale.push('Latest cashflow is stable versus baseline');
+      }
+
+      if (goalPriority.priorityScore >= 75) {
+        rationale.push('Goal has high priority score and receives protected allocation weight');
+      } else if (goalPriority.priorityScore >= 55) {
+        rationale.push('Goal has medium priority score and receives balanced allocation weight');
+      } else {
+        rationale.push('Goal has lower priority score and receives residual allocation weight');
+      }
+
+      if (goalPriority.daysToDeadline <= 90) {
+        rationale.push(`Deadline pressure detected (${goalPriority.daysToDeadline} days remaining)`);
+      }
+
+      return {
+        goalId: goalPriority.goalId,
+        title: goalPriority.title,
+        priorityScore: goalPriority.priorityScore,
+        daysToDeadline: goalPriority.daysToDeadline,
+        beforeProjection: {
+          monthlyContribution: Number(beforeContribution.toFixed(2)),
+          monthsToComplete: beforeProjection.monthsToComplete,
+          estimatedCompletionDate: beforeProjection.estimatedCompletionDate,
+        },
+        afterProjection: {
+          monthlyContribution: Number(afterContribution.toFixed(2)),
+          monthsToComplete: afterProjection.monthsToComplete,
+          estimatedCompletionDate: afterProjection.estimatedCompletionDate,
+        },
+        adjustment: {
+          monthlyContributionDelta: contributionDelta,
+          completionMonthsDelta,
+          impact: completionMonthsDelta == null
+            ? 'unknown'
+            : completionMonthsDelta > 0
+              ? 'faster'
+              : completionMonthsDelta < 0
+                ? 'slower'
+                : 'unchanged',
+        },
+        rationale,
+      };
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      strategy,
+      cashflow,
+      summary: {
+        totalGoals: adjustments.length,
+        improvedGoals: adjustments.filter((item) => (item.adjustment.completionMonthsDelta || 0) > 0).length,
+        reducedContributions: adjustments.filter((item) => item.adjustment.monthlyContributionDelta < 0).length,
+        increasedContributions: adjustments.filter((item) => item.adjustment.monthlyContributionDelta > 0).length,
+      },
+      baseline: {
+        monthlySurplus: beforeAllocation.monthlySurplus,
+        totalAllocated: beforeAllocation.totalAllocated,
+      },
+      recalculated: {
+        monthlySurplus: afterAllocation.monthlySurplus,
+        totalAllocated: afterAllocation.totalAllocated,
+      },
+      adjustments,
     };
   }
 
