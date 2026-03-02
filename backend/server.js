@@ -161,6 +161,8 @@ import optionsRollEvaluator from "./jobs/optionsRollEvaluator.js";
 import volatilitySyncJob from "./jobs/volatilitySyncJob.js";
 import passionAssetsRoutes from "./routes/passionAssets.js";
 import passionAppraisalSyncJob from "./jobs/passionAppraisalSync.js";
+import philanthropyRoutes from "./routes/philanthropy.js";
+import crtPayoutJob from "./jobs/crtPayoutJob.js";
 
 // Event Listeners
 import { initializeBudgetListeners } from "./listeners/budgetListeners.js";
@@ -229,7 +231,7 @@ const startServer = async () => {
     try {
       console.log('🔄 Connecting to Redis...');
       await connectRedis(false); // Don't block server startup on Redis failure
-      
+
       if (isRedisAvailable()) {
         console.log('✅ Redis connected successfully - distributed rate limiting enabled');
       } else {
@@ -395,9 +397,9 @@ const startServer = async () => {
         next();
       }
     },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowedHeaders: [
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      allowedHeaders: [
       "Content-Type",
       "Authorization",
       "X-Requested-With",
@@ -406,9 +408,9 @@ const startServer = async () => {
       "Access-Control-Request-Method",
       "Access-Control-Request-Headers",
     ],
-    exposedHeaders: ["Content-Range", "X-Content-Range", "Authorization"],
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
+      exposedHeaders: ["Content-Range", "X-Content-Range", "Authorization"],
+      preflightContinue: false,
+      optionsSuccessStatus: 204,
   }),
 );
 app.use(morgan("combined"));
@@ -541,6 +543,7 @@ app.use("/api/dynasty-trusts", userLimiter, dynastyTrustsRoutes);
 app.use("/api/spv", userLimiter, spvOwnershipRoutes);
 app.use("/api/derivatives", userLimiter, derivativesRoutes);
 app.use("/api/passion-assets", userLimiter, passionAssetsRoutes);
+app.use("/api/philanthropy", userLimiter, philanthropyRoutes);
 
 
 app.use("/api/health", healthRoutes);
@@ -676,6 +679,7 @@ if (process.env.NODE_ENV !== 'test') {
     optionsRollEvaluator.start();
     volatilitySyncJob.start();
     passionAppraisalSyncJob.start();
+    crtPayoutJob.start();
     scheduleNightlySimulations();
 
     // Add debt services to app.locals for middleware/route access
@@ -742,83 +746,35 @@ if (process.env.NODE_ENV !== 'test') {
             circuitBreaker: redisState.circuitBreaker,
             isConnected: redisState.isConnected
           }
-        }
-      });
-    });
+        };
 
-    // 404 handler for undefined routes (must be before error handler)
-    app.use(notFound);
+        // Graceful shutdown
+        const shutdown = async () => {
+          console.log('\n🛑 Shutting down gracefully...');
 
-    // Add error logging middleware
-    app.use(errorLogger);
+          try {
+            // Stop background jobs
+            outboxDispatcher.stop();
+            certificateRotation.stop();
 
-    // DB routing error handler (must be before general error handler)
-    app.use(dbRoutingErrorHandler());
+            // Disconnect from Redis
+            const { disconnectRedis } = await import('./config/redis.js');
+            await disconnectRedis();
 
-    // Centralized error handling middleware (must be last)
-    app.use(errorHandler);
+            console.log('✅ Graceful shutdown complete');
+            process.exit(0);
+          } catch (error) {
+            console.error('❌ Error during shutdown:', error);
+            process.exit(1);
+          }
+        };
 
-    const PORT = process.env.PORT || 5000;
+        process.on('SIGTERM', shutdown);
+        process.on('SIGINT', shutdown);
 
-    app.listen(PORT, () => {
-      logInfo('Server started successfully', {
-        port: PORT,
-        environment: process.env.NODE_ENV || 'development',
-        frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
-        redisAvailable: isRedisAvailable()
-      });
-      
-      console.log(`\n🚀 Server running on port ${PORT}`);
-      console.log(
-        `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`
-      );
-      console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
-      console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
-      console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
-      
-      const redisState = getConnectionState();
-      if (redisState.isConnected) {
-        console.log('✅ Redis: Connected (distributed rate limiting active)');
-      } else {
-        console.log('⚠️  Redis: Not connected (using memory-based rate limiting)');
-      }
-      
-      console.log('\n✨ Server initialization complete!');
-    });
+        // Start the server
+        startServer();
 
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
-};
+        precomputePathsJob.start();
 
-// Graceful shutdown
-const shutdown = async () => {
-  console.log('\n🛑 Shutting down gracefully...');
-  
-  try {
-    // Stop background jobs
-    outboxDispatcher.stop();
-    certificateRotation.stop();
-    
-    // Disconnect from Redis
-    const { disconnectRedis } = await import('./config/redis.js');
-    await disconnectRedis();
-    
-    console.log('✅ Graceful shutdown complete');
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Error during shutdown:', error);
-    process.exit(1);
-  }
-};
-
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
-
-// Start the server
-startServer();
-
-precomputePathsJob.start();
-
-export default app;
+        export default app;
