@@ -69,6 +69,7 @@ import payrollRoutes from "./routes/payroll.js";
 import vaultConsolidationRoutes from "./routes/vault-consolidation.js";
 import recurringPaymentsRoutes from "./routes/recurring-payments.js";
 import categorizationRoutes from "./routes/categorization.js";
+import smartCategorizationRoutes from "./routes/smartCategorization.js";
 import currencyPortfolioRoutes from "./routes/currency-portfolio.js";
 import budgetRoutes from "./routes/budgets.js";
 import smartAlerts from "./routes/smartAlerts.js";
@@ -479,6 +480,7 @@ app.use("/api/users", userLimiter, userRoutes);
 app.use("/api/expenses", userLimiter, securityGuard, expenseRoutes);
 app.use("/api/goals", userLimiter, goalRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
+app.use("/api/smart-categorization", userLimiter, smartCategorizationRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
 app.use("/api/interlock", userLimiter, interlockRoutes);
 // Apply presence tracker to all protected routes

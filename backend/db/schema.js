@@ -2346,12 +2346,182 @@ export const categorizationPatterns = pgTable('categorization_patterns', {
     confidence: doublePrecision('confidence').default(0.0),
     occurrenceCount: integer('occurrence_count').default(1),
     isSystemPattern: boolean('is_system_pattern').default(false),
+    patternType: text('pattern_type').default('merchant'), // merchant, keyword, amount, hybrid
+    falsePositiveCount: integer('false_positive_count').default(0),
+    lastMatchedAt: timestamp('last_matched_at'),
+    enabled: boolean('enabled').default(true),
+    expiresAt: timestamp('expires_at'),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
     userIdx: index('idx_cat_patterns_user').on(table.userId),
     patternIdx: index('idx_cat_patterns_text').on(table.pattern),
+}));
+
+// ============================================================================
+// ISSUE #639: SMART EXPENSE CATEGORIZATION & MERCHANT RECOGNITION
+// ============================================================================
+
+// Merchant Ratings - User ratings and feedback for merchants
+export const merchantRatings = pgTable('merchant_ratings', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id').references(() => merchants.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    rating: numeric('rating', { precision: 2, scale: 1 }).notNull(),
+    review: text('review'),
+    feedbackType: text('feedback_type'), // positive, negative, neutral
+    helpfulCount: integer('helpful_count').default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_merchant_ratings_user').on(table.userId),
+    merchantIdx: index('idx_merchant_ratings_merchant').on(table.merchantId),
+}));
+
+// Expense Corrections - Track user corrections for training loop
+export const expenseCorrections = pgTable('expense_corrections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    originalCategoryId: uuid('original_category_id').references(() => categories.id, { onDelete: 'set null' }),
+    correctedCategoryId: uuid('corrected_category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    confidenceBefore: numeric('confidence_before', { precision: 5, scale: 4 }),
+    confidenceAfter: numeric('confidence_after', { precision: 5, scale: 4 }),
+    reason: text('reason'), // user_correction, ai_suggestion, rule_applied
+    feedback: text('feedback'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_expense_corrections_user').on(table.userId),
+    expenseIdx: index('idx_expense_corrections_expense').on(table.expenseId),
+    dateIdx: index('idx_expense_corrections_date').on(table.createdAt),
+}));
+
+// OCR Results - Store OCR extraction results from receipts
+export const ocrResults = pgTable('ocr_results', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+    receiptFileUrl: text('receipt_file_url').notNull(),
+    extractedMerchant: text('extracted_merchant'),
+    extractedAmount: numeric('extracted_amount', { precision: 12, scale: 2 }),
+    extractedDate: timestamp('extracted_date'),
+    extractedDescription: text('extracted_description'),
+    ocrConfidence: numeric('ocr_confidence', { precision: 5, scale: 4 }),
+    extractionRaw: jsonb('extraction_raw'),
+    validationStatus: text('validation_status').default('pending'), // pending, valid, invalid, requires_review
+    validationNotes: text('validation_notes'),
+    processedBy: text('processed_by').default('tesseract'),
+    processingTimeMs: integer('processing_time_ms'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    expenseIdx: index('idx_ocr_results_expense').on(table.expenseId),
+    statusIdx: index('idx_ocr_results_status').on(table.validationStatus),
+    dateIdx: index('idx_ocr_results_date').on(table.createdAt),
+}));
+
+// Category Suggestions - Log categorization suggestions
+export const categorySuggestions = pgTable('category_suggestions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    suggestedCategoryId: uuid('suggested_category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 4 }).notNull(),
+    suggestionSource: text('suggestion_source').notNull(), // merchant_pattern, ml_model, rule_based, historical
+    alternativePredictions: jsonb('alternative_predictions'),
+    wasAccepted: boolean('was_accepted'),
+    acceptedAt: timestamp('accepted_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_category_suggestions_user').on(table.userId),
+    expenseIdx: index('idx_category_suggestions_expense').on(table.expenseId),
+    confidenceIdx: index('idx_category_suggestions_confidence').on(table.confidenceScore),
+}));
+
+// Merchant Logos - Logo records for merchants
+export const merchantLogos = pgTable('merchant_logos', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id').references(() => merchants.id, { onDelete: 'cascade' }).notNull(),
+    logoUrl: text('logo_url').notNull(),
+    logoUrlHd: text('logo_url_hd'),
+    colorPrimary: text('color_primary'),
+    colorSecondary: text('color_secondary'),
+    logoSource: text('logo_source').default('user'), // user, system, external_api
+    isVerified: boolean('is_verified').default(false),
+    isPrimary: boolean('is_primary').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    merchantIdx: index('idx_merchant_logos_merchant').on(table.merchantId),
+}));
+
+// Receipt Metadata - Detailed receipt information
+export const receiptMetadata = pgTable('receipt_metadata', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    ocrResultId: uuid('ocr_result_id').references(() => ocrResults.id, { onDelete: 'cascade' }).notNull(),
+    expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'set null' }),
+    fileName: text('file_name'),
+    fileSize: integer('file_size'),
+    fileType: text('file_type'), // pdf, jpg, png, etc.
+    imageWidth: integer('image_width'),
+    imageHeight: integer('image_height'),
+    imageQuality: text('image_quality'), // poor, fair, good, excellent
+    detectedLanguage: text('detected_language').default('en'),
+    hasQrCode: boolean('has_qr_code').default(false),
+    qrCodeValue: text('qr_code_value'),
+    storeLocation: text('store_location'),
+    paymentMethodDetected: text('payment_method_detected'),
+    currencyDetected: text('currency_detected'),
+    itemsDetected: jsonb('items_detected'),
+    taxAmount: numeric('tax_amount', { precision: 12, scale: 2 }),
+    totalAmount: numeric('total_amount', { precision: 12, scale: 2 }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    ocrIdx: index('idx_receipt_metadata_ocr').on(table.ocrResultId),
+    expenseIdx: index('idx_receipt_metadata_expense').on(table.expenseId),
+}));
+
+// Training Data Snapshots - ML model improvement tracking
+export const categorizationTrainingSnapshots = pgTable('categorization_training_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: timestamp('snapshot_date').notNull(),
+    totalExpensesUsed: integer('total_expenses_used'),
+    totalCorrections: integer('total_corrections'),
+    modelAccuracy: numeric('model_accuracy', { precision: 5, scale: 4 }),
+    modelPrecision: numeric('model_precision', { precision: 5, scale: 4 }),
+    modelRecall: numeric('model_recall', { precision: 5, scale: 4 }),
+    f1Score: numeric('f1_score', { precision: 5, scale: 4 }),
+    topCategories: jsonb('top_categories'),
+    improvementsMade: text('improvements_made'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_training_snapshots_user').on(table.userId),
+    dateIdx: index('idx_training_snapshots_date').on(table.snapshotDate),
+}));
+
+// Merchant Frequency Patterns - Recurring transaction patterns
+export const merchantFrequencyPatterns = pgTable('merchant_frequency_patterns', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id').references(() => merchants.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    frequencyType: text('frequency_type').notNull(), // daily, weekly, biweekly, monthly, quarterly, yearly
+    averageDaysBetween: numeric('average_days_between', { precision: 8, scale: 2 }),
+    averageAmount: numeric('average_amount', { precision: 12, scale: 2 }),
+    lastOccurrenceDate: timestamp('last_occurrence_date'),
+    nextPredictedDate: timestamp('next_predicted_date'),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 4 }),
+    occurrenceCount: integer('occurrence_count').default(1),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_merchant_frequency_user').on(table.userId),
+    merchantIdx: index('idx_merchant_frequency_merchant').on(table.merchantId),
+    typeIdx: index('idx_merchant_frequency_type').on(table.frequencyType),
 }));
 
 // ============================================================================
@@ -5583,6 +5753,98 @@ export const alertDeduplicationRelations = relations(alertDeduplication, ({ one 
     budgetAlert: one(budgetAlerts, {
         fields: [alertDeduplication.budgetAlertId],
         references: [budgetAlerts.id],
+    }),
+}));
+
+// ============================================================================
+// RELATIONS FOR ISSUE #639: SMART EXPENSE CATEGORIZATION & MERCHANT RECOGNITION
+// ============================================================================
+
+export const merchantRatingsRelations = relations(merchantRatings, ({ one }) => ({
+    merchant: one(merchants, {
+        fields: [merchantRatings.merchantId],
+        references: [merchants.id],
+    }),
+    user: one(users, {
+        fields: [merchantRatings.userId],
+        references: [users.id],
+    }),
+}));
+
+export const expenseCorrectionsRelations = relations(expenseCorrections, ({ one }) => ({
+    expense: one(expenses, {
+        fields: [expenseCorrections.expenseId],
+        references: [expenses.id],
+    }),
+    user: one(users, {
+        fields: [expenseCorrections.userId],
+        references: [users.id],
+    }),
+    originalCategory: one(categories, {
+        fields: [expenseCorrections.originalCategoryId],
+        references: [categories.id],
+    }),
+    correctedCategory: one(categories, {
+        fields: [expenseCorrections.correctedCategoryId],
+        references: [categories.id],
+    }),
+}));
+
+export const ocrResultsRelations = relations(ocrResults, ({ one }) => ({
+    expense: one(expenses, {
+        fields: [ocrResults.expenseId],
+        references: [expenses.id],
+    }),
+}));
+
+export const categorySuggestionsRelations = relations(categorySuggestions, ({ one }) => ({
+    expense: one(expenses, {
+        fields: [categorySuggestions.expenseId],
+        references: [expenses.id],
+    }),
+    user: one(users, {
+        fields: [categorySuggestions.userId],
+        references: [users.id],
+    }),
+    suggestedCategory: one(categories, {
+        fields: [categorySuggestions.suggestedCategoryId],
+        references: [categories.id],
+    }),
+}));
+
+export const merchantLogosRelations = relations(merchantLogos, ({ one }) => ({
+    merchant: one(merchants, {
+        fields: [merchantLogos.merchantId],
+        references: [merchants.id],
+    }),
+}));
+
+export const receiptMetadataRelations = relations(receiptMetadata, ({ one }) => ({
+    ocrResult: one(ocrResults, {
+        fields: [receiptMetadata.ocrResultId],
+        references: [ocrResults.id],
+    }),
+    expense: one(expenses, {
+        fields: [receiptMetadata.expenseId],
+        references: [expenses.id],
+    }),
+}));
+
+export const categorizationTrainingSnapshotsRelations = relations(categorizationTrainingSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [categorizationTrainingSnapshots.userId],
+        references: [users.id],
+    }),
+}));
+
+export const merchantFrequencyPatternsRelations = relations(merchantFrequencyPatterns, ({ one }) => ({
+    merchant: one(merchants, {
+        fields: [merchantFrequencyPatterns.merchantId],
+        references: [merchants.id],
+    }),
+    user: one(users, {
+        fields: [merchantFrequencyPatterns.userId],
+        references: [users.id],
     }),
 }));
 
