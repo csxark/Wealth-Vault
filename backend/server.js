@@ -712,7 +712,6 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/integrity", userLimiter, softDeleteRoutes);
     app.use("/api/milestones", userLimiter, milestoneRoutes);
     app.use("/api/forecasts", userLimiter, forecastRoutes);
-    app.use("/api/cash-flow", userLimiter, cashFlowRoutes);
     app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
     app.use("/api/anomalies", userLimiter, anomalyRoutes);
     app.use("/api/log-snapshots", userLimiter, logSnapshotsRoutes);
