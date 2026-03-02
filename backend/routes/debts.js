@@ -22,6 +22,8 @@ import { signalAutopilot } from '../middleware/triggerInterceptor.js';
 import eventBus from '../events/eventBus.js';
 import defaultPredictorAI from '../services/defaultPredictorAI.js';
 
+import debtAvalancheSnowballOptimizer from '../services/debtAvalancheSnowballOptimizer.js';
+
 const router = express.Router();
 
 /**
@@ -643,6 +645,105 @@ router.post('/project-balance', protect, asyncHandler(async (req, res) => {
     }
 
     return new ApiResponse(200, projection, 'Balance projection calculated').send(res);
+}));
+
+/**
+ * @route   POST /api/debts/optimizer/calculate
+ * @desc    Calculate optimal debt payoff strategy (Avalanche vs Snowball vs Hybrid) - Issue #738
+ */
+router.post('/optimizer/calculate', protect, [
+    body('extraMonthlyPayment').optional().isNumeric().withMessage('Extra monthly payment must be a number'),
+    body('riskTolerance').optional().isIn(['conservative', 'balanced', 'aggressive']).withMessage('Invalid risk tolerance'),
+    body('psychologicalPriority').optional().isIn(['low', 'medium', 'high', 'very_high']).withMessage('Invalid psychological priority')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json(new ApiResponse(400, { errors: errors.array() }, 'Validation failed'));
+    }
+
+    const {
+        extraMonthlyPayment = 0,
+        riskTolerance = 'balanced',
+        psychologicalPriority = 'medium'
+    } = req.body;
+
+    const result = await debtAvalancheSnowballOptimizer.calculateOptimalStrategy(
+        req.user.id,
+        parseFloat(extraMonthlyPayment),
+        { riskTolerance, psychologicalPriority }
+    );
+
+    if (!result.success) {
+        return res.status(400).json(new ApiResponse(400, null, result.message));
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Debt optimization strategies calculated successfully'
+    ).send(res);
+}));
+
+/**
+ * @route   GET /api/debts/optimizer/compare
+ * @desc    Compare specific debt payoff strategies - Issue #738
+ */
+router.get('/optimizer/compare', protect, asyncHandler(async (req, res) => {
+    const {
+        extraMonthlyPayment = 0,
+        strategies = 'avalanche,snowball,hybrid'
+    } = req.query;
+
+    const strategyNames = strategies.split(',').map(s => s.trim());
+
+    const result = await debtAvalancheSnowballOptimizer.compareStrategies(
+        req.user.id,
+        parseFloat(extraMonthlyPayment),
+        strategyNames
+    );
+
+    if (!result.success) {
+        return res.status(400).json(new ApiResponse(400, null, result.message));
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Strategy comparison generated'
+    ).send(res);
+}));
+
+/**
+ * @route   GET /api/debts/optimizer/recommendation
+ * @desc    Get personalized debt payoff strategy recommendation - Issue #738
+ */
+router.get('/optimizer/recommendation', protect, asyncHandler(async (req, res) => {
+    const {
+        extraMonthlyPayment = 0,
+        riskTolerance = 'balanced',
+        psychologicalPriority = 'medium'
+    } = req.query;
+
+    const result = await debtAvalancheSnowballOptimizer.calculateOptimalStrategy(
+        req.user.id,
+        parseFloat(extraMonthlyPayment),
+        { riskTolerance, psychologicalPriority }
+    );
+
+    if (!result.success) {
+        return res.status(400).json(new ApiResponse(400, null, result.message));
+    }
+
+    // Return only the recommendation portion
+    return new ApiResponse(
+        200,
+        {
+            recommendation: result.recommendation,
+            debts: result.debts,
+            calculatedAt: result.calculatedAt
+        },
+        'Personalized recommendation generated'
+    ).send(res);
 }));
 
 export default router;
