@@ -12945,6 +12945,98 @@ export const householdApprovalsRelations = relations(householdApprovals, ({ one 
     decidedByUser: one(users, { fields: [householdApprovals.decidedBy], references: [users.id] }),
 }));
 
+// ==========================================
+// ISSUE #716: Goal Failure Early-Warning System
+// ==========================================
+
+// Track risk score changes over time for goals
+export const goalRiskTracking = pgTable('goal_risk_tracking', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    previousRiskLevel: text('previous_risk_level'), // 'low', 'medium', 'high'
+    currentRiskLevel: text('current_risk_level').notNull(),
+    riskScore: numeric('risk_score', { precision: 5, scale: 2 }).notNull(), // 0-100
+    previousRiskScore: numeric('previous_risk_score', { precision: 5, scale: 2 }),
+    transitionType: text('transition_type'), // 'escalation', 'improvement', 'stable'
+    contributingFactors: jsonb('contributing_factors').default('{}'), // { missedContributions, deadlineProximity, paceRatio, etc. }
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    metadata: jsonb('metadata').default('{}'),
+}, (table) => ({
+    goalIdx: index('idx_goal_risk_tracking_goal_id').on(table.goalId),
+    userIdx: index('idx_goal_risk_tracking_user_id').on(table.userId),
+    riskLevelIdx: index('idx_goal_risk_tracking_risk_level').on(table.currentRiskLevel),
+    calculatedAtIdx: index('idx_goal_risk_tracking_calculated_at').on(table.calculatedAt),
+}));
+
+// Track contribution streaks and missed contributions
+export const contributionStreaks = pgTable('contribution_streaks', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    streakType: text('streak_type').notNull(), // 'active', 'missed', 'recovered'
+    currentStreak: integer('current_streak').default(0), // Days or contribution periods
+    longestStreak: integer('longest_streak').default(0),
+    lastContributionDate: timestamp('last_contribution_date'),
+    missedCount: integer('missed_count').default(0), // Consecutive missed contributions
+    expectedFrequency: text('expected_frequency').default('monthly'), // 'weekly', 'biweekly', 'monthly'
+    nextExpectedDate: timestamp('next_expected_date'),
+    isAtRisk: boolean('is_at_risk').default(false), // True if approaching threshold
+    riskThreshold: integer('risk_threshold').default(2), // Number of missed contributions before alert
+    lastUpdated: timestamp('last_updated').defaultNow(),
+    metadata: jsonb('metadata').default('{}'),
+}, (table) => ({
+    goalIdx: index('idx_contribution_streaks_goal_id').on(table.goalId),
+    userIdx: index('idx_contribution_streaks_user_id').on(table.userId),
+    atRiskIdx: index('idx_contribution_streaks_at_risk').on(table.isAtRisk),
+}));
+
+// Goal Failure Early-Warning Alerts Log
+export const goalFailureAlerts = pgTable('goal_failure_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    alertType: text('alert_type').notNull(), // 'risk_escalation', 'missed_contribution_streak', 'deadline_proximity', 'recovery_needed'
+    severity: text('severity').notNull(), // 'low', 'medium', 'high', 'critical'
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    recoveryActions: jsonb('recovery_actions').default('[]'), // Array of recommended actions
+    triggerData: jsonb('trigger_data').default('{}'), // Data that triggered the alert
+    sentVia: jsonb('sent_via').default('[]'), // ['in-app', 'push', 'email']
+    isRead: boolean('is_read').default(false),
+    readAt: timestamp('read_at'),
+    isDismissed: boolean('is_dismissed').default(false),
+    dismissedAt: timestamp('dismissed_at'),
+    actionTaken: text('action_taken'), // User's response
+    actionTakenAt: timestamp('action_taken_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    expiresAt: timestamp('expires_at'), // Alert expiry (optional)
+    metadata: jsonb('metadata').default('{}'),
+}, (table) => ({
+    goalIdx: index('idx_goal_failure_alerts_goal_id').on(table.goalId),
+    userIdx: index('idx_goal_failure_alerts_user_id').on(table.userId),
+    alertTypeIdx: index('idx_goal_failure_alerts_alert_type').on(table.alertType),
+    severityIdx: index('idx_goal_failure_alerts_severity').on(table.severity),
+    isReadIdx: index('idx_goal_failure_alerts_is_read').on(table.isRead),
+    createdAtIdx: index('idx_goal_failure_alerts_created_at').on(table.createdAt),
+}));
+
+// Relations for Goal Failure Early-Warning System
+export const goalRiskTrackingRelations = relations(goalRiskTracking, ({ one }) => ({
+    goal: one(financialGoals, { fields: [goalRiskTracking.goalId], references: [financialGoals.id] }),
+    user: one(users, { fields: [goalRiskTracking.userId], references: [users.id] }),
+}));
+
+export const contributionStreaksRelations = relations(contributionStreaks, ({ one }) => ({
+    goal: one(financialGoals, { fields: [contributionStreaks.goalId], references: [financialGoals.id] }),
+    user: one(users, { fields: [contributionStreaks.userId], references: [users.id] }),
+}));
+
+export const goalFailureAlertsRelations = relations(goalFailureAlerts, ({ one }) => ({
+    goal: one(financialGoals, { fields: [goalFailureAlerts.goalId], references: [financialGoals.id] }),
+    user: one(users, { fields: [goalFailureAlerts.userId], references: [users.id] }),
+}));
+
 // Export forecast schema tables
 export * from './schema-forecast.js';
 
