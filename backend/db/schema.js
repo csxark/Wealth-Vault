@@ -142,6 +142,25 @@ export const auditLogs = pgTable('audit_logs', {
     createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Log Snapshots - Signed, timestamped log bundles for regulatory export
+export const logSnapshots = pgTable('log_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    status: text('status').default('pending'), // pending, generating, completed, failed
+    format: text('format').default('json'), // json, csv
+    bundlePath: text('bundle_path'),
+    checksum: text('checksum'),
+    signature: text('signature'),
+    recordCount: integer('record_count').default(0),
+    fileSize: integer('file_size'),
+    filters: jsonb('filters').default({}),
+    requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    errorMessage: text('error_message'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Users Table
 export const users = pgTable('users', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -697,6 +716,17 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
     }),
     actor: one(users, {
         fields: [auditLogs.actorUserId],
+        references: [users.id],
+    }),
+}));
+
+export const logSnapshotsRelations = relations(logSnapshots, ({ one }) => ({
+    tenant: one(tenants, {
+        fields: [logSnapshots.tenantId],
+        references: [tenants.id],
+    }),
+    requester: one(users, {
+        fields: [logSnapshots.requestedBy],
         references: [users.id],
     }),
 }));

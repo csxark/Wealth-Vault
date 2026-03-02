@@ -192,6 +192,7 @@ import forecastRoutes from "./routes/forecasts.js";
 import goalSharingRoutes from "./routes/goalSharing.js";
 import anomalyRoutes from "./routes/anomalies.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
+import logSnapshotJob from "./jobs/logSnapshotJob.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -282,6 +283,10 @@ const startServer = async () => {
     // Start forecast reconciliation job
     forecastReconciliation.start(120); // Run every 2 hours
     console.log('📊 Forecast reconciliation job started');
+
+    // Start log snapshot job
+    await logSnapshotJob.initialize();
+    console.log('📋 Log snapshot job initialized');
 
     // Initialize upload directories
     try {
@@ -686,107 +691,60 @@ if (process.env.NODE_ENV !== 'test') {
     initializeDefaultTaxCategories().catch(err => {
       console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
 
-      // Routes
-      app.use("/api/auth", authRoutes);
-      app.use("/api/users", userLimiter, userRoutes);
-      app.use("/api/expenses", userLimiter, expenseRoutes);
-      app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
-      app.use("/api/outbox", userLimiter, outboxRoutes);
-      app.use("/api/soft-delete", userLimiter, softDeleteRoutes);
-      app.use("/api/integrity", userLimiter, softDeleteRoutes);
-      app.use("/api/milestones", userLimiter, milestoneRoutes);
-      app.use("/api/forecasts", userLimiter, forecastRoutes);
-      app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
-      app.use("/api/anomalies", userLimiter, anomalyRoutes);
-      app.use("/api/portfolio", userLimiter, rebalancingRoutes);
-      app.use("/api/categories", userLimiter, categoryRoutes);
-      app.use("/api/analytics", userLimiter, analyticsRoutes);
-      app.use("/api/gemini", aiLimiter, geminiRouter);
-      app.use("/api/transactions", userLimiter, softDeleteRoutes);
-      app.use("/api/health", async (req, res) => {
-        const redisState = getConnectionState();
-        const dbState = getDatabaseState();
-        const dbHealthy = await isDatabaseHealthy();
+    // Routes
+    app.use("/api/auth", authRoutes);
+    app.use("/api/users", userLimiter, userRoutes);
+    app.use("/api/expenses", userLimiter, expenseRoutes);
+    app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
+    app.use("/api/outbox", userLimiter, outboxRoutes);
+    app.use("/api/soft-delete", userLimiter, softDeleteRoutes);
+    app.use("/api/integrity", userLimiter, softDeleteRoutes);
+    app.use("/api/milestones", userLimiter, milestoneRoutes);
+    app.use("/api/forecasts", userLimiter, forecastRoutes);
+    app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
+    app.use("/api/anomalies", userLimiter, anomalyRoutes);
+    app.use("/api/log-snapshots", userLimiter, logSnapshotsRoutes);
+    app.use("/api/portfolio", userLimiter, rebalancingRoutes);
+    app.use("/api/categories", userLimiter, categoryRoutes);
+    app.use("/api/analytics", userLimiter, analyticsRoutes);
+    app.use("/api/gemini", aiLimiter, geminiRouter);
+    app.use("/api/transactions", userLimiter, softDeleteRoutes);
+    app.use("/api/health", async (req, res) => {
+      const redisState = getConnectionState();
+      const dbState = getDatabaseState();
+      const dbHealthy = await isDatabaseHealthy();
+      
+      const overallHealthy = dbHealthy && dbState.isConnected;
+      
+      res.status(overallHealthy ? 200 : 503).json({
+        status: overallHealthy ? "OK" : "DEGRADED",
+        message: overallHealthy 
+          ? "Wealth Vault API is running" 
+          : "API running with degraded services",
+        timestamp: new Date().toISOString(),
+        services: {
+          database: {
+            state: dbState.state,
+            isConnected: dbState.isConnected,
+            healthy: dbHealthy,
+            attempts: dbState.attempts,
+            ...(dbState.lastError && { lastError: dbState.lastError })
+          },
+    // Secur fil servr for uploddd fils
+    app.use("/uploads", createFileServerRoute());
 
-        const overallHealthy = dbHealthy && dbState.isConnected;
-
-        res.status(overallHealthy ? 200 : 503).json({
-          status: overallHealthy ? "OK" : "DEGRADED",
-          message: overallHealthy
-            ? "Wealth Vault API is running"
-            : "API running with degraded services",
-          timestamp: new Date().toISOString(),
-          services: {
-            database: {
-              state: dbState.state,
-              isConnected: dbState.isConnected,
-              healthy: dbHealthy,
-              attempts: dbState.attempts,
-              ...(dbState.lastError && { lastError: dbState.lastError })
-            },
-            // Secur fil servr for uploddd fils
-            app.use("/uploads", createFileServerRoute());
-
-            // Health check endpoint (enhanced with Redis state)
-            app.get("/api/health", (req, res) => {
-              const redisState = getConnectionState();
-              res.json({
-                status: "OK",
-                message: "Wealth Vault API is running",
-                timestamp: new Date().toISOString(),
-                services: {
-                  redis: {
-                    state: redisState.state,
-                    circuitBreaker: redisState.circuitBreaker,
-                    isConnected: redisState.isConnected
-                  }
-                }
-              });
-            });
-
-            // 404 handler for undefined routes (must be before error handler)
-            app.use(notFound);
-
-            // Add error logging middleware
-            app.use(errorLogger);
-
-            // DB routing error handler (must be before general error handler)
-            app.use(dbRoutingErrorHandler());
-
-            // Centralized error handling middleware (must be last)
-            app.use(errorHandler);
-
-            const PORT = process.env.PORT || 5000;
-
-            app.listen(PORT, () => {
-              logInfo('Server started successfully', {
-                port: PORT,
-                environment: process.env.NODE_ENV || 'development',
-                frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
-                redisAvailable: isRedisAvailable()
-              });
-
-              console.log(`\n🚀 Server running on port ${PORT}`);
-              console.log(
-                `📱 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:3000"}`
-              );
-              console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
-              console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
-              console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
-
-              const redisState = getConnectionState();
-              if (redisState.isConnected) {
-                console.log('✅ Redis: Connected (distributed rate limiting active)');
-              } else {
-                console.log('⚠️  Redis: Not connected (using memory-based rate limiting)');
-              }
-
-              console.log('\n✨ Server initialization complete!');
-            });
-
-          } catch(error) {
-            console.error('❌ Failed to start server:', error);
-            process.exit(1);
+    // Health check endpoint (enhanced with Redis state)
+    app.get("/api/health", (req, res) => {
+      const redisState = getConnectionState();
+      res.json({
+        status: "OK",
+        message: "Wealth Vault API is running",
+        timestamp: new Date().toISOString(),
+        services: {
+          redis: {
+            state: redisState.state,
+            circuitBreaker: redisState.circuitBreaker,
+            isConnected: redisState.isConnected
           }
         };
 
