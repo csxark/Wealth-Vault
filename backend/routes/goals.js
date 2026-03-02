@@ -1080,6 +1080,19 @@ router.post("/smart/scenario", protect, async (req, res) => {
   }
 });
 
+router.post("/smart/contribution-auto-adjust", protect, async (req, res) => {
+  try {
+    const { strategy = "balanced" } = req.body || {};
+    const data = await smartSavingsAllocationService.suggestContributionAutoAdjustments(req.user.id, {
+      strategy,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart contribution auto-adjust error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to auto-adjust contributions" });
+  }
+});
+
 router.get("/smart/templates", protect, async (_req, res) => {
   try {
     const data = smartSavingsAllocationService.getGoalTemplates();
