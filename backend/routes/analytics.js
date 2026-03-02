@@ -12,6 +12,7 @@ import {
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
 import assetService from "../services/assetService.js";
+import portfolioAnalyticsService from "../services/portfolioAnalyticsService.js";
 import projectionEngine from "../services/projectionEngine.js";
 import marketData from "../services/marketData.js";
 import refinanceScout from "../services/refinanceScout.js";
@@ -1180,6 +1181,85 @@ router.get("/portfolio", protect, async (req, res) => {
   } catch (error) {
     console.error("Portfolio analytics error:", error);
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   GET /analytics/portfolio/performance-attribution
+ * @desc    Portfolio performance attribution by holding/sector/asset class
+ */
+router.get("/portfolio/performance-attribution", protect, async (req, res) => {
+  try {
+    const { startDate, endDate, period } = req.query;
+
+    const data = await portfolioAnalyticsService.getPerformanceAttribution(req.user.id, {
+      startDate,
+      endDate,
+      period,
+    });
+
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Performance attribution error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to calculate performance attribution",
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/portfolio/risk-metrics
+ * @desc    Portfolio risk metrics and benchmark comparison stats
+ */
+router.get("/portfolio/risk-metrics", protect, async (req, res) => {
+  try {
+    const { startDate, endDate, period, benchmark = "^GSPC" } = req.query;
+
+    const data = await portfolioAnalyticsService.getRiskAndBenchmark(req.user.id, {
+      startDate,
+      endDate,
+      period,
+      benchmark,
+    });
+
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Risk metrics error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to calculate risk metrics",
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/portfolio/benchmarks
+ * @desc    Get available benchmark symbols for comparison
+ */
+router.get("/portfolio/benchmarks", protect, async (req, res) => {
+  try {
+    const benchmarks = await portfolioAnalyticsService.getBenchmarksCatalog();
+
+    return res.json({
+      success: true,
+      data: benchmarks,
+    });
+  } catch (error) {
+    console.error("Benchmark catalog error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load benchmarks",
+      error: error.message,
+    });
   }
 });
 
