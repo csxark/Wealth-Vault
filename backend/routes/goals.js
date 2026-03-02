@@ -7,6 +7,7 @@ import { protect, checkOwnership } from "../middleware/auth.js";
 import { apiIdempotency } from "../middleware/apiIdempotency.js";
 import { RecurringPaymentService } from "../services/recurringPaymentService.js";
 import { FXConversionService } from "../services/fxConversionService.js";
+import smartSavingsAllocationService from "../services/smartSavingsAllocationService.js";
 
 const router = express.Router();
 const recurringPaymentService = new RecurringPaymentService();
@@ -1021,6 +1022,79 @@ router.post("/:id/fx-recalculate", protect, checkOwnership("Goal"), async (req, 
       success: false,
       message: error.message || "Server error while recalculating progress"
     });
+  }
+});
+
+// ============================================================
+// SMART SAVINGS GOALS ENDPOINTS (Issue #640)
+// ============================================================
+
+router.get("/smart/priorities", protect, async (req, res) => {
+  try {
+    const data = await smartSavingsAllocationService.getPrioritizedGoals(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart priorities error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to calculate priorities" });
+  }
+});
+
+router.post("/smart/auto-allocation", protect, async (req, res) => {
+  try {
+    const { monthlySurplus, strategy = "balanced" } = req.body || {};
+    const data = await smartSavingsAllocationService.recommendAutoAllocation(req.user.id, {
+      monthlySurplus,
+      strategy,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart auto-allocation error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to generate allocation" });
+  }
+});
+
+router.get("/smart/conflicts", protect, async (req, res) => {
+  try {
+    const data = await smartSavingsAllocationService.detectGoalConflicts(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart conflicts error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to detect conflicts" });
+  }
+});
+
+router.post("/smart/scenario", protect, async (req, res) => {
+  try {
+    const { monthlyDelta = 0, monthlySurplus, strategy = "balanced" } = req.body || {};
+    const data = await smartSavingsAllocationService.runSavingsScenario(req.user.id, {
+      monthlyDelta,
+      monthlySurplus,
+      strategy,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart scenario error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to run scenario" });
+  }
+});
+
+router.get("/smart/templates", protect, async (_req, res) => {
+  try {
+    const data = smartSavingsAllocationService.getGoalTemplates();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart templates error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get templates" });
+  }
+});
+
+router.get("/smart/reminders", protect, async (req, res) => {
+  try {
+    const data = await smartSavingsAllocationService.getSmartReminders(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart reminders error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get reminders" });
   }
 });
 
