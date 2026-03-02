@@ -76,6 +76,7 @@ import smartAlerts from "./routes/smartAlerts.js";
 import expenseSharesRoutes from "./routes/expenseShares.js";
 import reimbursementsRoutes from "./routes/reimbursements.js";
 import interlockRoutes from "./routes/interlock.js";
+import logRedactionRoutes from "./routes/logRedaction.js";
 import liquiditySweepJob from "./jobs/liquiditySweepJob.js";
 import interlockAccrualSync from "./jobs/interlockAccrualSync.js";
 import forecastRoutes from "./routes/forecasts.js";
@@ -174,6 +175,7 @@ import auditTrailSealer from "./jobs/auditTrailSealer.js";
 import taxOptimizationRoutes from "./routes/taxOptimization.js";
 import taxHarvestScanner from "./jobs/taxHarvestScanner.js";
 import washSaleExpirationJob from "./jobs/washSaleExpirationJob.js";
+import logRedactionJob from "./jobs/logRedactionJob.js";
 import { initializeLiquidityListeners } from "./listeners/liquidityListeners.js";
 import workflowEngine from "./services/workflowEngine.js"; // Bootstrap event hooks
 import healthRoutes from "./routes/health.js";
@@ -285,6 +287,10 @@ const startServer = async () => {
     // Start log snapshot job
     await logSnapshotJob.initialize();
     console.log('📋 Log snapshot job initialized');
+
+    // Start log redaction job
+    await logRedactionJob.initialize();
+    console.log('🔒 Log redaction job initialized');
 
     // Initialize upload directories
     try {
@@ -506,6 +512,7 @@ app.use("/api/monte-carlo", userLimiter, monteCarloRoutes);
 app.use("/api/gemini", aiLimiter, geminiRouter);
 app.use("/api/currencies", userLimiter, currenciesRoutes);
 app.use("/api/audit", userLimiter, auditRoutes);
+app.use("/api/log-redaction", userLimiter, logRedactionRoutes);
 app.use("/api/security", userLimiter, securityRoutes);
 app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
 app.use("/api/assets", userLimiter, assetRoutes);
