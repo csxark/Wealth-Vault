@@ -3754,6 +3754,86 @@ export const successionGracePeriodsRelations = relations(successionGracePeriods,
 }));
 
 // ============================================================================
+// ACCESS SHARD FRAGMENTATION ENGINE (#677)
+// ============================================================================
+
+export const accessShards = pgTable('access_shards', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    successionRuleId: uuid('succession_rule_id').references(() => successionRules.id, { onDelete: 'cascade' }).notNull(),
+    shardIndex: integer('shard_index').notNull(), // Index of this shard (0 to N-1)
+    totalShards: integer('total_shards').notNull(), // Total number of shards (N)
+    threshold: integer('threshold').notNull(), // Minimum shards required for reconstruction (M)
+    shardData: text('shard_data').notNull(), // Encrypted shard data (base64 encoded)
+    checksum: text('checksum').notNull(), // SHA-256 checksum for integrity verification
+    custodianId: uuid('custodian_id'), // ID of the custodian holding this shard (could be user, entity, or external service)
+    custodianType: text('custodian_type').default('user'), // 'user', 'entity', 'external_service'
+    distributionMethod: text('distribution_method').notNull(), // 'manual', 'automated', 'hybrid'
+    status: text('status').default('active'), // 'active', 'revoked', 'reconstructed', 'compromised'
+    lastVerifiedAt: timestamp('last_verified_at'),
+    compromiseDetectedAt: timestamp('compromise_detected_at'),
+    metadata: jsonb('metadata').default({}), // Additional shard metadata
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userRuleIdx: index('idx_access_shards_user_rule').on(table.userId, table.successionRuleId),
+    custodianIdx: index('idx_access_shards_custodian').on(table.custodianId, table.custodianType),
+}));
+
+export const shardReconstructionAttempts = pgTable('shard_reconstruction_attempts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    successionRuleId: uuid('succession_rule_id').references(() => successionRules.id, { onDelete: 'cascade' }).notNull(),
+    attemptTimestamp: timestamp('attempt_timestamp').defaultNow(),
+    shardsProvided: integer('shards_provided').notNull(), // Number of shards provided in this attempt
+    thresholdRequired: integer('threshold_required').notNull(), // Threshold required for reconstruction
+    success: boolean('success').default(false),
+    reconstructedData: text('reconstructed_data'), // The reconstructed secret (only stored on success)
+    failureReason: text('failure_reason'), // 'insufficient_shards', 'tampered_shards', 'invalid_checksums'
+    tamperedShardIndices: jsonb('tampered_shard_indices').default([]), // Array of indices of tampered shards
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userRuleIdx: index('idx_reconstruction_user_rule').on(table.userId, table.successionRuleId),
+    successIdx: index('idx_reconstruction_success').on(table.success),
+}));
+
+export const shardCustodians = pgTable('shard_custodians', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    custodianId: uuid('custodian_id').notNull(), // Could reference users.id, entities.id, or external ID
+    custodianType: text('custodian_type').notNull(), // 'user', 'entity', 'external_service'
+    name: text('name').notNull(), // Display name
+    contactInfo: jsonb('contact_info').default({}), // Email, phone, etc.
+    trustLevel: text('trust_level').default('medium'), // 'low', 'medium', 'high', 'critical'
+    isActive: boolean('is_active').default(true),
+    lastContactAt: timestamp('last_contact_at'),
+    verificationStatus: text('verification_status').default('pending'), // 'pending', 'verified', 'failed'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    custodianIdx: index('idx_custodians_id_type').on(table.custodianId, table.custodianType),
+}));
+
+// Relations for Access Shard Fragmentation Engine
+export const accessShardsRelations = relations(accessShards, ({ one }) => ({
+    user: one(users, { fields: [accessShards.userId], references: [users.id] }),
+    successionRule: one(successionRules, { fields: [accessShards.successionRuleId], references: [successionRules.id] }),
+    custodian: one(shardCustodians, { fields: [accessShards.custodianId], references: [shardCustodians.id] }),
+}));
+
+export const shardReconstructionAttemptsRelations = relations(shardReconstructionAttempts, ({ one }) => ({
+    user: one(users, { fields: [shardReconstructionAttempts.userId], references: [users.id] }),
+    successionRule: one(successionRules, { fields: [shardReconstructionAttempts.successionRuleId], references: [successionRules.id] }),
+}));
+
+export const shardCustodiansRelations = relations(shardCustodians, ({ many }) => ({
+    shards: many(accessShards),
+}));
+
+// ============================================================================
 // PROBABILISTIC FORECASTING & ADAPTIVE REBALANCING (L3) (#361)
 // ============================================================================
 

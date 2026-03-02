@@ -100,6 +100,7 @@ import escrowRoutes from "./routes/escrow.js";
 import { presenceTracker } from "./middleware/successionMiddleware.js";
 import successionHeartbeatService from "./services/successionHeartbeatService.js";
 import successionStateMachine from "./services/successionStateMachine.js";
+import shardDistributor from "./services/shardDistributor.js";
 import debtEngine from "./services/debtEngine.js";
 import payoffOptimizer from "./services/payoffOptimizer.js";
 import refinanceScout from "./services/refinanceScout.js";
