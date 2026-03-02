@@ -16,6 +16,7 @@ import {
 } from '../services/multiRegionService.js';
 import { logger } from '../utils/logger.js';
 import policyEngineService from '../services/policyEngineService.js';
+import tenantAwareAuditService from '../services/tenantAwareAuditService.js';
 
 /**
  * Extract tenant ID from request (URL param or header)
@@ -215,6 +216,9 @@ export const validateTenantAccess = async (req, res, next) => {
         return authorization.hasWildcard || authorization.permissions.includes(normalizedKey);
       }
     };
+
+    // Set tenant-aware audit context for RLS policies
+    await tenantAwareAuditService.setUserContext(req.user.id, tenant.id);
 
     next();
   } catch (error) {

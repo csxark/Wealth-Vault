@@ -1,7 +1,6 @@
 // backend/__tests__/auditLogRetention.test.js
 // Issue #614: Audit Log Retention Service Tests
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import db from '../config/db.js';
 import cacheService from '../services/cacheService.js';
 import outboxService from '../services/outboxService.js';

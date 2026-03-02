@@ -27,6 +27,10 @@ const DEFAULT_PERMISSION_DEFINITIONS = [
   { key: 'audit:export', description: 'Export audit logs' },
   { key: 'audit:alert:view', description: 'View security alerts' },
   { key: 'audit:integrity:verify', description: 'Verify audit log integrity' },
+  { key: 'audit:summary:view', description: 'View tenant audit summaries' },
+  { key: 'audit:violations:view', description: 'View audit access violations' },
+  { key: 'audit:integrity:anchor', description: 'Anchor Merkle roots externally' },
+  { key: 'audit:isolation:check', description: 'Check tenant isolation integrity' },
   { key: 'expense:view', description: 'View expenses' },
   { key: 'expense:create', description: 'Create expenses' },
   { key: 'expense:update', description: 'Update expenses' },
@@ -67,7 +71,8 @@ const DEFAULT_ROLE_MODEL = [
       'expense:update',
       'category:manage',
       'audit:view',
-      'audit:alert:view'
+      'audit:alert:view',
+      'audit:summary:view'
     ]
   },
   {
@@ -85,7 +90,9 @@ const DEFAULT_ROLE_MODEL = [
       'rbac:assign',
       'expense:delete',
       'audit:export',
-      'audit:integrity:verify'
+      'audit:integrity:verify',
+      'audit:violations:view',
+      'audit:integrity:anchor'
     ]
   },
   {

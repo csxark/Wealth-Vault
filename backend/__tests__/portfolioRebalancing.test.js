@@ -10,7 +10,6 @@
  * Issue #613: Multi-Currency Portfolio Rebalancing with Tax-Loss Harvesting
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import db from '../config/db.js';
 import portfolioRebalancingService from '../services/portfolioRebalancingService.js';
 import {
