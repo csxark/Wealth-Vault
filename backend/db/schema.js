@@ -569,6 +569,206 @@ export const goalCashflowEvents = pgTable('goal_cashflow_events', {
 });
 
 // ============================================================================
+// GOAL ADJUSTMENT EXPLAINABILITY TIMELINE - Issue #715
+// ============================================================================
+
+// Goal Adjustment Explanations - Logs every significant change to contribution recommendations with detailed reasons
+export const goalAdjustmentExplanations = pgTable('goal_adjustment_explanations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Recommendation reference
+    previousRecommendationId: uuid('previous_recommendation_id').references(() => goalContributionRecommendations.id, { onDelete: 'set null' }),
+    newRecommendationId: uuid('new_recommendation_id').references(() => goalContributionRecommendations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Change details
+    previousAmount: numeric('previous_amount', { precision: 12, scale: 2 }).notNull(),
+    newAmount: numeric('new_amount', { precision: 12, scale: 2 }).notNull(),
+    amountChange: numeric('amount_change', { precision: 12, scale: 2 }).notNull(),
+    amountChangePercentage: numeric('amount_change_percentage', { precision: 5, scale: 2 }).notNull(),
+    
+    // Attribution Factors - Why did the recommendation change?
+    attributionFactors: jsonb('attribution_factors').default({}), // Array of {factor, description, impact_pct, severity}
+    
+    // Primary drivers
+    incomeDelta: numeric('income_delta', { precision: 12, scale: 2 }),
+    incomeDeltaPct: numeric('income_delta_pct', { precision: 5, scale: 2 }),
+    incomeContext: text('income_context'),
+    
+    expenseDelta: numeric('expense_delta', { precision: 12, scale: 2 }),
+    expenseDeltaPct: numeric('expense_delta_pct', { precision: 5, scale: 2 }),
+    expenseContext: text('expense_context'),
+    
+    // Temporal drivers
+    daysToDeadline: integer('days_to_deadline'),
+    deadlinePressureScore: numeric('deadline_pressure_score', { precision: 3, scale: 2 }), // 0.0 to 1.0
+    deadlinePressureReason: text('deadline_pressure_reason'),
+    
+    // Priority/Goal drivers
+    priorityShift: integer('priority_shift'), // Change in priority score
+    priorityContext: text('priority_context'),
+    goalProgressPct: numeric('goal_progress_pct', { precision: 5, scale: 2 }),
+    goalRemainingDays: integer('goal_remaining_days'),
+    
+    // Confidence and stability
+    confidenceScore: numeric('confidence_score', { precision: 3, scale: 2 }).notNull(), // 0.0 to 1.0
+    confidenceLevel: text('confidence_level').notNull(), // low, medium, high
+    stabilityIndex: numeric('stability_index', { precision: 5, scale: 2 }),
+    
+    // User behavior context
+    recentContributionHistory: jsonb('recent_contribution_history').default({}), // Last 6 months contributions
+    volatilityTrend: text('volatility_trend'), // increasing, stable, decreasing
+    
+    // Market/Economic context
+    macroFactors: jsonb('macro_factors').default({}), // Interest rates, inflation, market conditions
+    externalContext: text('external_context'),
+    
+    // Human-readable explanation
+    summary: text('summary').notNull(), // "Why changed" in plain language
+    detailedExplanation: text('detailed_explanation'), // Longer form explanation
+    recommendationText: text('recommendation_text'), // Action recommendation to user
+    
+    // Event classification
+    eventType: text('event_type').notNull().default('adjustment'), // 'adjustment', 'reset', 'goal_completion_adjustment'
+    severity: text('severity').notNull().default('normal'), // 'critical', 'high', 'normal', 'minor'
+    
+    // Approval/Review tracking
+    requiresReview: boolean('requires_review').default(false),
+    reviewedBy: uuid('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+    reviewStatus: text('review_status').default('pending'), // pending, approved, flagged, dismissed
+    reviewNotes: text('review_notes'),
+    reviewedAt: timestamp('reviewed_at'),
+    
+    // User response tracking
+    userAcknowledged: boolean('user_acknowledged').default(false),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    userFeedback: text('user_feedback'),
+    userFeedbackType: text('user_feedback_type'), // understood, confused, disagree_too_high, disagree_too_low
+    
+    // Metadata
+    algorithmVersion: text('algorithm_version').default('v1.0'),
+    triggerSource: text('trigger_source').notNull(), // 'cashflow_change', 'goal_progress_update', 'priority_shift', 'manual_override', 'system_rebalance'
+    calculationMetadata: jsonb('calculation_metadata').default({}),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Goal Adjustment Attribution Details - Detailed attribution showing which factors contributed to the change
+export const goalAdjustmentAttributionDetails = pgTable('goal_adjustment_attribution_details', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    explanationId: uuid('explanation_id').references(() => goalAdjustmentExplanations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Factor information
+    factorCategory: text('factor_category').notNull(), // 'income', 'expense', 'deadline', 'priority', 'cashflow', 'macro', 'user_behavior'
+    factorName: text('factor_name').notNull(), // Specific factor name
+    factorDescription: text('factor_description').notNull(), // Human-readable description
+    
+    // Attribution impact
+    impactPercentage: numeric('impact_percentage', { precision: 5, scale: 2 }).notNull(), // % contribution to the change
+    impactAmount: numeric('impact_amount', { precision: 12, scale: 2 }), // Absolute dollar impact
+    confidenceScore: numeric('confidence_score', { precision: 3, scale: 2 }), // 0.0 to 1.0
+    
+    // Metric values
+    previousValue: numeric('previous_value', { precision: 18, scale: 4 }),
+    currentValue: numeric('current_value', { precision: 18, scale: 4 }),
+    thresholdValue: numeric('threshold_value', { precision: 18, scale: 4 }),
+    
+    // Context details
+    comparisonText: text('comparison_text'), // e.g., "Income increased by 15% vs Aug average"
+    severityIndicator: text('severity_indicator'), // 'critical_change','significant_change', 'moderate_change', 'minor_change'
+    
+    // Related data
+    metricSource: text('metric_source'), // 'cashflow_analysis', 'goal_progress', 'calendar_countdown', 'priority_engine', 'macro_feed'
+    dataLookbackDays: integer('data_lookback_days'), // How far back data was analyzed
+    
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Goal Adjustment Timeline - Immutable timeline of all adjustments for audit and historical analysis
+export const goalAdjustmentTimeline = pgTable('goal_adjustment_timeline', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Timeline event
+    eventDate: timestamp('event_date').notNull().defaultNow(),
+    eventSequence: integer('event_sequence').notNull(), // Chronological order
+    
+    // Reference to detailed explanation
+    explanationId: uuid('explanation_id').references(() => goalAdjustmentExplanations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Summary snapshot
+    previousRecommendationAmount: numeric('previous_recommendation_amount', { precision: 12, scale: 2 }).notNull(),
+    newRecommendationAmount: numeric('new_recommendation_amount', { precision: 12, scale: 2 }).notNull(),
+    primaryDriverFactor: text('primary_driver_factor').notNull(), // top factor that drove change
+    
+    // User interaction tracking
+    userViewed: boolean('user_viewed').default(false),
+    userViewedAt: timestamp('user_viewed_at'),
+    userInteracted: boolean('user_interacted').default(false),
+    userInteractionType: text('user_interaction_type'), // 'acknowledged', 'dismissed', 'requested_adjustment', 'flagged_unclear'
+    userInteractionAt: timestamp('user_interaction_at'),
+    
+    // Engagement metric
+    engagementScore: integer('engagement_score').default(0), // Points for user engagement with explanation
+    
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Goal Adjustment Insights - Pre-computed insights for dashboard display
+export const goalAdjustmentInsights = pgTable('goal_adjustment_insights', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Most common adjustment drivers
+    topFactors: jsonb('top_factors').default({}), // [{factor, count, avg_impact_pct}, ...]
+    
+    // Volatility analysis
+    adjustmentFrequency: text('adjustment_frequency').notNull(), // 'very_stable', 'stable', 'volatile', 'very_volatile'
+    adjustmentsLast30Days: integer('adjustments_last_30_days').default(0),
+    avgDaysBetweenAdjustments: numeric('avg_days_between_adjustments', { precision: 10, scale: 2 }),
+    
+    // Trend analysis
+    trend: text('trend').notNull(), // 'increasing_recommendations', 'decreasing_recommendations', 'stable'
+    trendDirection: integer('trend_direction').default(0), // -1, 0, +1
+    
+    // Trust score
+    userTrustScore: numeric('user_trust_score', { precision: 3, scale: 2 }).default('0.5'), // Based on user feedback and engagement
+    clarityScore: numeric('clarity_score', { precision: 3, scale: 2 }).default('0.5'), // Based on user understanding (engagement metrics)
+    
+    // Recommendations for improvement
+    improvementAreas: jsonb('improvement_areas').default([]), // Areas where explanations could be clearer
+    
+    lastCalculatedAt: timestamp('last_calculated_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// Goal Adjustment Comparison - Store comparisons between predicted and actual recommendation changes
+export const goalAdjustmentComparison = pgTable('goal_adjustment_comparison', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    explanationId: uuid('explanation_id').references(() => goalAdjustmentExplanations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Model prediction vs actual
+    predictedAdjustmentAmount: numeric('predicted_adjustment_amount', { precision: 12, scale: 2 }),
+    actualAdjustmentAmount: numeric('actual_adjustment_amount', { precision: 12, scale: 2 }),
+    predictionAccuracyScore: numeric('prediction_accuracy_score', { precision: 3, scale: 2 }), // 0-1
+    
+    // Contributing factors comparison
+    predictedTopFactors: jsonb('predicted_top_factors'),
+    actualTopFactors: jsonb('actual_top_factors'),
+    factorAccuracyMatch: numeric('factor_accuracy_match', { precision: 3, scale: 2 }), // % of predicted factors that were actual
+    
+    // Model version
+    modelVersion: text('model_version'),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================================================
 // MULTI-GOAL BUDGET GUARDRAIL OPTIMIZER - Issue #714
 // ============================================================================
 
@@ -1347,6 +1547,77 @@ export const goalCashflowEventsRelations = relations(goalCashflowEvents, ({ one 
     vault: one(vaults, {
         fields: [goalCashflowEvents.vaultId],
         references: [vaults.id],
+    }),
+}));
+
+// Relations for Goal Adjustment Explainability Timeline - Issue #715
+export const goalAdjustmentExplanationsRelations = relations(goalAdjustmentExplanations, ({ one, many }) => ({
+    tenant: one(tenants, {
+        fields: [goalAdjustmentExplanations.tenantId],
+        references: [tenants.id],
+    }),
+    user: one(users, {
+        fields: [goalAdjustmentExplanations.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalAdjustmentExplanations.goalId],
+        references: [goals.id],
+    }),
+    previousRecommendation: one(goalContributionRecommendations, {
+        fields: [goalAdjustmentExplanations.previousRecommendationId],
+        references: [goalContributionRecommendations.id],
+    }),
+    newRecommendation: one(goalContributionRecommendations, {
+        fields: [goalAdjustmentExplanations.newRecommendationId],
+        references: [goalContributionRecommendations.id],
+    }),
+    reviewer: one(users, {
+        fields: [goalAdjustmentExplanations.reviewedBy],
+        references: [users.id],
+    }),
+    attributionDetails: many(goalAdjustmentAttributionDetails),
+    timelineEntries: many(goalAdjustmentTimeline),
+    comparison: one(goalAdjustmentComparison),
+}));
+
+export const goalAdjustmentAttributionDetailsRelations = relations(goalAdjustmentAttributionDetails, ({ one }) => ({
+    explanation: one(goalAdjustmentExplanations, {
+        fields: [goalAdjustmentAttributionDetails.explanationId],
+        references: [goalAdjustmentExplanations.id],
+    }),
+}));
+
+export const goalAdjustmentTimelineRelations = relations(goalAdjustmentTimeline, ({ one }) => ({
+    user: one(users, {
+        fields: [goalAdjustmentTimeline.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalAdjustmentTimeline.goalId],
+        references: [goals.id],
+    }),
+    explanation: one(goalAdjustmentExplanations, {
+        fields: [goalAdjustmentTimeline.explanationId],
+        references: [goalAdjustmentExplanations.id],
+    }),
+}));
+
+export const goalAdjustmentInsightsRelations = relations(goalAdjustmentInsights, ({ one }) => ({
+    user: one(users, {
+        fields: [goalAdjustmentInsights.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalAdjustmentInsights.goalId],
+        references: [goals.id],
+    }),
+}));
+
+export const goalAdjustmentComparisonRelations = relations(goalAdjustmentComparison, ({ one }) => ({
+    explanation: one(goalAdjustmentExplanations, {
+        fields: [goalAdjustmentComparison.explanationId],
+        references: [goalAdjustmentExplanations.id],
     }),
 }));
 
