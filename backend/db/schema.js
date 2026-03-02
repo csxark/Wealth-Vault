@@ -11522,6 +11522,393 @@ export const billReportsRelations = relations(billReports, ({ one }) => ({
     }),
 }));
 
+// ============================================================================
+// FINANCIAL GOALS & SAVINGS TRACKER (#664)
+// ============================================================================
+
+// Financial Goals - Core goal definitions
+export const financialGoals = pgTable('financial_goals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    goalName: text('goal_name').notNull(),
+    description: text('description'),
+    goalType: text('goal_type').notNull(),
+    category: text('category').notNull(),
+    targetAmount: numeric('target_amount', { precision: 15, scale: 2 }).notNull(),
+    currentAmount: numeric('current_amount', { precision: 15, scale: 2 }).default('0'),
+    currency: text('currency').default('USD'),
+    targetDate: timestamp('target_date').notNull(),
+    priority: integer('priority').default(0),
+    importance: integer('importance').default(50),
+    riskTolerance: text('risk_tolerance').default('moderate'),
+    status: text('status').default('planning'),
+    progressPercentage: numeric('progress_percentage', { precision: 5, scale: 2 }).default('0'),
+    isAutoTracked: boolean('is_auto_tracked').default(false),
+    autoCalculateSavings: boolean('auto_calculate_savings').default(true),
+    tags: jsonb('tags').default('[]'),
+    notes: text('notes'),
+    customProperties: jsonb('custom_properties').default('{}'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    startedAt: timestamp('started_at'),
+    achievedAt: timestamp('achieved_at'),
+    abandonedAt: timestamp('abandoned_at'),
+}, (table) => ({
+    userIdx: index('idx_financial_goals_user_id').on(table.userId),
+    vaultIdx: index('idx_financial_goals_vault_id').on(table.vaultId),
+    statusIdx: index('idx_financial_goals_status').on(table.status),
+    categoryIdx: index('idx_financial_goals_category').on(table.category),
+    targetDateIdx: index('idx_financial_goals_target_date').on(table.targetDate),
+    priorityIdx: index('idx_financial_goals_priority').on(table.priority),
+}));
+
+// Goal Progress Snapshots - Versioned progress tracking
+export const goalProgressSnapshots = pgTable('goal_progress_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    contributedAmount: numeric('contributed_amount', { precision: 15, scale: 2 }).notNull(),
+    contributedPercentage: numeric('contributed_percentage', { precision: 5, scale: 2 }).notNull(),
+    remainingAmount: numeric('remaining_amount', { precision: 15, scale: 2 }).notNull(),
+    status: text('status').notNull(),
+    daysElapsed: integer('days_elapsed'),
+    daysRemaining: integer('days_remaining'),
+    paceRatio: numeric('pace_ratio', { precision: 5, scale: 2 }),
+    requiredMonthlyAmount: numeric('required_monthly_amount', { precision: 15, scale: 2 }),
+    requiredWeeklyAmount: numeric('required_weekly_amount', { precision: 15, scale: 2 }),
+    monthlyContributionTrend: numeric('monthly_contribution_trend', { precision: 15, scale: 2 }),
+    achievementProbability: numeric('achievement_probability', { precision: 5, scale: 2 }),
+    confidenceLevel: text('confidence_level'),
+    projectedCompletionDate: timestamp('projected_completion_date'),
+    varianceFromPace: numeric('variance_from_pace', { precision: 5, scale: 2 }),
+    varianceTrend: text('variance_trend'),
+    snapshotType: text('snapshot_type').default('periodic'),
+    calculatedBy: text('calculated_by').default('system'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_progress_snapshots_goal_id').on(table.goalId),
+    userIdx: index('idx_progress_snapshots_user_id').on(table.userId),
+    statusIdx: index('idx_progress_snapshots_status').on(table.status),
+}));
+
+// Savings Plans - Contribution schedules
+export const savingsPlans = pgTable('savings_plans', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    startingAmount: numeric('starting_amount', { precision: 15, scale: 2 }).notNull(),
+    targetAmount: numeric('target_amount', { precision: 15, scale: 2 }).notNull(),
+    currentAmount: numeric('current_amount', { precision: 15, scale: 2 }).notNull(),
+    timeToTargetMonths: integer('time_to_target_months').notNull(),
+    baseMonthlyAmount: numeric('base_monthly_amount', { precision: 15, scale: 2 }).notNull(),
+    weeklyAmount: numeric('weekly_amount', { precision: 15, scale: 2 }),
+    biweeklyAmount: numeric('biweekly_amount', { precision: 15, scale: 2 }),
+    requiredMonthlyAmount: numeric('required_monthly_amount', { precision: 15, scale: 2 }),
+    contributionFrequency: text('contribution_frequency').default('monthly'),
+    customFrequencyDays: integer('custom_frequency_days'),
+    bufferPercentage: numeric('buffer_percentage', { precision: 5, scale: 2 }).default('10'),
+    bufferAmount: numeric('buffer_amount', { precision: 15, scale: 2 }),
+    adjustedMonthlyAmount: numeric('adjusted_monthly_amount', { precision: 15, scale: 2 }),
+    paymentMethod: text('payment_method'),
+    autoDebitEnabled: boolean('auto_debit_enabled').default(false),
+    autoDebitDate: integer('auto_debit_date'),
+    targetAccountId: uuid('target_account_id'),
+    previousVersions: integer('previous_versions').default(0),
+    adjustmentReason: text('adjustment_reason'),
+    lastAdjustedAt: timestamp('last_adjusted_at'),
+    status: text('status').default('active'),
+    successRate: numeric('success_rate', { precision: 5, scale: 2 }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_savings_plans_goal_id').on(table.goalId),
+    userIdx: index('idx_savings_plans_user_id').on(table.userId),
+    statusIdx: index('idx_savings_plans_status').on(table.status),
+}));
+
+// Goal Milestones - Progress checkpoints
+export const goalMilestones = pgTable('goal_milestones', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    milestoneName: text('milestone_name').notNull(),
+    milestoneType: text('milestone_type').notNull(),
+    milestoneValue: numeric('milestone_value', { precision: 15, scale: 2 }),
+    percentageValue: numeric('percentage_value', { precision: 5, scale: 2 }),
+    targetDate: timestamp('target_date'),
+    sequenceOrder: integer('sequence_order').default(0),
+    status: text('status').default('pending'),
+    achievedDate: timestamp('achieved_date'),
+    timeToAchieveDays: integer('time_to_achieve_days'),
+    celebrationEnabled: boolean('celebration_enabled').default(true),
+    celebrationMessage: text('celebration_message'),
+    badgeEarned: text('badge_earned'),
+    motivationMessage: text('motivation_message'),
+    notificationSent: boolean('notification_sent').default(false),
+    isAutomatic: boolean('is_automatic').default(false),
+    customProperties: jsonb('custom_properties').default('{}'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_milestones_goal_id').on(table.goalId),
+    userIdx: index('idx_milestones_user_id').on(table.userId),
+    statusIdx: index('idx_milestones_status').on(table.status),
+    sequenceIdx: index('idx_milestones_sequence').on(table.sequenceOrder),
+}));
+
+// Milestone Achievements - Track completions
+export const milestoneAchievements = pgTable('milestone_achievements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    milestoneId: uuid('milestone_id').references(() => goalMilestones.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    achievedDate: timestamp('achieved_date').notNull(),
+    achievementStatus: text('achievement_status').default('completed'),
+    daysAheadOrBehind: integer('days_ahead_or_behind'),
+    badgeType: text('badge_type'),
+    badgeDescription: text('badge_description'),
+    pointsEarned: integer('points_earned').default(0),
+    celebrationShared: boolean('celebration_shared').default(false),
+    sharedAt: timestamp('shared_at'),
+    sharingPlatform: text('sharing_platform'),
+    motivationFactor: numeric('motivation_factor', { precision: 5, scale: 2 }),
+    nextMilestoneId: uuid('next_milestone_id').references(() => goalMilestones.id, { onDelete: 'set null' }),
+    achievementNote: text('achievement_note'),
+    mediaUrl: text('media_url'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    milestoneIdx: index('idx_achievements_milestone_id').on(table.milestoneId),
+    goalIdx: index('idx_achievements_goal_id').on(table.goalId),
+    userIdx: index('idx_achievements_user_id').on(table.userId),
+}));
+
+// Goal Transactions Link - Connect transactions to goals
+export const goalTransactionsLink = pgTable('goal_transactions_link', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    transactionId: uuid('transaction_id').references(() => transactions.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    contributedAmount: numeric('contributed_amount', { precision: 15, scale: 2 }).notNull(),
+    contributionDate: timestamp('contribution_date').notNull(),
+    transactionType: text('transaction_type'),
+    isAutomatic: boolean('is_automatic').default(false),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }),
+    linkingReason: text('linking_reason'),
+    notes: text('notes'),
+    linkedAt: timestamp('linked_at').defaultNow(),
+    unlinkedAt: timestamp('unlinked_at'),
+}, (table) => ({
+    goalIdx: index('idx_goal_transactions_goal_id').on(table.goalId),
+    transactionIdx: index('idx_goal_transactions_transaction_id').on(table.transactionId),
+    userIdx: index('idx_goal_transactions_user_id').on(table.userId),
+}));
+
+// Goal Timeline Projections - Monte Carlo simulations
+export const goalTimelineProjections = pgTable('goal_timeline_projections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    projectionType: text('projection_type').notNull(),
+    simulationCount: integer('simulation_count').default(1000),
+    successProbability: numeric('success_probability', { precision: 5, scale: 2 }),
+    confidenceLevel: text('confidence_level'),
+    projectedCompletionDate: timestamp('projected_completion_date'),
+    medianCompletionDate: timestamp('median_completion_date'),
+    earliestCompletionDate: timestamp('earliest_completion_date'),
+    latestCompletionDate: timestamp('latest_completion_date'),
+    currentAmount: numeric('current_amount', { precision: 15, scale: 2 }),
+    targetAmount: numeric('target_amount', { precision: 15, scale: 2 }),
+    bestCaseAmount: numeric('best_case_amount', { precision: 15, scale: 2 }),
+    worstCaseAmount: numeric('worst_case_amount', { precision: 15, scale: 2 }),
+    mostLikelyAmount: numeric('most_likely_amount', { precision: 15, scale: 2 }),
+    monthlyVariance: numeric('monthly_variance', { precision: 15, scale: 2 }),
+    returnVariance: numeric('return_variance', { precision: 5, scale: 2 }),
+    percentiles: jsonb('percentiles').default('{}'),
+    scenarioResults: jsonb('scenario_results').default('{}'),
+    generatedAt: timestamp('generated_at').notNull(),
+    validUntil: timestamp('valid_until'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_projections_goal_id').on(table.goalId),
+    userIdx: index('idx_projections_user_id').on(table.userId),
+    successIdx: index('idx_projections_success_probability').on(table.successProbability),
+}));
+
+// Goal Analytics Snapshots - Historical insights
+export const goalAnalyticsSnapshots = pgTable('goal_analytics_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    snapshotMonth: text('snapshot_month').notNull(),
+    healthScore: numeric('health_score', { precision: 5, scale: 2 }),
+    healthStatus: text('health_status'),
+    riskLevel: text('risk_level'),
+    priorityScore: numeric('priority_score', { precision: 5, scale: 2 }),
+    achievabilityScore: numeric('achievability_score', { precision: 5, scale: 2 }),
+    progressVelocity: numeric('progress_velocity', { precision: 15, scale: 2 }),
+    trendDirection: text('trend_direction'),
+    trendStrength: text('trend_strength'),
+    momentum: numeric('momentum', { precision: 5, scale: 2 }),
+    recommendedAction: text('recommended_action'),
+    insightMessages: jsonb('insight_messages').default('[]'),
+    alerts: jsonb('alerts').default('[]'),
+    metrics: jsonb('metrics').default('{}'),
+    analysisData: jsonb('analysis_data').default('{}'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_analytics_goal_id').on(table.goalId),
+    userIdx: index('idx_analytics_user_id').on(table.userId),
+    monthIdx: index('idx_analytics_snapshot_month').on(table.snapshotMonth),
+    healthIdx: index('idx_analytics_health_status').on(table.healthStatus),
+}));
+
+// Relations for Financial Goals
+export const financialGoalsRelations = relations(financialGoals, ({ one, many }) => ({
+    user: one(users, {
+        fields: [financialGoals.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [financialGoals.vaultId],
+        references: [vaults.id],
+    }),
+    progressSnapshots: many(goalProgressSnapshots),
+    savingsPlan: one(savingsPlans, {
+        fields: [financialGoals.id],
+        references: [savingsPlans.goalId],
+    }),
+    milestones: many(goalMilestones),
+    transactionLinks: many(goalTransactionsLink),
+    projections: many(goalTimelineProjections),
+    analytics: many(goalAnalyticsSnapshots),
+}));
+
+export const goalProgressSnapshotsRelations = relations(goalProgressSnapshots, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [goalProgressSnapshots.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [goalProgressSnapshots.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalProgressSnapshots.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const savingsPlansRelations = relations(savingsPlans, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [savingsPlans.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [savingsPlans.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [savingsPlans.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const goalMilestonesRelations = relations(goalMilestones, ({ one, many }) => ({
+    goal: one(financialGoals, {
+        fields: [goalMilestones.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [goalMilestones.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalMilestones.vaultId],
+        references: [vaults.id],
+    }),
+    achievements: many(milestoneAchievements),
+}));
+
+export const milestoneAchievementsRelations = relations(milestoneAchievements, ({ one }) => ({
+    milestone: one(goalMilestones, {
+        fields: [milestoneAchievements.milestoneId],
+        references: [goalMilestones.id],
+    }),
+    goal: one(financialGoals, {
+        fields: [milestoneAchievements.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [milestoneAchievements.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [milestoneAchievements.vaultId],
+        references: [vaults.id],
+    }),
+    nextMilestone: one(goalMilestones, {
+        fields: [milestoneAchievements.nextMilestoneId],
+        references: [goalMilestones.id],
+    }),
+}));
+
+export const goalTransactionsLinkRelations = relations(goalTransactionsLink, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [goalTransactionsLink.goalId],
+        references: [financialGoals.id],
+    }),
+    transaction: one(transactions, {
+        fields: [goalTransactionsLink.transactionId],
+        references: [transactions.id],
+    }),
+    user: one(users, {
+        fields: [goalTransactionsLink.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalTransactionsLink.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const goalTimelineProjectionsRelations = relations(goalTimelineProjections, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [goalTimelineProjections.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [goalTimelineProjections.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalTimelineProjections.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const goalAnalyticsSnapshotsRelations = relations(goalAnalyticsSnapshots, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [goalAnalyticsSnapshots.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [goalAnalyticsSnapshots.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalAnalyticsSnapshots.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
 // Export forecast schema tables
 export * from './schema-forecast.js';
 
