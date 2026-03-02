@@ -204,6 +204,7 @@ import savingsVelocityRoutes from "./routes/savingsVelocity.js";
 import goalConflictResolverRoutes from "./routes/goalConflictResolver.js";
 import expenseAnomalyGoalImpactRoutes from "./routes/expenseAnomalyGoalImpact.js";
 import goalLiquidityStressRoutes from "./routes/goalLiquidityStress.js";
+import incomeVolatilityPlannerRoutes from "./routes/incomeVolatilityPlanner.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
 import logSnapshotJob from "./jobs/logSnapshotJob.js";
 
@@ -509,6 +510,7 @@ app.use("/api/savings-velocity", userLimiter, savingsVelocityRoutes);
 app.use("/api/goal-conflicts", userLimiter, goalConflictResolverRoutes);
 app.use("/api/expense-anomaly-impact", userLimiter, expenseAnomalyGoalImpactRoutes);
 app.use("/api/goal-liquidity-stress", userLimiter, goalLiquidityStressRoutes);
+app.use("/api/income-volatility-planner", userLimiter, incomeVolatilityPlannerRoutes);
 app.use("/api/categories", userLimiter, categoryRoutes);
 app.use("/api/smart-categorization", userLimiter, smartCategorizationRoutes);
 app.use("/api/analytics", userLimiter, analyticsRoutes);
