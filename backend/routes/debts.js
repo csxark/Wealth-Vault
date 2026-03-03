@@ -29,6 +29,8 @@ import debtAdherenceRiskScoringService from '../services/debtAdherenceRiskScorin
 import debtPaymentOrchestratorService from '../services/debtPaymentOrchestratorService.js';
 import debtEmergencyFundBalancerService from '../services/debtEmergencyFundBalancerService.js';
 import debtSequencingOptimizerService from '../services/debtSequencingOptimizerService.js';
+import lifeEventDebtStrategyService from '../services/lifeEventDebtStrategyService.js';
+import debtNudgeAndMicroPaymentService from '../services/debtNudgeAndMicroPaymentService.js';
 
 const router = express.Router();
 
@@ -1003,6 +1005,62 @@ router.post('/adherence/score', protect, [
 }));
 
 /**
+ * @route   POST /api/debts/strategy/life-events
+ * @desc    Recommend debt payoff strategy shifts around life events
+ * @access  Private
+ */
+router.post('/strategy/life-events', protect, [
+    body('horizonMonths', 'Horizon months must be between 1 and 120').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 1 && parseInt(v, 10) <= 120),
+    body('monthlyIncome', 'Monthly income must be numeric').optional()
+        .isNumeric(),
+    body('monthlyExpenses', 'Monthly expenses must be numeric').optional()
+        .isNumeric(),
+    body('minCashBuffer', 'Minimum cash buffer must be numeric').optional()
+        .isNumeric(),
+    body('events', 'Events must be an array').optional()
+        .isArray(),
+    body('events.*.type', 'Event type must be wedding, relocation, layoff-risk, education, baby, home-purchase, career-change, medical, or other').optional()
+        .isIn(['wedding', 'relocation', 'layoff-risk', 'education', 'baby', 'home-purchase', 'career-change', 'medical', 'other']),
+    body('events.*.date', 'Event date must be a valid ISO8601 date').optional()
+        .isISO8601(),
+    body('events.*.costMin', 'Event costMin must be numeric and non-negative').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 0),
+    body('events.*.costMax', 'Event costMax must be numeric and non-negative').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 0),
+    body('events.*.confidence', 'Event confidence must be between 0 and 1').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 0 && Number(v) <= 1),
+    body('events.*.incomeImpactPct', 'Event income impact percentage must be between -1 and 1').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= -1 && Number(v) <= 1)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await lifeEventDebtStrategyService.recommendStrategyForLifeEvents(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Life-event aware debt strategy recommendations generated'
+    ).send(res);
+}));
+
+/**
  * @route   POST /api/debts/orchestration/orchestrate
  * @desc    Orchestrate optimal debt payment allocation and scheduling
  * @access  Private
@@ -1079,6 +1137,109 @@ router.post('/orchestration/schedule', protect, [
         200,
         result,
         'Automated payment schedule configured'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/nudges/preview
+ * @desc    Preview behavioral micro-payment nudge opportunities
+ * @access  Private
+ */
+router.post('/nudges/preview', protect, [
+    body('lookbackDays', 'Lookback days must be between 7 and 120').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 7 && parseInt(v, 10) <= 120),
+    body('monthlyIncome', 'Monthly income must be numeric').optional()
+        .isNumeric(),
+    body('monthlyExpenses', 'Monthly expenses must be numeric').optional()
+        .isNumeric(),
+    body('monthlyBudget', 'Monthly budget must be numeric').optional()
+        .isNumeric(),
+    body('minCashBuffer', 'Minimum cash buffer must be numeric').optional()
+        .isNumeric(),
+    body('thresholdMin', 'Minimum micro-payment threshold must be between 5 and 250').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 5 && Number(v) <= 250),
+    body('thresholdMax', 'Maximum micro-payment threshold must be between 10 and 500').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 10 && Number(v) <= 500),
+    body('strategy', 'Strategy must be avalanche, snowball, or hybrid').optional()
+        .isIn(['avalanche', 'snowball', 'hybrid'])
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtNudgeAndMicroPaymentService.previewNudges(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Behavioral nudge preview generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/nudges/execute
+ * @desc    Execute or schedule behavioral micro-payments
+ * @access  Private
+ */
+router.post('/nudges/execute', protect, [
+    body('mode', 'Execution mode must be immediate or scheduled').optional()
+        .isIn(['immediate', 'scheduled']),
+    body('scheduleDate', 'Schedule date must be a valid ISO8601 date').optional()
+        .isISO8601(),
+    body('lookbackDays', 'Lookback days must be between 7 and 120').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 7 && parseInt(v, 10) <= 120),
+    body('monthlyIncome', 'Monthly income must be numeric').optional()
+        .isNumeric(),
+    body('monthlyExpenses', 'Monthly expenses must be numeric').optional()
+        .isNumeric(),
+    body('monthlyBudget', 'Monthly budget must be numeric').optional()
+        .isNumeric(),
+    body('minCashBuffer', 'Minimum cash buffer must be numeric').optional()
+        .isNumeric(),
+    body('thresholdMin', 'Minimum micro-payment threshold must be between 5 and 250').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 5 && Number(v) <= 250),
+    body('thresholdMax', 'Maximum micro-payment threshold must be between 10 and 500').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 10 && Number(v) <= 500),
+    body('strategy', 'Strategy must be avalanche, snowball, or hybrid').optional()
+        .isIn(['avalanche', 'snowball', 'hybrid']),
+    body('autoIncreasePercentage', 'Auto-increase percentage must be 0-10').optional()
+        .isNumeric()
+        .custom(v => parseFloat(v) >= 0 && parseFloat(v) <= 10)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtNudgeAndMicroPaymentService.executeNudges(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Behavioral nudge micro-payments executed'
     ).send(res);
 }));
 
