@@ -55,6 +55,8 @@ import medicalDebtNegotiationOptimizerService from '../services/medicalDebtNegot
 import creditScoreRecoveryRoadmapService from '../services/creditScoreRecoveryRoadmapService.js';
 import promotionalRateShoppingSequencerService from '../services/promotionalRateShoppingSequencerService.js';
 
+import hardshipProgramNegotiationEngineService from '../services/hardshipProgramNegotiationEngineService.js';
+
 const router = express.Router();
 
 /**
@@ -68,6 +70,21 @@ router.post(
     asyncHandler(async (req, res) => {
         const userData = req.body;
         const result = await promotionalRateShoppingSequencerService.sequencePromotionalRates(userData);
+        res.json(new ApiResponse(result));
+    })
+);
+
+/**
+ * @route   POST /api/debts/hardship/negotiation
+ * @desc    Assess hardship eligibility and generate negotiation materials
+ * @access  Protected
+ */
+router.post(
+    '/hardship/negotiation',
+    protect,
+    asyncHandler(async (req, res) => {
+        const userData = req.body;
+        const result = await hardshipProgramNegotiationEngineService.evaluateHardshipPrograms(userData);
         res.json(new ApiResponse(result));
     })
 );
