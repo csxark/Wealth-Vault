@@ -34,6 +34,7 @@ import debtNudgeAndMicroPaymentService from '../services/debtNudgeAndMicroPaymen
 import householdDebtOptimizerService from '../services/householdDebtOptimizerService.js';
 import delinquencyEarlyWarningService from '../services/delinquencyEarlyWarningService.js';
 import taxEfficientDebtCoordinatorService from '../services/taxEfficientDebtCoordinatorService.js';
+import dtiRatioOptimizerService from '../services/dtiRatioOptimizerService.js';
 
 const router = express.Router();
 
@@ -1481,6 +1482,60 @@ router.post('/tax-efficient/optimize', protect, [
         200,
         result,
         'Tax-efficient debt and savings optimization complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/dti/optimize
+ * @desc    Analyze and optimize debt-to-income ratio with payoff strategies
+ * @access  Private
+ */
+router.post('/dti/optimize', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical']),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.currentBalance', 'Each debt currentBalance must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.remainingMonths', 'Each debt remainingMonths must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('grossMonthlyIncome', 'Gross monthly income must be numeric and positive').isNumeric().custom(v => Number(v) > 0),
+    body('targetDtiPercent', 'Target DTI percent must be between 10 and 50').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 10 && Number(v) <= 50),
+    body('loanProducts', 'Loan products must be an array').optional().isArray(),
+    body('loanProducts.*', 'Each loan product must be valid').optional().isIn(['conventional-mortgage', 'fha-mortgage', 'va-mortgage', 'auto-loan', 'personal-loan', 'refinance']),
+    body('projectionMonths', 'Projection months must be an array').optional().isArray()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await dtiRatioOptimizerService.optimize(
+        req.user.id,
+        req.body.debts || [],
+        req.body.grossMonthlyIncome,
+        {
+            targetDtiPercent: req.body.targetDtiPercent,
+            loanProducts: req.body.loanProducts,
+            projectionMonths: req.body.projectionMonths
+        }
+    );
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'DTI ratio optimization analysis complete'
     ).send(res);
 }));
 
