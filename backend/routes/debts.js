@@ -28,6 +28,7 @@ import debtVariableAprOptimizerService from '../services/debtVariableAprOptimize
 import debtAdherenceRiskScoringService from '../services/debtAdherenceRiskScoringService.js';
 import debtPaymentOrchestratorService from '../services/debtPaymentOrchestratorService.js';
 import debtEmergencyFundBalancerService from '../services/debtEmergencyFundBalancerService.js';
+import debtSequencingOptimizerService from '../services/debtSequencingOptimizerService.js';
 
 const router = express.Router();
 
@@ -1121,6 +1122,49 @@ router.post('/balance/optimize', protect, [
         200,
         result,
         'Emergency fund and debt payoff balance optimization complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/sequencing/optimize
+ * @desc    Optimize debt payoff sequence with constraint handling
+ * @access  Private
+ */
+router.post('/sequencing/optimize', protect, [
+    body('horizonMonths', 'Horizon months must be between 1 and 360').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 1 && parseInt(v, 10) <= 360),
+    body('constraints', 'Constraints must be an object').optional()
+        .isObject(),
+    body('constraints.minimumBalance', 'Minimum balance must be an object').optional()
+        .isObject(),
+    body('constraints.noTouch', 'No-touch must be an array of debt IDs').optional()
+        .isArray(),
+    body('constraints.priority', 'Priority must be an array of debt IDs').optional()
+        .isArray(),
+    body('customSequence', 'Custom sequence must be an array of debt IDs').optional()
+        .isArray()
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtSequencingOptimizerService.optimize(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Debt sequencing optimization complete with constraint handling'
     ).send(res);
 }));
 
