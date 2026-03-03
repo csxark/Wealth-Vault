@@ -37,6 +37,7 @@ import taxEfficientDebtCoordinatorService from '../services/taxEfficientDebtCoor
 import dtiRatioOptimizerService from '../services/dtiRatioOptimizerService.js';
 import incomeBasedPaymentFlexibilityService from '../services/incomeBasedPaymentFlexibilityService.js';
 import creditorNegotiationAssistantService from '../services/creditorNegotiationAssistantService.js';
+import paymentAutopilotService from '../services/paymentAutopilotService.js';
 
 const router = express.Router();
 
@@ -1650,6 +1651,54 @@ router.post('/negotiate/suggest', protect, [
         200,
         result,
         'Creditor negotiation strategies generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/autopilot/configure
+ * @desc    Configure smart payment autopilot with dynamic adjustments
+ * @access  Private
+ */
+router.post('/autopilot/configure', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical']),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('configuration', 'Configuration must be an object').optional().isObject(),
+    body('configuration.amount', 'Monthly payment amount must be numeric').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('configuration.percentage', 'Payment percentage must be numeric 0-100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('configuration.adjustmentEnabled', 'Adjustment enabled must be boolean').optional().isBoolean(),
+    body('configuration.accelerationEnabled', 'Acceleration enabled must be boolean').optional().isBoolean(),
+    body('currentConditions', 'Current conditions must be an object').optional().isObject(),
+    body('currentConditions.monthlyExpenses', 'Monthly expenses must be numeric').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('currentConditions.currentIncome', 'Current income must be numeric').optional().isNumeric().custom(v => Number(v) >= 0)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await paymentAutopilotService.optimize(
+        req.user.id,
+        req.body.debts || [],
+        req.body.configuration || {},
+        req.body.currentConditions || {}
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Payment autopilot configured with smart adjustments'
     ).send(res);
 }));
 
