@@ -44,6 +44,7 @@ import taxSmartDebtSequencerService from '../services/taxSmartDebtSequencerServi
 import debtPaymentDateOptimizerService from '../services/debtPaymentDateOptimizerService.js';
 import creditUtilizationSmoothingService from '../services/creditUtilizationSmoothingService.js';
 import minimumPaymentShockPredictorService from '../services/minimumPaymentShockPredictorService.js';
+import debtRecastVsRefinanceAnalyzerService from '../services/debtRecastVsRefinanceAnalyzerService.js';
 
 const router = express.Router();
 
@@ -2018,6 +2019,61 @@ router.post('/minimum-shock/predict', protect, [
         200,
         result,
         'Minimum payment shock prediction complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/recast-refinance/analyze
+ * @desc    Analyze and compare recast vs refinance vs acceleration strategies
+ * @access  Private
+ */
+router.post('/recast-refinance/analyze', protect, [
+    body('debt', 'Debt must be an object').isObject(),
+    body('debt.id', 'Debt id must be a string').optional().isString(),
+    body('debt.name', 'Debt name must be a string').optional().isString(),
+    body('debt.type', 'Debt type must be valid').optional().isIn(['mortgage', 'auto-loan', 'personal-loan', 'student-loan', 'heloc']),
+    body('debt.originalBalance', 'Original balance must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debt.currentBalance', 'Current balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debt.apr', 'APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debt.monthsRemaining', 'Months remaining must be between 1 and 360').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('debt.monthlyPayment', 'Monthly payment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debt.loanOriginalTerm', 'Loan original term must be between 1 and 360').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('debt.prepaymentPenalty', 'Prepayment penalty must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debt.lumpSumAmount', 'Lump sum amount must be numeric and positive').isNumeric().custom(v => Number(v) > 0),
+    body('refinanceOffers', 'Refinance offers must be an array').optional().isArray(),
+    body('refinanceOffers.*.id', 'Offer id must be a string').optional().isString(),
+    body('refinanceOffers.*.provider', 'Provider must be a string').optional().isString(),
+    body('refinanceOffers.*.apr', 'Offer APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('refinanceOffers.*.termMonths', 'Offer term must be between 1 and 360').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('refinanceOffers.*.originationFeePercent', 'Origination fee % must be between 0 and 10').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 10),
+    body('refinanceOffers.*.closingCosts', 'Closing costs must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('preferences', 'Preferences must be an object').optional().isObject(),
+    body('preferences.priority', 'Priority must be valid').optional().isIn(['cash-flow', 'speed', 'savings', 'balanced']),
+    body('preferences.riskTolerance', 'Risk tolerance must be valid').optional().isIn(['conservative', 'moderate', 'aggressive'])
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = debtRecastVsRefinanceAnalyzerService.analyze(
+        req.body.debt || {},
+        req.body.refinanceOffers || [],
+        req.body.preferences || {}
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Recast vs refinance analysis complete'
     ).send(res);
 }));
 
