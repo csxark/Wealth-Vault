@@ -4,6 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import successionPilot from '../services/successionPilot.js';
 import encryptionVault from '../utils/encryptionVault.js';
+import consensusTransition from '../services/consensusTransition.js';
 import db from '../config/db.js';
 import { digitalWillDefinitions, heirIdentityVerifications, trusteeVoteLedger } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -80,6 +81,36 @@ router.get('/claim/:willId', protect, asyncHandler(async (req, res) => {
         assetsReleased: true,
         secrets: secret
     }).send(res);
+}));
+
+/**
+ * @route   POST /api/succession/consensus/approve
+ * @desc    Submit cryptographic approval for shard reconstruction
+ */
+router.post('/consensus/approve', protect, asyncHandler(async (req, res) => {
+    const { shardId, signature, reconstructionRequestId } = req.body;
+
+    const result = await consensusTransition.submitApproval(
+        req.user.id,
+        shardId,
+        signature,
+        reconstructionRequestId
+    );
+
+    if (result.success) {
+        new ApiResponse(200, result, 'Approval submitted successfully').send(res);
+    } else {
+        new ApiResponse(400, result, 'Approval submission failed').send(res);
+    }
+}));
+
+/**
+ * @route   GET /api/succession/consensus/status/:reconstructionRequestId
+ * @desc    Get consensus status for a reconstruction request
+ */
+router.get('/consensus/status/:reconstructionRequestId', protect, asyncHandler(async (req, res) => {
+    const status = await consensusTransition.getConsensusStatus(req.params.reconstructionRequestId);
+    new ApiResponse(200, status, 'Consensus status retrieved').send(res);
 }));
 
 export default router;
