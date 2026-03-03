@@ -27,6 +27,7 @@ import debtWhatIfSimulatorService from '../services/debtWhatIfSimulatorService.j
 import debtVariableAprOptimizerService from '../services/debtVariableAprOptimizerService.js';
 import debtAdherenceRiskScoringService from '../services/debtAdherenceRiskScoringService.js';
 import debtPaymentOrchestratorService from '../services/debtPaymentOrchestratorService.js';
+import debtEmergencyFundBalancerService from '../services/debtEmergencyFundBalancerService.js';
 
 const router = express.Router();
 
@@ -1077,6 +1078,49 @@ router.post('/orchestration/schedule', protect, [
         200,
         result,
         'Automated payment schedule configured'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/balance/optimize
+ * @desc    Optimize balance between emergency fund and debt payoff
+ * @access  Private
+ */
+router.post('/balance/optimize', protect, [
+    body('monthlyIncome', 'Monthly income must be numeric').optional()
+        .isNumeric(),
+    body('monthlyExpenses', 'Monthly expenses must be numeric').optional()
+        .isNumeric(),
+    body('horizonMonths', 'Horizon months must be between 1 and 120').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 1 && parseInt(v, 10) <= 120),
+    body('jobType', 'Job type must be stable, moderate, or volatile').optional()
+        .isIn(['stable', 'moderate', 'volatile']),
+    body('yearsEmployed', 'Years employed must be numeric').optional()
+        .isNumeric(),
+    body('industryVolatility', 'Industry volatility must be low, moderate, or high').optional()
+        .isIn(['low', 'moderate', 'high'])
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtEmergencyFundBalancerService.optimize(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Emergency fund and debt payoff balance optimization complete'
     ).send(res);
 }));
 
