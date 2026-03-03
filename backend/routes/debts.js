@@ -23,6 +23,7 @@ import defaultPredictorAI from '../services/defaultPredictorAI.js';
 import debtAvalancheSnowballOptimizer from '../services/debtAvalancheSnowballOptimizer.js';
 import emergencyFundAdequacyAnalyzer from '../services/emergencyFundAdequacyAnalyzer.js';
 import debtConsolidationRecommenderService from '../services/debtConsolidationRecommenderService.js';
+import debtWhatIfSimulatorService from '../services/debtWhatIfSimulatorService.js';
 
 const router = express.Router();
 
@@ -548,6 +549,55 @@ router.post('/simulate', protect, asyncHandler(async (req, res) => {
     }
 
     return new ApiResponse(200, simulation, 'Payoff simulation completed').send(res);
+}));
+
+/**
+ * @route   POST /api/debts/what-if/simulate
+ * @desc    Simulate payoff what-if scenarios (lump sums, recurring extras, pauses, increases) - Issue #745
+ */
+router.post('/what-if/simulate', protect, [
+    body('monthlyBudget').optional().isNumeric().withMessage('monthlyBudget must be numeric'),
+    body('horizonMonths').optional().isInt({ min: 1, max: 600 }).withMessage('horizonMonths must be between 1 and 600'),
+    body('scenarios').isArray({ min: 1 }).withMessage('At least one scenario is required'),
+
+    body('scenarios.*.name').optional().isString().withMessage('Scenario name must be a string'),
+    body('scenarios.*.monthlyBudget').optional().isNumeric().withMessage('Scenario monthlyBudget must be numeric'),
+    body('scenarios.*.horizonMonths').optional().isInt({ min: 1, max: 600 }).withMessage('Scenario horizonMonths must be between 1 and 600'),
+
+    body('scenarios.*.oneTimeLumpSums').optional().isArray().withMessage('oneTimeLumpSums must be an array'),
+    body('scenarios.*.oneTimeLumpSums.*.month').optional().isInt({ min: 1, max: 600 }).withMessage('Lump sum month must be 1-600'),
+    body('scenarios.*.oneTimeLumpSums.*.amount').optional().isNumeric().withMessage('Lump sum amount must be numeric'),
+    body('scenarios.*.oneTimeLumpSums.*.debtId').optional().isUUID().withMessage('Lump sum debtId must be a UUID'),
+
+    body('scenarios.*.recurringExtraPayments').optional().isArray().withMessage('recurringExtraPayments must be an array'),
+    body('scenarios.*.recurringExtraPayments.*.startMonth').optional().isInt({ min: 1, max: 600 }).withMessage('Recurring startMonth must be 1-600'),
+    body('scenarios.*.recurringExtraPayments.*.endMonth').optional().isInt({ min: 1, max: 600 }).withMessage('Recurring endMonth must be 1-600'),
+    body('scenarios.*.recurringExtraPayments.*.amount').optional().isNumeric().withMessage('Recurring amount must be numeric'),
+    body('scenarios.*.recurringExtraPayments.*.debtId').optional().isUUID().withMessage('Recurring debtId must be a UUID'),
+
+    body('scenarios.*.paymentPauses').optional().isArray().withMessage('paymentPauses must be an array'),
+    body('scenarios.*.paymentPauses.*.startMonth').optional().isInt({ min: 1, max: 600 }).withMessage('Pause startMonth must be 1-600'),
+    body('scenarios.*.paymentPauses.*.endMonth').optional().isInt({ min: 1, max: 600 }).withMessage('Pause endMonth must be 1-600'),
+    body('scenarios.*.paymentPauses.*.debtId').optional().isUUID().withMessage('Pause debtId must be a UUID'),
+
+    body('scenarios.*.paymentIncreaseSchedules').optional().isArray().withMessage('paymentIncreaseSchedules must be an array'),
+    body('scenarios.*.paymentIncreaseSchedules.*.startMonth').optional().isInt({ min: 1, max: 600 }).withMessage('Increase startMonth must be 1-600'),
+    body('scenarios.*.paymentIncreaseSchedules.*.incrementAmount').optional().isNumeric().withMessage('Increase incrementAmount must be numeric'),
+    body('scenarios.*.paymentIncreaseSchedules.*.frequencyMonths').optional().isInt({ min: 1, max: 120 }).withMessage('Increase frequencyMonths must be 1-120'),
+    body('scenarios.*.paymentIncreaseSchedules.*.debtId').optional().isUUID().withMessage('Increase debtId must be a UUID')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json(new ApiResponse(400, { errors: errors.array() }, 'Validation failed'));
+    }
+
+    const simulation = await debtWhatIfSimulatorService.simulate(req.user.id, req.body || {});
+
+    return new ApiResponse(
+        200,
+        simulation,
+        'Debt payoff what-if simulation completed'
+    ).send(res);
 }));
 
 // ============================================
