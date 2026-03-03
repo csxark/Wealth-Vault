@@ -71,7 +71,6 @@ import payrollRoutes from "./routes/payroll.js";
 import vaultConsolidationRoutes from "./routes/vault-consolidation.js";
 import recurringPaymentsRoutes from "./routes/recurring-payments.js";
 import categorizationRoutes from "./routes/categorization.js";
-import smartCategorizationRoutes from "./routes/smartCategorization.js";
 import currencyPortfolioRoutes from "./routes/currency-portfolio.js";
 import budgetRoutes from "./routes/budgets.js";
 import smartAlerts from "./routes/smartAlerts.js";
@@ -94,6 +93,12 @@ import yieldsRoutes from "./routes/yields.js";
 import arbitrageRoutes from "./routes/arbitrage.js";
 import autopilotRoutes from "./routes/autopilot.js";
 import scheduleWorkflowDaemon from "./jobs/workflowDaemon.js";
+import familyRoutes from "./routes/family.js";
+import monteCarloRoutes from "./routes/monteCarloForecasting.js";
+import riskLabRoutes from "./routes/risk-lab.js";
+import corporateRoutes from "./routes/corporate.js";
+import liquidityGraphRoutes from "./routes/liquidityGraph.js";
+import scheduleRecoveryExpirationJob from "./jobs/recoveryExpirationJob.js";
 import { triggerInterceptor } from "./middleware/triggerInterceptor.js";
 import { initializeAutopilotListeners } from "./listeners/autopilotListeners.js";
 import inventoryRoutes from "./routes/inventory.js";
@@ -172,6 +177,12 @@ import passionAssetsRoutes from "./routes/passionAssets.js";
 import passionAppraisalSyncJob from "./jobs/passionAppraisalSync.js";
 import philanthropyRoutes from "./routes/philanthropy.js";
 import crtPayoutJob from "./jobs/crtPayoutJob.js";
+import successionSweepJob from "./jobs/successionSweep.js";
+import wealthSimulationJob from "./jobs/wealthSimulationJob.js";
+import mortalityDaemon from "./jobs/mortalityDaemon.js";
+import residencyAuditJob from "./jobs/residencyAuditJob.js";
+import volatilityMonitor from "./jobs/volatilityMonitor.js";
+import payrollCycleJob from "./jobs/payrollCycleJob.js";
 
 // Event Listeners
 import { initializeBudgetListeners } from "./listeners/budgetListeners.js";
@@ -213,7 +224,6 @@ import expenseAnomalyGoalImpactRoutes from "./routes/expenseAnomalyGoalImpact.js
 import goalLiquidityStressRoutes from "./routes/goalLiquidityStress.js";
 import incomeVolatilityPlannerRoutes from "./routes/incomeVolatilityPlanner.js";
 import rebalancingRoutes from "./routes/rebalancing.js";
-import logSnapshotJob from "./jobs/logSnapshotJob.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -402,17 +412,62 @@ const startServer = async () => {
     app.use(analyticsMiddleware);
     app.use(auditLogger);
 
+    // CORS configuration
+    app.use(cors({
+      origin: true, // In production, replace with specific domain
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+      ],
+      exposedHeaders: ["Content-Range", "X-Content-Range", "Authorization"],
+      preflightContinue: false,
+      optionsSuccessStatus: 204,
+    }));
+    app.use(morgan("combined"));
+    app.use(compression());
+    app.use(express.json({ limit: "10mb" }));
+    app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+    // Security: Sanitize user input to prevent XSS and NoSQL injection
+    app.use(sanitizeMongo);
+    app.use(sanitizeInput);
+
+    // Response wrapper and pagination middleware
+    app.use(responseWrapper);
+    app.use(paginationMiddleware());
+
+    // Database routing middleware (read/write split)
+    app.use(attachDBConnection({
+      enableSessionTracking: true,
+      preferReplicas: process.env.PREFER_REPLICAS !== 'false'
+    }));
+
+    // Logng and monitrng midlware
+    app.use(requestIdMiddleware);
+    app.use(auditRequestIdMiddleware); // Add audit request correlation
+    app.use(requestLogger);
+    app.use(performanceMiddleware);
+    app.use(analyticsMiddleware);
+    app.use(auditLogger);
+
     // Additional CORS headers middleware
     app.use((req, res, next) => {
       res.header("Access-Control-Allow-Origin", req.headers.origin);
       res.header("Access-Control-Allow-Credentials", "true");
       res.header(
         "Access-Control-Allow-Headers",
-        "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+        "Origin, X-Requested-With, Content-Type, Accept, Authorization",
       );
       res.header(
         "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        "GET, POST, PUT, DELETE, OPTIONS, PATCH",
       );
 
       // Handle preflight requests
@@ -634,11 +689,13 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Import database configuration
     // Database configuration is handled via Drizzle in individual modules
-    // import connectDB from './config/db.js';
     console.log("📦 Database initialized via Drizzle");
 
     // Apply general rate limiting to all API routes
     app.use("/api", generalLimiter);
+
+    // Autopilot trigger interceptor — fires workflow events post-response
+    app.use("/api", triggerInterceptor);
 
     // Swagger API Documentation
     app.use(
@@ -647,12 +704,14 @@ if (process.env.NODE_ENV !== 'test') {
       swaggerUi.setup(swaggerSpec, {
         customCss: ".swagger-ui .topbar { display: none }",
         customSiteTitle: "Wealth Vault API Docs",
-      })
+      }),
     );
-    console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
-    console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
-    console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
 
+    // --- API Routes Registration ---
+    app.use("/api/auth", authRoutes);
+    app.use("/api/users", userLimiter, userRoutes);
+    app.use("/api/expenses", userLimiter, securityGuard, expenseRoutes);
+    app.use("/api/goals", userLimiter, goalRoutes);
     // Start background jobs
     scheduleMonthlyReports();
     scheduleWeeklyHabitDigest();
@@ -750,74 +809,184 @@ if (process.env.NODE_ENV !== 'test') {
     app.use("/api/portfolio", userLimiter, rebalancingRoutes);
     app.use("/api/categories", userLimiter, categoryRoutes);
     app.use("/api/analytics", userLimiter, analyticsRoutes);
+    app.use("/api/interlock", userLimiter, interlockRoutes);
+    app.use("/api/vaults", userLimiter, vaultRoutes);
+    app.use("/api/budgets", userLimiter, budgetRoutes);
+    app.use("/api/smart-alerts", userLimiter, smartAlerts);
+    app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
+    app.use("/api/reimbursements", userLimiter, reimbursementsRoutes);
+    app.use("/api/reports", userLimiter, reportRoutes);
+    app.use("/api/private-debt", userLimiter, privateDebtRoutes);
+    app.use("/api/debts", userLimiter, debtRoutes);
+    app.use("/api/wallets", userLimiter, walletRoutes);
+    app.use("/api/fx", userLimiter, fxRoutes);
+    app.use("/api/forecasts", userLimiter, forecastRoutes);
+    app.use("/api/monte-carlo", userLimiter, monteCarloRoutes);
     app.use("/api/gemini", aiLimiter, geminiRouter);
-    app.use("/api/transactions", userLimiter, softDeleteRoutes);
-    app.use("/api/health", async (req, res) => {
-      const redisState = getConnectionState();
-      const dbState = getDatabaseState();
-      const dbHealthy = await isDatabaseHealthy();
-      
-      const overallHealthy = dbHealthy && dbState.isConnected;
-      
-      res.status(overallHealthy ? 200 : 503).json({
-        status: overallHealthy ? "OK" : "DEGRADED",
-        message: overallHealthy 
-          ? "Wealth Vault API is running" 
-          : "API running with degraded services",
-        timestamp: new Date().toISOString(),
-        services: {
-          database: {
-            state: dbState.state,
-            isConnected: dbState.isConnected,
-            healthy: dbHealthy,
-            attempts: dbState.attempts,
-            ...(dbState.lastError && { lastError: dbState.lastError })
-          },
-    // Secur fil servr for uploddd fils
+    app.use("/api/currencies", userLimiter, currenciesRoutes);
+    app.use("/api/audit", userLimiter, auditRoutes);
+    app.use("/api/security", userLimiter, securityRoutes);
+    app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
+    app.use("/api/assets", userLimiter, assetRoutes);
+    app.use("/api/governance", userLimiter, governanceRoutes);
+    app.use("/api/tax", userLimiter, taxRoutes);
+    app.use("/api/tax/optimization", userLimiter, taxOptimizationRoutes);
+    app.use("/api/simulations", userLimiter, simulationRoutes);
+    app.use("/api/business", userLimiter, businessRoutes);
+    app.use("/api/payroll", userLimiter, payrollRoutes);
+    app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
+    app.use("/api/inventory", userLimiter, inventoryRoutes);
+    app.use("/api/margin", userLimiter, marginRoutes);
+    app.use("/api/clearing", userLimiter, clearingRoutes);
+    app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
+    app.use("/api/categorization", userLimiter, categorizationRoutes);
+    app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
+    app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
+    app.use("/api/replay", userLimiter, replayRoutes);
+    app.use("/api/succession", userLimiter, successionRoutes);
+    app.use("/api/entities", userLimiter, securityGuard, entityRoutes);
+    app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
+    app.use("/api/forensic", userLimiter, forensicRoutes);
+    app.use("/api/yields", userLimiter, yieldsRoutes);
+    app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
+    app.use("/api/autopilot", userLimiter, autopilotRoutes);
+    app.use("/api/escrow", userLimiter, escrowRoutes);
+    app.use("/api/risk-lab", userLimiter, riskLabRoutes);
+    app.use("/api/corporate", userLimiter, corporateRoutes);
+    app.use("/api/liquidity/graph", userLimiter, liquidityGraphRoutes);
+    app.use("/api/dynasty-trusts", userLimiter, dynastyTrustsRoutes);
+    app.use("/api/spv", userLimiter, spvOwnershipRoutes);
+    app.use("/api/derivatives", userLimiter, derivativesRoutes);
+    app.use("/api/passion-assets", userLimiter, passionAssetsRoutes);
+    app.use("/api/philanthropy", userLimiter, philanthropyRoutes);
+    app.use("/api/family", userLimiter, familyRoutes);
+    app.use("/api/health", healthRoutes);
+    app.use("/api/performance", userLimiter, performanceRoutes);
+    app.use("/api/tenants", userLimiter, tenantRoutes);
+    app.use("/api/db-router", userLimiter, dbRouterRoutes);
+
     app.use("/uploads", createFileServerRoute());
 
-    // Health check endpoint (enhanced with Redis state)
-    app.get("/api/health", (req, res) => {
-      const redisState = getConnectionState();
-      res.json({
-        status: "OK",
-        message: "Wealth Vault API is running",
-        timestamp: new Date().toISOString(),
-        services: {
-          redis: {
-            state: redisState.state,
-            circuitBreaker: redisState.circuitBreaker,
-            isConnected: redisState.isConnected
-          }
-        };
+    // Apply presence tracker to all protected routes
+    app.use("/api", presenceTracker);
 
-        // Graceful shutdown
-        const shutdown = async () => {
-          console.log('\n🛑 Shutting down gracefully...');
+    // --- Error Handlers ---
+    app.use(notFound);
+    app.use(errorLogger);
+    app.use(dbRoutingErrorHandler());
+    app.use(globalErrorHandler);
 
-          try {
-            // Stop background jobs
-            outboxDispatcher.stop();
-            certificateRotation.stop();
+    const PORT = process.env.PORT || 5000;
 
-            // Disconnect from Redis
-            const { disconnectRedis } = await import('./config/redis.js');
-            await disconnectRedis();
+    // Initialize listeners
+    initializeAutopilotListeners();
+    initializeTaxListeners();
+    initializeBudgetListeners();
+    initializeNotificationListeners();
+    initializeAnalyticsListeners();
+    initializeSubscriptionListeners();
+    initializeSavingsListeners();
+    initializeLiquidityListeners();
 
-            console.log('✅ Graceful shutdown complete');
-            process.exit(0);
-          } catch (error) {
-            console.error('❌ Error during shutdown:', error);
-            process.exit(1);
-          }
-        };
+    // Start background jobs
+    if (process.env.NODE_ENV !== 'test') {
+      cascadeMonitorJob.start();
+      topologyGarbageCollector.start();
+      scheduleMonthlyReports();
+      scheduleWeeklyHabitDigest();
+      scheduleTaxReminders();
+      scheduleRecoveryExpirationJob();
+      subscriptionMonitor.initialize();
+      fxRateSync.start();
+      valuationUpdater.start();
+      inactivityMonitor.start();
+      taxEstimator.start();
+      scheduleDebtStressTest();
+      rateSyncer.start();
+      forecastUpdater.start();
+      riskAuditor.start();
+      leaseMonitor.start();
+      dividendProcessor.start();
+      consolidationSync.start();
+      recurringPaymentProcessor.start();
+      categorizationTrainer.start();
+      fxRateUpdater.start();
+      liquidityOptimizerJob.start();
+      arbitrageJob.start();
+      riskMonitorJob.start();
+      clearingJob.start();
+      taxHarvestJob.start();
+      scheduleTaxHarvestSync();
+      riskBaselineJob.start();
+      yieldMonitorJob.start();
+      simulationJob.start();
+      payoutMonitor.start();
+      taxAuditJob.start();
+      riskScanner.start();
+      marketRateSyncJob.start();
+      velocityJob.start();
+      scheduleWorkflowDaemon();
+      scheduleMacroDataSync();
+      scheduleLotReconciliation();
+      scheduleStressTests();
+      scheduleMarketOracle();
+      schedulePrecomputePaths();
+      scheduleResolutionCleanup();
+      marketMonitor.start();
+      volatilityMonitor.start();
+      payrollCycleJob.start();
+      mortalityDaemon.start();
+      residencyAuditJob.start();
+      scheduleOracleSync();
+      liquiditySweepJob.init();
+      interlockAccrualSync.init();
+      thresholdMonitor.start();
+      escrowValuationJob.start();
+      hedgeDecayMonitor.start();
+      liquidityRechargeJob.start();
+      auditTrailSealer.start();
+      taxHarvestScanner.start();
+      washSaleExpirationJob.start();
+      irsRateSyncJob.start();
+      annuityExecutionJob.start();
+      capitalCallIssuerJob.start();
+      optionsRollEvaluator.start();
+      volatilitySyncJob.start();
+      passionAppraisalSyncJob.start();
+      crtPayoutJob.start();
+      successionSweepJob.start();
+      wealthSimulationJob.start();
+      scheduleNightlySimulations();
+    }
 
-        process.on('SIGTERM', shutdown);
-        process.on('SIGINT', shutdown);
+    app.listen(PORT, () => {
+      logInfo(`🚀 Server running on port ${PORT}`);
+      console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+    });
 
-        // Start the server
-        startServer();
+  } catch (error) {
+    logError('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+};
 
-        precomputePathsJob.start();
+// Graceful shutdown
+const shutdown = async () => {
+  console.log('\n🛑 Shutting down gracefully...');
+  try {
+    await disconnectDatabase();
+    if (isRedisAvailable()) await disconnectRedis();
+    console.log('✅ Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+};
 
-        export default app;
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+startServer();
+
+export default app;
