@@ -41,6 +41,7 @@ import paymentAutopilotService from '../services/paymentAutopilotService.js';
 import debtConsolidationRoiCalculatorService from '../services/debtConsolidationRoiCalculatorService.js';
 import rateArbitrageEngineService from '../services/rateArbitrageEngineService.js';
 import taxSmartDebtSequencerService from '../services/taxSmartDebtSequencerService.js';
+import debtPaymentDateOptimizerService from '../services/debtPaymentDateOptimizerService.js';
 
 const router = express.Router();
 
@@ -1864,6 +1865,59 @@ router.post('/tax-optimize/plan', protect, [
         200,
         result,
         'Tax-smart debt payoff plan generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/payment-dates/optimize
+ * @desc    Generate optimized debt payment schedule based on income timing
+ * @access  Private
+ */
+router.post('/payment-dates/optimize', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical']),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.monthlyPayment', 'Monthly payment must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.dueDate', 'Due date must be between 1 and 31').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 31),
+    body('debts.*.statementCloseDate', 'Statement close date must be between 1 and 31').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 31),
+    body('debts.*.gracePeriodDays', 'Grace period must be between 0 and 60 days').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 60),
+    body('incomeSchedule', 'Income schedule must be an object').isObject(),
+    body('incomeSchedule.frequency', 'Frequency must be valid').optional().isIn(['weekly', 'biweekly', 'semimonthly', 'monthly']),
+    body('incomeSchedule.paycheckAmount', 'Paycheck amount must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('incomeSchedule.nextPaycheckDate', 'Next paycheck date must be between 1 and 31').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 31),
+    body('incomeSchedule.paycheckDates', 'Paycheck dates must be an array').optional().isArray(),
+    body('incomeSchedule.paycheckDates.*', 'Each paycheck date must be between 1 and 31').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 31),
+    body('incomeSchedule.variableIncome', 'Variable income must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('incomeSchedule.paymentCapacity', 'Payment capacity must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('paymentDateOverrides', 'Payment date overrides must be an object').optional().isObject()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = debtPaymentDateOptimizerService.optimize(
+        req.body.debts || [],
+        req.body.incomeSchedule || {},
+        req.body.paymentDateOverrides || {}
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Optimized payment schedule generated'
     ).send(res);
 }));
 
