@@ -1,3 +1,4 @@
+import React from 'react';
 import { Vault, Menu, User, LogOut } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { ThemeToggle } from '../Navbar/ThemeToggle';
@@ -8,43 +9,10 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const { user, signOut } = useAuth();
-  // useTheme is now used inside ThemeToggle, but we might need it for other things if we used to use isDark
-  // In this file, isDark was only used for the button. So we don't need it here anymore if we replace the button.
 
   const handleSignOut = async () => {
     await signOut();
     window.location.href = '/';
-  };
-
-  const handleThemeChange = async (mode: ThemeMode) => {
-    await setTheme(mode);
-    setShowThemeMenu(false);
-  };
-
-  // Close theme menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (themeMenuRef.current && !themeMenuRef.current.contains(event.target as Node)) {
-        setShowThemeMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const getThemeIcon = () => {
-    if (themeMode === 'auto') return <Monitor className="h-5 w-5" />;
-    return isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />;
-  };
-
-  const getThemeLabel = () => {
-    switch (themeMode) {
-      case 'auto': return 'Auto';
-      case 'light': return 'Light';
-      case 'dark': return 'Dark';
-      default: return 'Auto';
-    }
   };
 
   return (

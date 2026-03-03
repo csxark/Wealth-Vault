@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthForm } from '../components/Auth/AuthForm';
 import Dashboard from '../components/Dashboard/Dashboard';
 import { Coach } from '../components/Coach/Coach';
@@ -15,8 +15,12 @@ import { useAuth } from '../hooks/useAuth';
 import { ProfileSetup } from '../components/Auth/ProfileSetup';
 import  Home  from '../components/Home/Home';
 import TaxCenter from '../pages/TaxCenter';
+import SubscriptionTracker from '../pages/SubscriptionTracker';
 import Vaults from '../pages/Vaults/Vaults';
 import CreateVault from '../pages/Vaults/CreateVault';
+import PortfolioDashboard from '../components/Investments/PortfolioDashboard';
+import InvestmentRecommendations from '../components/Investments/InvestmentRecommendations';
+import RiskProfileAnalyzer from '../components/Investments/RiskProfileAnalyzer';
 import VaultDetails from '../pages/Vaults/VaultDetails';
 import VaultMembers from '../pages/Vaults/VaultMembers';
 import AcceptInvite from '../pages/Vaults/AcceptInvite';
@@ -73,6 +77,23 @@ export const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
+const ProfileSetupWrapper = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleComplete = async () => {
+    // Profile is updated, navigate to dashboard
+    navigate('/dashboard');
+  };
+
+  return (
+    <ProfileSetup
+      onComplete={handleComplete}
+      userEmail={user?.email || ''}
+    />
+  );
+};
+
 export const routes = [
   {
     path: '/',
@@ -101,7 +122,7 @@ export const routes = [
     path: '/profile-setup',
     element: (
       <ProtectedRoute>
-        <ProfileSetup />
+        <ProfileSetupWrapper />
       </ProtectedRoute>
     )
   },
