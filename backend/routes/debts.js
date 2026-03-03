@@ -26,6 +26,7 @@ import debtConsolidationRecommenderService from '../services/debtConsolidationRe
 import debtWhatIfSimulatorService from '../services/debtWhatIfSimulatorService.js';
 import debtVariableAprOptimizerService from '../services/debtVariableAprOptimizerService.js';
 import debtAdherenceRiskScoringService from '../services/debtAdherenceRiskScoringService.js';
+import debtPaymentOrchestratorService from '../services/debtPaymentOrchestratorService.js';
 
 const router = express.Router();
 
@@ -996,6 +997,86 @@ router.post('/adherence/score', protect, [
         200,
         result,
         'Adherence risk scoring complete with stickiness-adjusted recommendations'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/orchestration/orchestrate
+ * @desc    Orchestrate optimal debt payment allocation and scheduling
+ * @access  Private
+ */
+router.post('/orchestration/orchestrate', protect, [
+    body('monthlyIncome', 'Monthly income must be numeric').optional()
+        .isNumeric(),
+    body('monthlyExpenses', 'Monthly expenses must be numeric').optional()
+        .isNumeric(),
+    body('minCashBuffer', 'Minimum cash buffer must be numeric').optional()
+        .isNumeric(),
+    body('strategy', 'Strategy must be avalanche, snowball, or hybrid').optional()
+        .isIn(['avalanche', 'snowball', 'hybrid']),
+    body('autoIncreasePercentage', 'Auto-increase percentage must be 0-10').optional()
+        .isNumeric()
+        .custom(v => parseFloat(v) >= 0 && parseFloat(v) <= 10)
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtPaymentOrchestratorService.orchestratePayments(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Debt payment orchestration generated with next-month recommendation'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/orchestration/schedule
+ * @desc    Setup automated payment schedule with rebalancing
+ * @access  Private
+ */
+router.post('/orchestration/schedule', protect, [
+    body('strategy', 'Strategy must be avalanche, snowball, or hybrid').optional()
+        .isIn(['avalanche', 'snowball', 'hybrid']),
+    body('frequency', 'Frequency must be monthly, bi-weekly, or weekly').optional()
+        .isIn(['monthly', 'bi-weekly', 'weekly']),
+    body('rebalanceFrequency', 'Rebalance frequency must be monthly or quarterly').optional()
+        .isIn(['monthly', 'quarterly']),
+    body('autoIncreasePercentage', 'Auto-increase percentage must be 0-10').optional()
+        .isNumeric()
+        .custom(v => parseFloat(v) >= 0 && parseFloat(v) <= 10)
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtPaymentOrchestratorService.setupPaymentSchedule(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Automated payment schedule configured'
     ).send(res);
 }));
 
