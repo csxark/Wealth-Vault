@@ -1229,6 +1229,22 @@ export const alertDeduplication = pgTable('alert_deduplication', {
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+    ownedTenants: many(tenants),
+    tenantMembers: many(tenantMembers),
+    categories: many(categories),
+    expenses: many(expenses),
+    goals: many(goals),
+    goalContributionLineItems: many(goalContributionLineItems),
+    deviceSessions: many(deviceSessions),
+    rbacAuditLogs: many(rbacAuditLogs),
+    auditLogs: many(auditLogs),
+    budgetAlerts: many(budgetAlerts),
+    budgetAggregates: many(budgetAggregates),
+}));
+
 export const tenantsRelations = relations(tenants, ({ one, many }) => ({
     owner: one(users, {
         fields: [tenants.ownerId],
@@ -1377,6 +1393,18 @@ export const capacityAlertsRelations = relations(capacityAlerts, ({ one }) => ({
         references: [users.id],
     }),
 }));
+
+export const categoriesRelations = relations(categories, ({ one, many }) => ({
+    tenant: one(tenants, {
+        fields: [categories.tenantId],
+        references: [tenants.id],
+    }),
+    user: one(users, {
+        fields: [categories.userId],
+        references: [users.id],
+    }),
+}));
+
 export const financialHealthScores = pgTable('financial_health_scores', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -1410,6 +1438,37 @@ export const financialHealthScoresRelations = relations(financialHealthScores, (
     budgetAlerts: many(budgetAlerts),
     budgetAggregates: many(budgetAggregates),
 }));
+
+export const expensesRelations = relations(expenses, ({ one }) => ({
+    tenant: one(tenants, {
+        fields: [expenses.tenantId],
+        references: [tenants.id],
+    }),
+    user: one(users, {
+        fields: [expenses.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [expenses.categoryId],
+        references: [categories.id],
+    }),
+}));
+
+export const goalsRelations = relations(goals, ({ one }) => ({
+    tenant: one(tenants, {
+        fields: [goals.tenantId],
+        references: [tenants.id],
+    }),
+    user: one(users, {
+        fields: [goals.userId],
+        references: [users.id],
+    }),
+    category: one(categories, {
+        fields: [goals.categoryId],
+        references: [categories.id],
+    }),
+}));
+
 export const goalContributionLineItemsRelations = relations(goalContributionLineItems, ({ one }) => ({
     goal: one(goals, {
         fields: [goalContributionLineItems.goalId],
@@ -2789,6 +2848,13 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
     budgetAlerts: many(budgetAlerts),
     subscriptions: many(subscriptions),
 }));
+
+export const budgetAlertsRelations = relations(budgetAlerts, ({ one }) => ({
+    user: one(users, { fields: [budgetAlerts.userId], references: [users.id] }),
+    category: one(categories, { fields: [budgetAlerts.categoryId], references: [categories.id] }),
+    vault: one(vaults, { fields: [budgetAlerts.vaultId], references: [vaults.id] }),
+}));
+
 export const expensesRelations = relations(expenses, ({ one }) => ({
     user: one(users, { fields: [expenses.userId], references: [users.id] }),
     category: one(categories, { fields: [expenses.categoryId], references: [categories.id] }),
@@ -3027,6 +3093,38 @@ export const consolidatedAnalytics = pgTable('consolidated_analytics', {
 // ============================================================================
 // RECURRING PAYMENTS & BILL AUTOMATION (#298)
 // ============================================================================
+
+// Recurring Transactions - Detected recurring patterns
+export const recurringTransactions = pgTable('recurring_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    merchantName: text('merchant_name'),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    frequency: text('frequency').notNull(), // daily, weekly, biweekly, monthly, quarterly, yearly
+    nextDueDate: timestamp('next_due_date').notNull(),
+    lastProcessedDate: timestamp('last_processed_date'),
+    status: text('status').default('active'), // active, paused, cancelled, completed
+    isAutoPayEnabled: boolean('is_auto_pay_enabled').default(false),
+    confidence: doublePrecision('confidence').default(0.85), // Detection confidence
+    detectionMethod: text('detection_method').default('pattern'), // pattern, manual, imported
+    occurrenceCount: integer('occurrence_count').default(0),
+    totalPaid: numeric('total_paid', { precision: 12, scale: 2 }).default(0),
+    averageAmount: numeric('average_amount', { precision: 12, scale: 2 }),
+    varianceAmount: doublePrecision('variance_amount'),
+    paymentMethod: text('payment_method'), // credit_card, bank_account, cash, etc
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_recurring_user').on(table.userId),
+    statusIdx: index('idx_recurring_status').on(table.status),
+    dueDateIdx: index('idx_recurring_due_date').on(table.nextDueDate),
+}));
+
 // Scheduled Payments - Upcoming bill payments
 export const scheduledPayments = pgTable('scheduled_payments', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -3534,6 +3632,33 @@ export const securityEvents = pgTable('security_events', {
 export const securityEventsRelations = relations(securityEvents, ({ one }) => ({
     user: one(users, { fields: [securityEvents.userId], references: [users.id] }),
 }));
+
+export const auditLogs = pgTable('audit_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    resourceType: text('resource_type'),
+    resourceId: text('resource_id'),
+    originalState: jsonb('original_state'),
+    newState: jsonb('new_state'),
+    delta: jsonb('delta'),
+    deltaHash: text('delta_hash'),
+    metadata: jsonb('metadata').default({}),
+    status: text('status').default('success'),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    sessionId: text('session_id'),
+    requestId: text('request_id'),
+    isSealed: boolean('is_sealed').default(false),
+    auditAnchorId: uuid('audit_anchor_id').references(() => auditAnchors.id),
+    performedAt: timestamp('performed_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_audit_user').on(table.userId),
+    actionIdx: index('idx_audit_action').on(table.action),
+    resourceIdx: index('idx_audit_resource').on(table.resourceType, table.resourceId),
+    dateIdx: index('idx_audit_date').on(table.performedAt),
+}));
+
 export const auditSnapshots = pgTable('audit_snapshots', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
@@ -3593,6 +3718,18 @@ export const forensicQueries = pgTable('forensic_queries', {
 // ============================================================================
 // IMMUTABLE GOVERNANCE & MERKLE AUDITS (#475)
 // ============================================================================
+
+export const auditAnchors = pgTable('audit_anchors', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merkleRoot: text('merkle_root').notNull(),
+    previousAnchorId: uuid('previous_anchor_id'), // Hash chain link
+    eventCount: integer('event_count').notNull(),
+    sealedAt: timestamp('sealed_at').defaultNow(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    sealMetadata: jsonb('seal_metadata').default({}), // Storage for range info
+});
+
 export const auditAnchorsRelations = relations(auditAnchors, ({ one }) => ({
     previousAnchor: one(auditAnchors, { fields: [auditAnchors.previousAnchorId], references: [auditAnchors.id] }),
 }));
@@ -4405,6 +4542,17 @@ export const taxLotsRelations = relations(taxLots, ({ one }) => ({
     user: one(users, { fields: [taxLots.userId], references: [users.id] }),
     investment: one(investments, { fields: [taxLots.investmentId], references: [investments.id] }),
 }));
+
+export const harvestOpportunitiesRelations = relations(harvestOpportunities, ({ one }) => ({
+    user: one(users, { fields: [harvestOpportunities.userId], references: [users.id] }),
+    investment: one(investments, { fields: [harvestOpportunities.investmentId], references: [investments.id] }),
+}));
+
+export const washSaleLogsRelations = relations(washSaleLogs, ({ one }) => ({
+    user: one(users, { fields: [washSaleLogs.userId], references: [users.id] }),
+    investment: one(investments, { fields: [washSaleLogs.investmentId], references: [investments.id] }),
+}));
+
 // ============================================================================
 // INTELLIGENT ANOMALY DETECTION & RISK SCORING (L3) (#372)
 // ============================================================================

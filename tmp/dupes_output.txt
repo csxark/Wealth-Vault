@@ -1,0 +1,10 @@
+﻿Duplicate found: usersRelations at lines 1234 and 2761
+Duplicate found: categoriesRelations at lines 1397 and 2843
+Duplicate found: expensesRelations at lines 1442 and 2858
+Duplicate found: goalsRelations at lines 1457 and 2954
+Duplicate found: auditLogs at lines 122 and 3636
+Duplicate found: harvestOpportunitiesRelations at lines 4546 and 5862
+Duplicate found: washSaleLogsRelations at lines 4551 and 5867
+Duplicate found: auditAnchors at lines 3722 and 6181
+Duplicate found: budgetAlertsRelations at lines 2852 and 6637
+Duplicate found: recurringTransactions at lines 3098 and 6749
