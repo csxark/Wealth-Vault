@@ -43,6 +43,7 @@ import rateArbitrageEngineService from '../services/rateArbitrageEngineService.j
 import taxSmartDebtSequencerService from '../services/taxSmartDebtSequencerService.js';
 import debtPaymentDateOptimizerService from '../services/debtPaymentDateOptimizerService.js';
 import creditUtilizationSmoothingService from '../services/creditUtilizationSmoothingService.js';
+import minimumPaymentShockPredictorService from '../services/minimumPaymentShockPredictorService.js';
 
 const router = express.Router();
 
@@ -1968,6 +1969,55 @@ router.post('/utilization/smooth', protect, [
         200,
         result,
         'Credit utilization smoothing plan generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/minimum-shock/predict
+ * @desc    Predict minimum payment shocks and recommend preventive actions
+ * @access  Private
+ */
+router.post('/minimum-shock/predict', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['credit-card', 'auto-loan', 'student-loan', 'heloc', 'personal-loan', 'mortgage']),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.monthlyPayment', 'Monthly payment must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPaymentPercent', 'Minimum payment percent must be between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.gracePeriod', 'Grace period must be between 0 and 12 months').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 12),
+    body('debts.*.variableApr', 'Variable APR must be boolean').optional().isBoolean(),
+    body('debts.*.aprChangeHistory', 'APR change history must be an array').optional().isArray(),
+    body('debts.*.aprChangeHistory.*', 'Each APR change must be numeric').optional().isNumeric(),
+    body('debts.*.lastAprChangeDate', 'Last APR change date must be a valid date string').optional().isISO8601(),
+    body('debts.*.nextAprReviewDate', 'Next APR review date must be a valid date string').optional().isISO8601(),
+    body('debts.*.balanceGrowthRate', 'Balance growth rate must be between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('availableCashFlow', 'Available cash flow must be numeric and positive').isNumeric().custom(v => Number(v) > 0)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = minimumPaymentShockPredictorService.predict(
+        req.body.debts || [],
+        req.body.availableCashFlow || 0
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Minimum payment shock prediction complete'
     ).send(res);
 }));
 
