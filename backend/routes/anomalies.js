@@ -13,6 +13,7 @@ import db from '../config/db.js';
 import { protect } from '../middleware/auth.js';
 import { anomalyDetections, anomalyRules } from '../db/schema.js';
 import anomalyDetectionService from '../services/anomalyDetectionService.js';
+import expensePatternAnomalyDetectorService from '../services/expensePatternAnomalyDetectorService.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -336,6 +337,45 @@ router.get(
  *       500:
  *         description: Server error
  */
+router.post(
+    '/expense-pattern/detect',
+    protect,
+    [
+        body('expenses').optional().isArray().withMessage('expenses must be an array'),
+        body('expenses.*.id').optional().isString().withMessage('expense id must be a string'),
+        body('expenses.*.amount').optional().isNumeric().withMessage('expense amount must be numeric'),
+        body('expenses.*.date').optional().isISO8601().withMessage('expense date must be ISO8601'),
+        body('expenses.*.categoryId').optional().isString().withMessage('expense categoryId must be a string'),
+        body('expenses.*.description').optional().isString().withMessage('expense description must be a string'),
+        body('lookbackDays').optional().isInt({ min: 30, max: 730 }).withMessage('lookbackDays must be between 30 and 730'),
+        body('sensitivity').optional().isIn(['low', 'medium', 'high']).withMessage('sensitivity must be low, medium, or high'),
+        body('minAmount').optional().isFloat({ min: 0 }).withMessage('minAmount must be non-negative'),
+        body('includeSeasonality').optional().isBoolean().withMessage('includeSeasonality must be boolean')
+    ],
+    async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+
+            const result = await expensePatternAnomalyDetectorService.detectForUser(
+                req.user.id,
+                req.user.tenantId,
+                req.body || {}
+            );
+
+            return res.status(200).json({
+                success: true,
+                result
+            });
+        } catch (error) {
+            logger.error('Error detecting expense pattern anomalies:', error);
+            return res.status(500).json({ error: 'Failed to detect expense pattern anomalies' });
+        }
+    }
+);
+
 router.post(
     '/rules',
     protect,
