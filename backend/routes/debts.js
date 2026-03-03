@@ -42,6 +42,7 @@ import debtConsolidationRoiCalculatorService from '../services/debtConsolidation
 import rateArbitrageEngineService from '../services/rateArbitrageEngineService.js';
 import taxSmartDebtSequencerService from '../services/taxSmartDebtSequencerService.js';
 import debtPaymentDateOptimizerService from '../services/debtPaymentDateOptimizerService.js';
+import creditUtilizationSmoothingService from '../services/creditUtilizationSmoothingService.js';
 
 const router = express.Router();
 
@@ -1918,6 +1919,55 @@ router.post('/payment-dates/optimize', protect, [
         200,
         result,
         'Optimized payment schedule generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/utilization/smooth
+ * @desc    Generate credit utilization smoothing plan to optimize credit score
+ * @access  Private
+ */
+router.post('/utilization/smooth', protect, [
+    body('cards', 'Cards must be a non-empty array').isArray({ min: 1 }),
+    body('cards.*.id', 'Each card id must be a string').optional().isString(),
+    body('cards.*.name', 'Each card name must be a string').optional().isString(),
+    body('cards.*.issuer', 'Each card issuer must be a string').optional().isString(),
+    body('cards.*.creditLimit', 'Each card creditLimit must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('cards.*.currentBalance', 'Each card currentBalance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('cards.*.statementCloseDate', 'Statement close date must be between 1 and 31').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 31),
+    body('cards.*.daysUntilStatementClose', 'Days until statement close must be between 0 and 30').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 30),
+    body('cards.*.recentTransactions', 'Recent transactions must be an array').optional().isArray(),
+    body('cards.*.recentTransactions.*.amount', 'Transaction amount must be numeric').optional().isNumeric(),
+    body('cards.*.recentTransactions.*.type', 'Transaction type must be valid').optional().isIn(['purchase', 'payment', 'fee', 'interest']),
+    body('cards.*.paymentsPending', 'Payments pending must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('cards.*.estimatedMonthlySpend', 'Estimated monthly spend must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('targetUtilizations', 'Target utilizations must be an object').optional().isObject(),
+    body('targetUtilizations.excellent', 'Excellent target must be between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('targetUtilizations.veryGood', 'Very good target must be between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('targetUtilizations.good', 'Good target must be between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = creditUtilizationSmoothingService.smooth(
+        req.body.cards || [],
+        req.body.targetUtilizations || {}
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Credit utilization smoothing plan generated'
     ).send(res);
 }));
 
