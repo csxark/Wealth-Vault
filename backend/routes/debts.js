@@ -48,6 +48,7 @@ import debtRecastVsRefinanceAnalyzerService from '../services/debtRecastVsRefina
 import loanPrepaymentPenaltyOptimizerService from '../services/loanPrepaymentPenaltyOptimizerService.js';
 import payoffOrderOptimizationEngineService from '../services/payoffOrderOptimizationEngineService.js';
 import debtConsolidationLoanAnalyzerService from '../services/debtConsolidationLoanAnalyzerService.js';
+import creditInquiryImpactForecasterService from '../services/creditInquiryImpactForecasterService.js';
 
 const router = express.Router();
 
@@ -2224,6 +2225,51 @@ router.post('/consolidation-loan/analyze', protect, [
         200,
         result,
         'Debt consolidation analysis complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/credit-inquiry/forecast-impact
+ * @desc    Forecast credit inquiry impact on credit score and borrowing rates
+ * @access  Private
+ */
+router.post('/credit-inquiry/forecast-impact', protect, [
+    body('currentScore', 'Credit score must be between 300 and 850').isNumeric().custom(v => Number(v) >= 300 && Number(v) <= 850),
+    body('inquiryCount', 'Inquiry count must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 10),
+    body('debtBalance', 'Debt balance must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('currentAPR', 'Current APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('inquiryType', 'Inquiry type must be valid').optional().isIn(['auto', 'mortgage', 'creditcard', 'personal']),
+    body('portfolioScenarios', 'Portfolio scenarios must be an array').optional().isArray(),
+    body('portfolioScenarios.*.accountType', 'Account type must be valid').optional().isIn(['mortgage', 'auto', 'creditcard'])
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = creditInquiryImpactForecasterService.forecast(
+        req.body.currentScore,
+        {
+            inquiryCount: req.body.inquiryCount || 0,
+            debtBalance: req.body.debtBalance || 0,
+            currentAPR: req.body.currentAPR || 0,
+            inquiryType: req.body.inquiryType || 'auto',
+            portfolioScenarios: req.body.portfolioScenarios || []
+        }
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Credit inquiry impact forecast complete'
     ).send(res);
 }));
 
