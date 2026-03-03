@@ -35,6 +35,7 @@ import householdDebtOptimizerService from '../services/householdDebtOptimizerSer
 import delinquencyEarlyWarningService from '../services/delinquencyEarlyWarningService.js';
 import taxEfficientDebtCoordinatorService from '../services/taxEfficientDebtCoordinatorService.js';
 import dtiRatioOptimizerService from '../services/dtiRatioOptimizerService.js';
+import incomeBasedPaymentFlexibilityService from '../services/incomeBasedPaymentFlexibilityService.js';
 
 const router = express.Router();
 
@@ -1536,6 +1537,72 @@ router.post('/dti/optimize', protect, [
         200,
         result,
         'DTI ratio optimization analysis complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/income-flexibility/optimize
+ * @desc    Generate adaptive payment schedule based on variable income
+ * @access  Private
+ */
+router.post('/income-flexibility/optimize', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical']),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.currentBalance', 'Each debt currentBalance must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('monthlyExpenses', 'Monthly expenses must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('incomeProfile', 'Income profile must be an object').optional().isObject(),
+    body('incomeProfile.base', 'Base income must be numeric and non-negative').optional().isObject(),
+    body('incomeProfile.base.amount', 'Base amount must be numeric').optional().isNumeric(),
+    body('incomeProfile.bonus', 'Bonus profile must be an object').optional().isObject(),
+    body('incomeProfile.bonus.amount', 'Bonus amount must be numeric').optional().isNumeric(),
+    body('incomeProfile.bonus.frequencyMonths', 'Bonus frequency must be numeric').optional().isNumeric(),
+    body('incomeProfile.bonus.probabilityPercent', 'Probability must be 0-100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('incomeProfile.sidegig', 'Side gig profile must be an object').optional().isObject(),
+    body('incomeProfile.sidegig.monthlyAverage', 'Monthly average must be numeric').optional().isNumeric(),
+    body('incomeProfile.sidegig.monthlyMin', 'Monthly min must be numeric').optional().isNumeric(),
+    body('incomeProfile.sidegig.monthlyMax', 'Monthly max must be numeric').optional().isNumeric(),
+    body('incomeProfile.seasonal', 'Seasonal profile must be an object').optional().isObject(),
+    body('incomeProfile.seasonal.baseMonthly', 'Base monthly must be numeric').optional().isNumeric(),
+    body('incomeProfile.seasonal.peakMonths', 'Peak months must be an array').optional().isArray(),
+    body('incomeProfile.seasonal.peakMultiplier', 'Peak multiplier must be numeric').optional().isNumeric(),
+    body('incomeProfile.windfalls', 'Windfalls profile must be an object').optional().isObject(),
+    body('incomeProfile.windfalls.expectedAnnually', 'Expected annually must be numeric').optional().isNumeric(),
+    body('horizonMonths', 'Horizon months must be between 6 and 60').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 6 && Number(v) <= 60)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await incomeBasedPaymentFlexibilityService.optimize(
+        req.user.id,
+        req.body.debts || [],
+        req.body.monthlyExpenses || 0,
+        req.body.incomeProfile || {},
+        {
+            horizonMonths: req.body.horizonMonths
+        }
+    );
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Income-based payment flexibility analysis complete'
     ).send(res);
 }));
 
