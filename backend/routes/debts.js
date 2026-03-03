@@ -25,6 +25,7 @@ import emergencyFundAdequacyAnalyzer from '../services/emergencyFundAdequacyAnal
 import debtConsolidationRecommenderService from '../services/debtConsolidationRecommenderService.js';
 import debtWhatIfSimulatorService from '../services/debtWhatIfSimulatorService.js';
 import debtVariableAprOptimizerService from '../services/debtVariableAprOptimizerService.js';
+import debtAdherenceRiskScoringService from '../services/debtAdherenceRiskScoringService.js';
 
 const router = express.Router();
 
@@ -960,6 +961,41 @@ router.post('/variable-apr/optimize', protect, [
         200,
         result,
         'Variable APR optimization complete with stress band scenarios'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/adherence/score
+ * @desc    Score user's behavioral adherence risk for debt plans
+ * @access  Private
+ */
+router.post('/adherence/score', protect, [
+    body('lookbackMonths', 'Lookback months must be between 1 and 60').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 1 && parseInt(v, 10) <= 60),
+    body('baseStrategy', 'Base strategy must be avalanche, snowball, or hybrid').optional()
+        .isIn(['avalanche', 'snowball', 'hybrid'])
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtAdherenceRiskScoringService.scoreAdherence(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Adherence risk scoring complete with stickiness-adjusted recommendations'
     ).send(res);
 }));
 
