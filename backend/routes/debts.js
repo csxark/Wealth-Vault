@@ -54,6 +54,7 @@ import balanceTransferRateArbitrageEngineService from '../services/balanceTransf
 import medicalDebtNegotiationOptimizerService from '../services/medicalDebtNegotiationOptimizerService.js';
 import creditScoreRecoveryRoadmapService from '../services/creditScoreRecoveryRoadmapService.js';
 import promotionalRateShoppingSequencerService from '../services/promotionalRateShoppingSequencerService.js';
+import multiLoanConsolidationRecommenderService from '../services/multiLoanConsolidationRecommenderService.js';
 
 import hardshipProgramNegotiationEngineService from '../services/hardshipProgramNegotiationEngineService.js';
 import debtToIncomeAutoQualificationSimulatorService from '../services/debtToIncomeAutoQualificationSimulatorService.js';
@@ -907,6 +908,46 @@ router.post('/consolidation/recommend', protect, [
         200,
         recommendation,
         'Smart debt consolidation recommendation generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/multi-loan-consolidation/recommend
+ * @desc    Recommend best multi-loan consolidation option and timing - Issue #832
+ */
+router.post('/multi-loan-consolidation/recommend', protect, [
+    body('loans').optional().isArray().withMessage('loans must be an array'),
+    body('loans.*.id').optional().isString().withMessage('loan id must be a string'),
+    body('loans.*.name').optional().isString().withMessage('loan name must be a string'),
+    body('loans.*.currentBalance').optional().isNumeric().withMessage('loan currentBalance must be numeric'),
+    body('loans.*.balance').optional().isNumeric().withMessage('loan balance must be numeric'),
+    body('loans.*.minimumPayment').optional().isNumeric().withMessage('loan minimumPayment must be numeric'),
+    body('loans.*.apr').optional().isNumeric().withMessage('loan apr must be numeric'),
+    body('loans.*.type').optional().isString().withMessage('loan type must be a string'),
+    body('loans.*.debtType').optional().isString().withMessage('loan debtType must be a string'),
+    body('loans.*.monthsRemaining').optional().isInt({ min: 1, max: 480 }).withMessage('monthsRemaining must be between 1 and 480'),
+    body('loans.*.hasFederalBenefits').optional().isBoolean().withMessage('hasFederalBenefits must be boolean'),
+    body('loans.*.hasRateDiscountBenefits').optional().isBoolean().withMessage('hasRateDiscountBenefits must be boolean'),
+    body('scenarioOptions').optional().isArray().withMessage('scenarioOptions must be an array'),
+    body('scenarioOptions.*.name').optional().isString().withMessage('scenario name must be string'),
+    body('scenarioOptions.*.apr').optional().isNumeric().withMessage('scenario apr must be numeric'),
+    body('scenarioOptions.*.termMonths').optional().isInt({ min: 1, max: 480 }).withMessage('scenario termMonths must be between 1 and 480'),
+    body('scenarioOptions.*.originationFeePercent').optional().isFloat({ min: 0, max: 10 }).withMessage('scenario originationFeePercent must be between 0 and 10'),
+    body('scenarioOptions.*.fixedFees').optional().isNumeric().withMessage('scenario fixedFees must be numeric'),
+    body('timing').optional().isObject().withMessage('timing must be an object'),
+    body('timing.expectedRateShiftBps').optional().isNumeric().withMessage('timing.expectedRateShiftBps must be numeric')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json(new ApiResponse(400, { errors: errors.array() }, 'Validation failed'));
+    }
+
+    const result = await multiLoanConsolidationRecommenderService.recommend(req.user.id, req.body || {});
+
+    return new ApiResponse(
+        200,
+        result,
+        'Multi-loan consolidation recommendation generated'
     ).send(res);
 }));
 
