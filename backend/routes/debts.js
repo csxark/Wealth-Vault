@@ -39,6 +39,7 @@ import incomeBasedPaymentFlexibilityService from '../services/incomeBasedPayment
 import creditorNegotiationAssistantService from '../services/creditorNegotiationAssistantService.js';
 import paymentAutopilotService from '../services/paymentAutopilotService.js';
 import debtConsolidationRoiCalculatorService from '../services/debtConsolidationRoiCalculatorService.js';
+import rateArbitrageEngineService from '../services/rateArbitrageEngineService.js';
 
 const router = express.Router();
 
@@ -1753,6 +1754,58 @@ router.post('/consolidation/roi', protect, [
         200,
         result,
         'Debt consolidation ROI analysis complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/arbitrage/discover
+ * @desc    Discover cross-creditor rate arbitrage opportunities
+ * @access  Private
+ */
+router.post('/arbitrage/discover', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical']),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('eligibleOffers', 'Eligible offers must be an array').optional().isArray(),
+    body('eligibleOffers.*.provider', 'Offer provider must be a string').optional().isString(),
+    body('eligibleOffers.*.productType', 'Offer productType must be valid').optional().isIn(['balance-transfer', 'personal-loan', 'refinance']),
+    body('eligibleOffers.*.apr', 'Offer APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('eligibleOffers.*.promoApr', 'Offer promo APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('eligibleOffers.*.promoMonths', 'Offer promo months must be between 0 and 60').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 60),
+    body('eligibleOffers.*.transferFeePercent', 'Transfer fee % must be between 0 and 10').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 10),
+    body('eligibleOffers.*.maxTransferAmount', 'Max transfer amount must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('eligibleOffers.*.minCreditScore', 'Min credit score must be between 300 and 850').optional().isNumeric().custom(v => Number(v) >= 300 && Number(v) <= 850),
+    body('options', 'Options must be an object').optional().isObject(),
+    body('options.creditScore', 'Credit score must be between 300 and 850').optional().isNumeric().custom(v => Number(v) >= 300 && Number(v) <= 850)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = rateArbitrageEngineService.discover(
+        req.user.id,
+        req.body.debts || [],
+        req.body.eligibleOffers || [],
+        req.body.options || {}
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Rate arbitrage opportunities discovered'
     ).send(res);
 }));
 
