@@ -46,6 +46,7 @@ import creditUtilizationSmoothingService from '../services/creditUtilizationSmoo
 import minimumPaymentShockPredictorService from '../services/minimumPaymentShockPredictorService.js';
 import debtRecastVsRefinanceAnalyzerService from '../services/debtRecastVsRefinanceAnalyzerService.js';
 import loanPrepaymentPenaltyOptimizerService from '../services/loanPrepaymentPenaltyOptimizerService.js';
+import payoffOrderOptimizationEngineService from '../services/payoffOrderOptimizationEngineService.js';
 
 const router = express.Router();
 
@@ -2126,6 +2127,54 @@ router.post('/prepayment-penalty/optimize', protect, [
         200,
         result,
         'Prepayment penalty optimization complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/payoff-order/optimize
+ * @desc    Analyze and rank optimal debt payoff sequences (Avalanche, Snowball, Hybrid, Custom)
+ * @access  Private
+ */
+router.post('/payoff-order/optimize', protect, [
+    body('debts', 'Debts must be an array').isArray(),
+    body('debts.*.id', 'Each debt must have an id').optional().isString(),
+    body('debts.*.name', 'Debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Debt type must be valid').optional().isIn(['auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'heloc', 'credit-card']),
+    body('debts.*.balance', 'Balance must be numeric').optional().isNumeric(),
+    body('debts.*.currentBalance', 'Current balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.apr', 'APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.minimumPayment', 'Minimum payment must be numeric and positive').isNumeric().custom(v => Number(v) > 0),
+    body('debts.*.monthsRemaining', 'Months remaining must be between 1 and 360').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('debts.*.priority', 'Priority must be numeric').optional().isNumeric(),
+    body('preferences', 'Preferences must be an object').optional().isObject(),
+    body('preferences.minimizeInterest', 'Minimize interest weight must be between 0 and 1').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 1),
+    body('preferences.fastestCompletion', 'Fastest completion weight must be between 0 and 1').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 1),
+    body('preferences.earlyWins', 'Early wins weight must be between 0 and 1').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 1),
+    body('monthlyExtraPayment', 'Monthly extra payment must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = payoffOrderOptimizationEngineService.optimize(
+        req.body.debts || [],
+        req.body.preferences || {},
+        req.body.monthlyExtraPayment || 0
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Payoff order optimization complete'
     ).send(res);
 }));
 
