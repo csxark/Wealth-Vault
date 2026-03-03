@@ -6,6 +6,7 @@ import successionPilot from '../services/successionPilot.js';
 import encryptionVault from '../utils/encryptionVault.js';
 import consensusTransition from '../services/consensusTransition.js';
 import probateAutomation from '../services/probateAutomation.js';
+import successionGuard, { successionGuardMiddleware } from '../middleware/successionGuard.js';
 import db from '../config/db.js';
 import { digitalWillDefinitions, heirIdentityVerifications, trusteeVoteLedger } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -49,9 +50,9 @@ router.post('/verify-identity', protect, asyncHandler(async (req, res) => {
 
 /**
  * @route   POST /api/succession/trustee/vote
- * @desc    Cast a vote for/against succession trigger (Trustees only)
+ * @desc    Cast a vote for/against succession trigger (Trustees only) (PROTECTED)
  */
-router.post('/trustee/vote', protect, asyncHandler(async (req, res) => {
+router.post('/trustee/vote', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
     const { willId, result, reason } = req.body;
     const [vote] = await db.insert(trusteeVoteLedger).values({
         willId,
@@ -65,9 +66,9 @@ router.post('/trustee/vote', protect, asyncHandler(async (req, res) => {
 
 /**
  * @route   GET /api/succession/claim/:willId
- * @desc    Claim fractional ownership of assets (Heirs only)
+ * @desc    Claim fractional ownership of assets (Heirs only) (PROTECTED)
  */
-router.get('/claim/:willId', protect, asyncHandler(async (req, res) => {
+router.get('/claim/:willId', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
     const will = await db.query.digitalWillDefinitions.findFirst({
         where: and(eq(digitalWillDefinitions.id, req.params.willId), eq(digitalWillDefinitions.status, 'settled'))
     });
@@ -86,9 +87,9 @@ router.get('/claim/:willId', protect, asyncHandler(async (req, res) => {
 
 /**
  * @route   POST /api/succession/consensus/approve
- * @desc    Submit cryptographic approval for shard reconstruction
+ * @desc    Submit cryptographic approval for shard reconstruction (PROTECTED)
  */
-router.post('/consensus/approve', protect, asyncHandler(async (req, res) => {
+router.post('/consensus/approve', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
     const { shardId, signature, reconstructionRequestId } = req.body;
 
     const result = await consensusTransition.submitApproval(
@@ -179,6 +180,46 @@ router.post('/ledger/verify', protect, asyncHandler(async (req, res) => {
         valid: isValid,
         verifiedAt: new Date().toISOString()
     }, isValid ? 'Ledger signature verified successfully' : 'Ledger signature verification failed').send(res);
+})));
+
+/**
+ * @route   POST /api/succession/emergency-override/activate
+ * @desc    Activate emergency override for succession protection (Admin/Trustee only)
+ */
+router.post('/emergency-override/activate', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
+    const { targetUserId, reason, durationHours = 72 } = req.body;
+
+    // In production, check if requester has admin/trustee permissions
+    const result = await successionGuard.activateEmergencyOverride(
+        targetUserId,
+        req.user.id,
+        reason,
+        durationHours
+    );
+
+    new ApiResponse(200, result, 'Emergency override activated successfully').send(res);
+}));
+
+/**
+ * @route   POST /api/succession/emergency-override/deactivate
+ * @desc    Deactivate emergency override (Admin/Trustee only)
+ */
+router.post('/emergency-override/deactivate', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
+    const { targetUserId } = req.body;
+
+    const result = await successionGuard.deactivateEmergencyOverride(targetUserId, req.user.id);
+
+    new ApiResponse(200, result, 'Emergency override deactivated successfully').send(res);
+}));
+
+/**
+ * @route   GET /api/succession/protection-status/:userId
+ * @desc    Get current protection status for a user
+ */
+router.get('/protection-status/:userId', protect, asyncHandler(async (req, res) => {
+    const status = await successionGuard.getProtectionStatus(req.params.userId);
+
+    new ApiResponse(200, status, 'Protection status retrieved successfully').send(res);
 }));
 
 export default router;
