@@ -22,6 +22,7 @@ import eventBus from '../events/eventBus.js';
 import defaultPredictorAI from '../services/defaultPredictorAI.js';
 import debtAvalancheSnowballOptimizer from '../services/debtAvalancheSnowballOptimizer.js';
 import emergencyFundAdequacyAnalyzer from '../services/emergencyFundAdequacyAnalyzer.js';
+import debtConsolidationRecommenderService from '../services/debtConsolidationRecommenderService.js';
 
 const router = express.Router();
 
@@ -742,6 +743,48 @@ router.get('/optimizer/recommendation', protect, asyncHandler(async (req, res) =
             calculatedAt: result.calculatedAt
         },
         'Personalized recommendation generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/consolidation/recommend
+ * @desc    Compare keep-current-debts vs smart consolidation scenarios - Issue #744
+ */
+router.post('/consolidation/recommend', protect, [
+    body('monthlyBudget').optional().isNumeric().withMessage('monthlyBudget must be numeric'),
+    body('horizonMonths').optional().isInt({ min: 1, max: 360 }).withMessage('horizonMonths must be between 1 and 360'),
+    body('riskAssumptions').optional().isObject().withMessage('riskAssumptions must be an object'),
+    body('riskAssumptions.creditRiskTier').optional().isIn(['low', 'medium', 'high', 'very_high']).withMessage('Invalid creditRiskTier'),
+    body('riskAssumptions.latePaymentProbability').optional().isFloat({ min: 0, max: 1 }).withMessage('latePaymentProbability must be between 0 and 1'),
+    body('debts').optional().isArray().withMessage('debts must be an array'),
+    body('debts.*.currentBalance').optional().isNumeric().withMessage('debt currentBalance must be numeric'),
+    body('debts.*.minimumPayment').optional().isNumeric().withMessage('debt minimumPayment must be numeric'),
+    body('debts.*.apr').optional().isNumeric().withMessage('debt apr must be numeric'),
+    body('scenarios').optional().isArray().withMessage('scenarios must be an array'),
+    body('scenarios.*.name').optional().isString().withMessage('scenario name must be a string'),
+    body('scenarios.*.type').optional().isIn(['personal_loan', 'balance_transfer', 'custom']).withMessage('invalid scenario type'),
+    body('scenarios.*.targetDebtIds').optional().isArray().withMessage('targetDebtIds must be an array'),
+    body('scenarios.*.loanApr').optional().isNumeric().withMessage('loanApr must be numeric'),
+    body('scenarios.*.postPromoApr').optional().isNumeric().withMessage('postPromoApr must be numeric'),
+    body('scenarios.*.promoApr').optional().isNumeric().withMessage('promoApr must be numeric'),
+    body('scenarios.*.promoMonths').optional().isInt({ min: 0, max: 120 }).withMessage('promoMonths must be between 0 and 120'),
+    body('scenarios.*.termMonths').optional().isInt({ min: 1, max: 480 }).withMessage('termMonths must be between 1 and 480'),
+    body('scenarios.*.originationFeePct').optional().isFloat({ min: 0, max: 1 }).withMessage('originationFeePct must be between 0 and 1'),
+    body('scenarios.*.transferFeePct').optional().isFloat({ min: 0, max: 1 }).withMessage('transferFeePct must be between 0 and 1'),
+    body('scenarios.*.originationFeeFixed').optional().isNumeric().withMessage('originationFeeFixed must be numeric'),
+    body('scenarios.*.transferFeeFixed').optional().isNumeric().withMessage('transferFeeFixed must be numeric')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json(new ApiResponse(400, { errors: errors.array() }, 'Validation failed'));
+    }
+
+    const recommendation = await debtConsolidationRecommenderService.recommend(req.user.id, req.body || {});
+
+    return new ApiResponse(
+        200,
+        recommendation,
+        'Smart debt consolidation recommendation generated'
     ).send(res);
 }));
 
