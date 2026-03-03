@@ -45,6 +45,7 @@ import debtPaymentDateOptimizerService from '../services/debtPaymentDateOptimize
 import creditUtilizationSmoothingService from '../services/creditUtilizationSmoothingService.js';
 import minimumPaymentShockPredictorService from '../services/minimumPaymentShockPredictorService.js';
 import debtRecastVsRefinanceAnalyzerService from '../services/debtRecastVsRefinanceAnalyzerService.js';
+import loanPrepaymentPenaltyOptimizerService from '../services/loanPrepaymentPenaltyOptimizerService.js';
 
 const router = express.Router();
 
@@ -2074,6 +2075,57 @@ router.post('/recast-refinance/analyze', protect, [
         200,
         result,
         'Recast vs refinance analysis complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/prepayment-penalty/optimize
+ * @desc    Analyze prepayment penalties and optimize acceleration strategy
+ * @access  Private
+ */
+router.post('/prepayment-penalty/optimize', protect, [
+    body('debts', 'Debts must be an array').isArray(),
+    body('debts.*.id', 'Each debt must have an id').optional().isString(),
+    body('debts.*.name', 'Debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Debt type must be valid').optional().isIn(['auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'heloc']),
+    body('debts.*.balance', 'Balance must be numeric').optional().isNumeric(),
+    body('debts.*.currentBalance', 'Current balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.apr', 'APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.monthlyPayment', 'Monthly payment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.monthsRemaining', 'Months remaining must be between 1 and 360').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('debts.*.hasPrepaymentPenalty', 'Has prepayment penalty must be a boolean').optional().isBoolean(),
+    body('debts.*.penaltyType', 'Penalty type must be valid').optional().isIn(['fixed', 'percent-of-balance', 'declining-schedule', 'none']),
+    body('debts.*.penaltyAmount', 'Penalty amount must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.penaltyPercent', 'Penalty percent must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.penaltyExpirationMonths', 'Penalty expiration months must be non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.penaltyStartDate', 'Penalty start date must be a valid date string').optional().isISO8601(),
+    body('debts.*.penaltyEndDate', 'Penalty end date must be a valid date string').optional().isISO8601(),
+    body('debts.*.penaltySchedule', 'Penalty schedule must be an array').optional().isArray(),
+    body('debts.*.penaltySchedule.*.month', 'Schedule month must be numeric').optional().isNumeric(),
+    body('debts.*.penaltySchedule.*.percent', 'Schedule percent must be numeric').optional().isNumeric(),
+    body('debts.*.estimatedInterestSavingsPerMonth', 'Interest savings must be numeric').optional().isNumeric()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = loanPrepaymentPenaltyOptimizerService.optimize(
+        req.body.debts || []
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Prepayment penalty optimization complete'
     ).send(res);
 }));
 
