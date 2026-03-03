@@ -31,6 +31,7 @@ import debtEmergencyFundBalancerService from '../services/debtEmergencyFundBalan
 import debtSequencingOptimizerService from '../services/debtSequencingOptimizerService.js';
 import lifeEventDebtStrategyService from '../services/lifeEventDebtStrategyService.js';
 import debtNudgeAndMicroPaymentService from '../services/debtNudgeAndMicroPaymentService.js';
+import householdDebtOptimizerService from '../services/householdDebtOptimizerService.js';
 
 const router = express.Router();
 
@@ -1240,6 +1241,55 @@ router.post('/nudges/execute', protect, [
         200,
         result,
         'Behavioral nudge micro-payments executed'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/household/optimize
+ * @desc    Optimize shared and personal debt payoff at household level
+ * @access  Private
+ */
+router.post('/household/optimize', protect, [
+    body('members', 'Members must be a non-empty array').isArray({ min: 1 }),
+    body('members.*.id', 'Each member id must be a string').optional().isString(),
+    body('members.*.name', 'Each member name must be a string').optional().isString(),
+    body('members.*.monthlyIncome', 'Each member monthlyIncome must be numeric').optional().isNumeric(),
+    body('members.*.monthlyEssentialExpenses', 'Each member monthlyEssentialExpenses must be numeric').optional().isNumeric(),
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.ownerId', 'Debt ownerId must be a string').optional().isString(),
+    body('debts.*.isShared', 'Debt isShared must be boolean').optional().isBoolean(),
+    body('debts.*.sharedOwnerIds', 'Debt sharedOwnerIds must be an array').optional().isArray(),
+    body('fairnessPreference', 'Fairness preference must be income-proportional, equal-share, or custom-weights').optional()
+        .isIn(['income-proportional', 'equal-share', 'custom-weights']),
+    body('customWeights', 'customWeights must be an object').optional().isObject(),
+    body('sharedMonthlyExpenses', 'Shared monthly expenses must be numeric').optional().isNumeric(),
+    body('minCashBuffer', 'Minimum cash buffer must be numeric').optional().isNumeric(),
+    body('strategy', 'Strategy must be avalanche, snowball, or hybrid').optional().isIn(['avalanche', 'snowball', 'hybrid'])
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = householdDebtOptimizerService.optimize(req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Household-level shared debt optimization complete'
     ).send(res);
 }));
 
