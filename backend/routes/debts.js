@@ -32,6 +32,7 @@ import debtSequencingOptimizerService from '../services/debtSequencingOptimizerS
 import lifeEventDebtStrategyService from '../services/lifeEventDebtStrategyService.js';
 import debtNudgeAndMicroPaymentService from '../services/debtNudgeAndMicroPaymentService.js';
 import householdDebtOptimizerService from '../services/householdDebtOptimizerService.js';
+import delinquencyEarlyWarningService from '../services/delinquencyEarlyWarningService.js';
 
 const router = express.Router();
 
@@ -1376,6 +1377,61 @@ router.post('/sequencing/optimize', protect, [
         200,
         result,
         'Debt sequencing optimization complete with constraint handling'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/delinquency/risk
+ * @desc    Assess 90-day delinquency risk and generate intervention playbook
+ * @access  Private
+ */
+router.post('/delinquency/risk', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.currentBalance', 'Each debt currentBalance must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.dueDate', 'Each debt dueDate must be ISO8601 date').optional().isISO8601(),
+    body('debts.*.creditLimit', 'Each debt creditLimit must be numeric').optional().isNumeric(),
+    body('monthlyDisposableIncome', 'Monthly disposable income must be numeric and non-negative').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 0),
+    body('horizonDays', 'Horizon days must be between 30 and 365').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 30 && Number(v) <= 365),
+    body('minCashBuffer', 'Minimum cash buffer must be numeric and non-negative').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 0)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await delinquencyEarlyWarningService.assessDelinquencyRisk(
+        req.user.id,
+        req.body.debts || [],
+        req.body.monthlyDisposableIncome || 0,
+        {
+            horizonDays: req.body.horizonDays,
+            minCashBuffer: req.body.minCashBuffer
+        }
+    );
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Delinquency early-warning assessment complete'
     ).send(res);
 }));
 
