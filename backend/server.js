@@ -97,6 +97,7 @@ import familyRoutes from "./routes/family.js";
 import monteCarloRoutes from "./routes/monteCarloForecasting.js";
 import riskLabRoutes from "./routes/risk-lab.js";
 import corporateRoutes from "./routes/corporate.js";
+import estateTaxStressRoutes from "./routes/estateTaxStress.js";
 import liquidityGraphRoutes from "./routes/liquidityGraph.js";
 import scheduleRecoveryExpirationJob from "./jobs/recoveryExpirationJob.js";
 import { triggerInterceptor } from "./middleware/triggerInterceptor.js";
@@ -790,203 +791,204 @@ if (process.env.NODE_ENV !== 'test') {
     initializeDefaultTaxCategories().catch(err => {
       console.warn('⚠️ Tax categories initialization skipped (may already exist):', err.message);
 
-    // Routes
-    app.use("/api/auth", authRoutes);
-    app.use("/api/users", userLimiter, userRoutes);
-    app.use("/api/expenses", userLimiter, expenseRoutes);
-    app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
-    app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
-    app.use("/api/v1/goal-smoothing", userLimiter, goalContributionSmoothingRoutes);
-    app.use("/api/v1/budget-guardrails", userLimiter, budgetGuardrailRoutes);
-    app.use("/api/outbox", userLimiter, outboxRoutes);
-    app.use("/api/soft-delete", userLimiter, softDeleteRoutes);
-    app.use("/api/integrity", userLimiter, softDeleteRoutes);
-    app.use("/api/milestones", userLimiter, milestoneRoutes);
-    app.use("/api/forecasts", userLimiter, forecastRoutes);
-    app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
-    app.use("/api/anomalies", userLimiter, anomalyRoutes);
-    app.use("/api/log-snapshots", userLimiter, logSnapshotsRoutes);
-    app.use("/api/portfolio", userLimiter, rebalancingRoutes);
-    app.use("/api/categories", userLimiter, categoryRoutes);
-    app.use("/api/analytics", userLimiter, analyticsRoutes);
-    app.use("/api/interlock", userLimiter, interlockRoutes);
-    app.use("/api/vaults", userLimiter, vaultRoutes);
-    app.use("/api/budgets", userLimiter, budgetRoutes);
-    app.use("/api/smart-alerts", userLimiter, smartAlerts);
-    app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
-    app.use("/api/reimbursements", userLimiter, reimbursementsRoutes);
-    app.use("/api/reports", userLimiter, reportRoutes);
-    app.use("/api/private-debt", userLimiter, privateDebtRoutes);
-    app.use("/api/debts", userLimiter, debtRoutes);
-    app.use("/api/wallets", userLimiter, walletRoutes);
-    app.use("/api/fx", userLimiter, fxRoutes);
-    app.use("/api/forecasts", userLimiter, forecastRoutes);
-    app.use("/api/monte-carlo", userLimiter, monteCarloRoutes);
-    app.use("/api/gemini", aiLimiter, geminiRouter);
-    app.use("/api/currencies", userLimiter, currenciesRoutes);
-    app.use("/api/audit", userLimiter, auditRoutes);
-    app.use("/api/security", userLimiter, securityRoutes);
-    app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
-    app.use("/api/assets", userLimiter, assetRoutes);
-    app.use("/api/governance", userLimiter, governanceRoutes);
-    app.use("/api/tax", userLimiter, taxRoutes);
-    app.use("/api/tax/optimization", userLimiter, taxOptimizationRoutes);
-    app.use("/api/simulations", userLimiter, simulationRoutes);
-    app.use("/api/business", userLimiter, businessRoutes);
-    app.use("/api/payroll", userLimiter, payrollRoutes);
-    app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
-    app.use("/api/inventory", userLimiter, inventoryRoutes);
-    app.use("/api/margin", userLimiter, marginRoutes);
-    app.use("/api/clearing", userLimiter, clearingRoutes);
-    app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
-    app.use("/api/categorization", userLimiter, categorizationRoutes);
-    app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
-    app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
-    app.use("/api/replay", userLimiter, replayRoutes);
-    app.use("/api/succession", userLimiter, successionRoutes);
-    app.use("/api/entities", userLimiter, securityGuard, entityRoutes);
-    app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
-    app.use("/api/forensic", userLimiter, forensicRoutes);
-    app.use("/api/yields", userLimiter, yieldsRoutes);
-    app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
-    app.use("/api/autopilot", userLimiter, autopilotRoutes);
-    app.use("/api/escrow", userLimiter, escrowRoutes);
-    app.use("/api/risk-lab", userLimiter, riskLabRoutes);
-    app.use("/api/corporate", userLimiter, corporateRoutes);
-    app.use("/api/liquidity/graph", userLimiter, liquidityGraphRoutes);
-    app.use("/api/dynasty-trusts", userLimiter, dynastyTrustsRoutes);
-    app.use("/api/spv", userLimiter, spvOwnershipRoutes);
-    app.use("/api/derivatives", userLimiter, derivativesRoutes);
-    app.use("/api/passion-assets", userLimiter, passionAssetsRoutes);
-    app.use("/api/philanthropy", userLimiter, philanthropyRoutes);
-    app.use("/api/family", userLimiter, familyRoutes);
-    app.use("/api/health", healthRoutes);
-    app.use("/api/performance", userLimiter, performanceRoutes);
-    app.use("/api/tenants", userLimiter, tenantRoutes);
-    app.use("/api/db-router", userLimiter, dbRouterRoutes);
+      // Routes
+      app.use("/api/auth", authRoutes);
+      app.use("/api/users", userLimiter, userRoutes);
+      app.use("/api/expenses", userLimiter, expenseRoutes);
+      app.use("/api/goals", userLimiter, apiIdempotency(), goalRoutes);
+      app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
+      app.use("/api/v1/goal-smoothing", userLimiter, goalContributionSmoothingRoutes);
+      app.use("/api/v1/budget-guardrails", userLimiter, budgetGuardrailRoutes);
+      app.use("/api/outbox", userLimiter, outboxRoutes);
+      app.use("/api/soft-delete", userLimiter, softDeleteRoutes);
+      app.use("/api/integrity", userLimiter, softDeleteRoutes);
+      app.use("/api/milestones", userLimiter, milestoneRoutes);
+      app.use("/api/forecasts", userLimiter, forecastRoutes);
+      app.use("/api/goal-sharing", userLimiter, goalSharingRoutes);
+      app.use("/api/anomalies", userLimiter, anomalyRoutes);
+      app.use("/api/log-snapshots", userLimiter, logSnapshotsRoutes);
+      app.use("/api/portfolio", userLimiter, rebalancingRoutes);
+      app.use("/api/categories", userLimiter, categoryRoutes);
+      app.use("/api/analytics", userLimiter, analyticsRoutes);
+      app.use("/api/interlock", userLimiter, interlockRoutes);
+      app.use("/api/vaults", userLimiter, vaultRoutes);
+      app.use("/api/budgets", userLimiter, budgetRoutes);
+      app.use("/api/smart-alerts", userLimiter, smartAlerts);
+      app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
+      app.use("/api/reimbursements", userLimiter, reimbursementsRoutes);
+      app.use("/api/reports", userLimiter, reportRoutes);
+      app.use("/api/private-debt", userLimiter, privateDebtRoutes);
+      app.use("/api/debts", userLimiter, debtRoutes);
+      app.use("/api/wallets", userLimiter, walletRoutes);
+      app.use("/api/fx", userLimiter, fxRoutes);
+      app.use("/api/forecasts", userLimiter, forecastRoutes);
+      app.use("/api/monte-carlo", userLimiter, monteCarloRoutes);
+      app.use("/api/gemini", aiLimiter, geminiRouter);
+      app.use("/api/currencies", userLimiter, currenciesRoutes);
+      app.use("/api/audit", userLimiter, auditRoutes);
+      app.use("/api/security", userLimiter, securityRoutes);
+      app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
+      app.use("/api/assets", userLimiter, assetRoutes);
+      app.use("/api/governance", userLimiter, governanceRoutes);
+      app.use("/api/tax", userLimiter, taxRoutes);
+      app.use("/api/tax/optimization", userLimiter, taxOptimizationRoutes);
+      app.use("/api/simulations", userLimiter, simulationRoutes);
+      app.use("/api/business", userLimiter, businessRoutes);
+      app.use("/api/payroll", userLimiter, payrollRoutes);
+      app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
+      app.use("/api/inventory", userLimiter, inventoryRoutes);
+      app.use("/api/margin", userLimiter, marginRoutes);
+      app.use("/api/clearing", userLimiter, clearingRoutes);
+      app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
+      app.use("/api/categorization", userLimiter, categorizationRoutes);
+      app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
+      app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
+      app.use("/api/replay", userLimiter, replayRoutes);
+      app.use("/api/succession", userLimiter, successionRoutes);
+      app.use("/api/succession/estate-tax", userLimiter, estateTaxStressRoutes);
+      app.use("/api/entities", userLimiter, securityGuard, entityRoutes);
+      app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
+      app.use("/api/forensic", userLimiter, forensicRoutes);
+      app.use("/api/yields", userLimiter, yieldsRoutes);
+      app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
+      app.use("/api/autopilot", userLimiter, autopilotRoutes);
+      app.use("/api/escrow", userLimiter, escrowRoutes);
+      app.use("/api/risk-lab", userLimiter, riskLabRoutes);
+      app.use("/api/corporate", userLimiter, corporateRoutes);
+      app.use("/api/liquidity/graph", userLimiter, liquidityGraphRoutes);
+      app.use("/api/dynasty-trusts", userLimiter, dynastyTrustsRoutes);
+      app.use("/api/spv", userLimiter, spvOwnershipRoutes);
+      app.use("/api/derivatives", userLimiter, derivativesRoutes);
+      app.use("/api/passion-assets", userLimiter, passionAssetsRoutes);
+      app.use("/api/philanthropy", userLimiter, philanthropyRoutes);
+      app.use("/api/family", userLimiter, familyRoutes);
+      app.use("/api/health", healthRoutes);
+      app.use("/api/performance", userLimiter, performanceRoutes);
+      app.use("/api/tenants", userLimiter, tenantRoutes);
+      app.use("/api/db-router", userLimiter, dbRouterRoutes);
 
-    app.use("/uploads", createFileServerRoute());
+      app.use("/uploads", createFileServerRoute());
 
-    // Apply presence tracker to all protected routes
-    app.use("/api", presenceTracker);
+      // Apply presence tracker to all protected routes
+      app.use("/api", presenceTracker);
 
-    // --- Error Handlers ---
-    app.use(notFound);
-    app.use(errorLogger);
-    app.use(dbRoutingErrorHandler());
-    app.use(globalErrorHandler);
+      // --- Error Handlers ---
+      app.use(notFound);
+      app.use(errorLogger);
+      app.use(dbRoutingErrorHandler());
+      app.use(globalErrorHandler);
 
-    const PORT = process.env.PORT || 5000;
+      const PORT = process.env.PORT || 5000;
 
-    // Initialize listeners
-    initializeAutopilotListeners();
-    initializeTaxListeners();
-    initializeBudgetListeners();
-    initializeNotificationListeners();
-    initializeAnalyticsListeners();
-    initializeSubscriptionListeners();
-    initializeSavingsListeners();
-    initializeLiquidityListeners();
+      // Initialize listeners
+      initializeAutopilotListeners();
+      initializeTaxListeners();
+      initializeBudgetListeners();
+      initializeNotificationListeners();
+      initializeAnalyticsListeners();
+      initializeSubscriptionListeners();
+      initializeSavingsListeners();
+      initializeLiquidityListeners();
 
-    // Start background jobs
-    if (process.env.NODE_ENV !== 'test') {
-      cascadeMonitorJob.start();
-      topologyGarbageCollector.start();
-      scheduleMonthlyReports();
-      scheduleWeeklyHabitDigest();
-      scheduleTaxReminders();
-      scheduleRecoveryExpirationJob();
-      subscriptionMonitor.initialize();
-      fxRateSync.start();
-      valuationUpdater.start();
-      inactivityMonitor.start();
-      taxEstimator.start();
-      scheduleDebtStressTest();
-      rateSyncer.start();
-      forecastUpdater.start();
-      riskAuditor.start();
-      leaseMonitor.start();
-      dividendProcessor.start();
-      consolidationSync.start();
-      recurringPaymentProcessor.start();
-      categorizationTrainer.start();
-      fxRateUpdater.start();
-      liquidityOptimizerJob.start();
-      arbitrageJob.start();
-      riskMonitorJob.start();
-      clearingJob.start();
-      taxHarvestJob.start();
-      scheduleTaxHarvestSync();
-      riskBaselineJob.start();
-      yieldMonitorJob.start();
-      simulationJob.start();
-      payoutMonitor.start();
-      taxAuditJob.start();
-      riskScanner.start();
-      marketRateSyncJob.start();
-      velocityJob.start();
-      scheduleWorkflowDaemon();
-      scheduleMacroDataSync();
-      scheduleLotReconciliation();
-      scheduleStressTests();
-      scheduleMarketOracle();
-      schedulePrecomputePaths();
-      scheduleResolutionCleanup();
-      marketMonitor.start();
-      volatilityMonitor.start();
-      payrollCycleJob.start();
-      mortalityDaemon.start();
-      residencyAuditJob.start();
-      scheduleOracleSync();
-      liquiditySweepJob.init();
-      interlockAccrualSync.init();
-      thresholdMonitor.start();
-      escrowValuationJob.start();
-      hedgeDecayMonitor.start();
-      liquidityRechargeJob.start();
-      auditTrailSealer.start();
-      taxHarvestScanner.start();
-      washSaleExpirationJob.start();
-      irsRateSyncJob.start();
-      annuityExecutionJob.start();
-      capitalCallIssuerJob.start();
-      optionsRollEvaluator.start();
-      volatilitySyncJob.start();
-      passionAppraisalSyncJob.start();
-      crtPayoutJob.start();
-      successionSweepJob.start();
-      wealthSimulationJob.start();
-      scheduleNightlySimulations();
+      // Start background jobs
+      if (process.env.NODE_ENV !== 'test') {
+        cascadeMonitorJob.start();
+        topologyGarbageCollector.start();
+        scheduleMonthlyReports();
+        scheduleWeeklyHabitDigest();
+        scheduleTaxReminders();
+        scheduleRecoveryExpirationJob();
+        subscriptionMonitor.initialize();
+        fxRateSync.start();
+        valuationUpdater.start();
+        inactivityMonitor.start();
+        taxEstimator.start();
+        scheduleDebtStressTest();
+        rateSyncer.start();
+        forecastUpdater.start();
+        riskAuditor.start();
+        leaseMonitor.start();
+        dividendProcessor.start();
+        consolidationSync.start();
+        recurringPaymentProcessor.start();
+        categorizationTrainer.start();
+        fxRateUpdater.start();
+        liquidityOptimizerJob.start();
+        arbitrageJob.start();
+        riskMonitorJob.start();
+        clearingJob.start();
+        taxHarvestJob.start();
+        scheduleTaxHarvestSync();
+        riskBaselineJob.start();
+        yieldMonitorJob.start();
+        simulationJob.start();
+        payoutMonitor.start();
+        taxAuditJob.start();
+        riskScanner.start();
+        marketRateSyncJob.start();
+        velocityJob.start();
+        scheduleWorkflowDaemon();
+        scheduleMacroDataSync();
+        scheduleLotReconciliation();
+        scheduleStressTests();
+        scheduleMarketOracle();
+        schedulePrecomputePaths();
+        scheduleResolutionCleanup();
+        marketMonitor.start();
+        volatilityMonitor.start();
+        payrollCycleJob.start();
+        mortalityDaemon.start();
+        residencyAuditJob.start();
+        scheduleOracleSync();
+        liquiditySweepJob.init();
+        interlockAccrualSync.init();
+        thresholdMonitor.start();
+        escrowValuationJob.start();
+        hedgeDecayMonitor.start();
+        liquidityRechargeJob.start();
+        auditTrailSealer.start();
+        taxHarvestScanner.start();
+        washSaleExpirationJob.start();
+        irsRateSyncJob.start();
+        annuityExecutionJob.start();
+        capitalCallIssuerJob.start();
+        optionsRollEvaluator.start();
+        volatilitySyncJob.start();
+        passionAppraisalSyncJob.start();
+        crtPayoutJob.start();
+        successionSweepJob.start();
+        wealthSimulationJob.start();
+        scheduleNightlySimulations();
+      }
+
+      app.listen(PORT, () => {
+        logInfo(`🚀 Server running on port ${PORT}`);
+        console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+      });
+
+    } catch (error) {
+      logError('❌ Failed to start server:', error);
+      process.exit(1);
     }
+  };
 
-    app.listen(PORT, () => {
-      logInfo(`🚀 Server running on port ${PORT}`);
-      console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
-    });
+  // Graceful shutdown
+  const shutdown = async () => {
+    console.log('\n🛑 Shutting down gracefully...');
+    try {
+      await disconnectDatabase();
+      if (isRedisAvailable()) await disconnectRedis();
+      console.log('✅ Graceful shutdown complete');
+      process.exit(0);
+    } catch (error) {
+      console.error('❌ Error during shutdown:', error);
+      process.exit(1);
+    }
+  };
 
-  } catch (error) {
-    logError('❌ Failed to start server:', error);
-    process.exit(1);
-  }
-};
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 
-// Graceful shutdown
-const shutdown = async () => {
-  console.log('\n🛑 Shutting down gracefully...');
-  try {
-    await disconnectDatabase();
-    if (isRedisAvailable()) await disconnectRedis();
-    console.log('✅ Graceful shutdown complete');
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Error during shutdown:', error);
-    process.exit(1);
-  }
-};
+  startServer();
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
-
-startServer();
-
-export default app;
+  export default app;
