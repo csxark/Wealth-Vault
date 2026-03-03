@@ -43,19 +43,90 @@ This PR introduces the `incomeVolatilityRiskForecasterService` and advanced scen
   - Recommendations
   - Alerts
   - Advanced analytics and scenario results
-  - **Sample Results:**
-    - `volatilitySummary`: `{ mean: 3200, stddev: 800, min: 1800, max: 4200, volatilityIndex: 0.25 }`
-    - `stressScenarios`: `[{ month: 1, income: 2000, paymentDue: 2200, missedPayment: true }, ...]`
-    - `riskProjections`: `{ missedPayments: 4, defaultRisk: 0.33, creditImpact: -80 }`
-    - `recommendations`: `[{ recommendedFund3: 6600, recommendedFund6: 13200, smoothing: 'Autopay recommended' }, ...]`
-    - `alerts`: `[{ month: 1, message: 'High risk: income $2000 insufficient for payment $2200' }, ...]`
-    - `advancedAnalytics`: `{ clustering: ['low', 'medium', ...], risk: { riskScore: 0.45, lowPeriods: 5 }, ... }`
-    - `scenarioResults`: `{ multiYearScenarios: [...], mitigationResults: [...], forecasts: {...}, recommendations: [...] }`
+
+---
+
+## Example Output Results
+
+### Volatility Summary
+```
+{
+  "mean": 3200,
+  "stddev": 800,
+  "min": 1800,
+  "max": 4200,
+  "volatilityIndex": 0.25
+}
+```
+
+### Stress Scenarios
+```
+[
+  { "month": 1, "income": 2000, "paymentDue": 2200, "missedPayment": true },
+  { "month": 2, "income": 3500, "paymentDue": 2200, "missedPayment": false },
+  ...
+]
+```
+
+### Risk Projections
+```
+{
+  "missedPayments": 4,
+  "defaultRisk": 0.33,
+  "creditImpact": -80
+}
+```
+
+### Recommendations
+```
+[
+  {
+    "recommendedFund3": 6600,
+    "recommendedFund6": 13200,
+    "minIncome": 1800,
+    "paymentDue": 2200
+  },
+  {
+    "meanIncome": 3200,
+    "paymentDue": 2200,
+    "smoothing": "Autopay recommended"
+  }
+]
+```
+
+### Alerts
+```
+[
+  { "month": 1, "message": "High risk: income $2000 insufficient for payment $2200" },
+  { "month": 5, "message": "High risk: income $1800 insufficient for payment $2200" },
+  ...
+]
+```
+
+### Advanced Analytics
+```
+{
+  "clustering": ["low", "medium", "high", ...],
+  "risk": { "riskScore": 0.45, "lowPeriods": 5, "clusters": ["low", "medium", ...] },
+  "smoothing": [ { "month": 1, "income": 2000, "covered": true, "fundRemaining": 5000 }, ... ],
+  "emergencyDepletion": { "monthsUntilDepletion": 8, "fundRemaining": 0 }
+}
+```
+
+### Scenario Results
+```
+{
+  "multiYearScenarios": [ { "month": 1, "year": 1, "income": 2100, "paymentDue": 2200, "missedPayment": true }, ... ],
+  "mitigationResults": [ { "month": 1, "income": 2100, "paymentDue": 2200, "reserveFund": 5000, "insuranceCoverage": 2000, "gigs": 2, "missedPayment": false }, ... ],
+  "forecasts": { "missedPayments": 3, "fundDepletionMonth": 7, "insuranceDepletionMonth": 10 },
+  "recommendations": [ "Increase reserve fund to avoid depletion.", "Diversify gig income sources for stability." ]
+}
+```
+
+---
 
 ## Reviewer Notes
 - No breaking changes
 - Modular, extensible code structure
 - Advanced analytics and scenario simulation for robust risk management
 - Ready for frontend integration and further business logic
-
----
