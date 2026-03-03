@@ -1,5 +1,5 @@
 
-import { pgTable, uuid, text, boolean, integer, numeric, timestamp, jsonb, doublePrecision, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, boolean, integer, numeric, timestamp, jsonb, doublePrecision, pgEnum, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums for RBAC
@@ -140,6 +140,95 @@ export const auditLogs = pgTable('audit_logs', {
     previousHash: text('previous_hash'),
     entryHash: text('entry_hash').notNull(),
     createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Log Snapshots - Signed, timestamped log bundles for regulatory export
+export const logSnapshots = pgTable('log_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    status: text('status').default('pending'), // pending, generating, completed, failed
+    format: text('format').default('json'), // json, csv
+    bundlePath: text('bundle_path'),
+    checksum: text('checksum'),
+    signature: text('signature'),
+    recordCount: integer('record_count').default(0),
+    fileSize: integer('file_size'),
+    filters: jsonb('filters').default({}),
+    requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    errorMessage: text('error_message'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Log Volume Forecasts - Predictive modeling for log growth and capacity planning
+export const logVolumeForecasts = pgTable('log_volume_forecasts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    modelType: text('model_type').default('ensemble'), // linear_trend, exponential_smoothing, moving_average, ensemble
+    forecastHorizonDays: integer('forecast_horizon_days').default(30),
+    historicalDays: integer('historical_days').default(90),
+    confidenceLevel: doublePrecision('confidence_level').default(0.95),
+    predictions: jsonb('predictions').notNull(), // Array of daily predictions with dates, volumes, growth rates
+    capacityPlanning: jsonb('capacity_planning').notNull(), // Storage needs, scaling recommendations
+    dashboard: jsonb('dashboard').notNull(), // Visualization data for frontend
+    accuracy: jsonb('accuracy').default({}), // Model accuracy metrics (MAE, RMSE, etc.)
+    alertsTriggered: jsonb('alerts_triggered').default([]), // List of alerts generated from this forecast
+    generatedBy: uuid('generated_by').references(() => users.id, { onDelete: 'set null' }),
+    isActive: boolean('is_active').default(true),
+    expiresAt: timestamp('expires_at'), // When this forecast should be refreshed
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Log Volume Metrics - Historical log volume data for forecasting
+export const logVolumeMetrics = pgTable('log_volume_metrics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    date: timestamp('date').notNull(), // Date for the metric (truncated to day)
+    totalRecords: integer('total_records').notNull(),
+    totalSizeBytes: integer('total_size_bytes').notNull(),
+    categories: jsonb('categories').default({}), // Breakdown by log category
+    sources: jsonb('sources').default({}), // Breakdown by log source
+    severityLevels: jsonb('severity_levels').default({}), // Breakdown by severity
+    compressionRatio: doublePrecision('compression_ratio'), // Current compression effectiveness
+    retentionDays: integer('retention_days'), // Current retention policy
+    storageTier: text('storage_tier').default('hot'), // hot, warm, cold, archive
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Capacity Alerts - Automated alerts for storage capacity issues
+export const capacityAlerts = pgTable('capacity_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    forecastId: uuid('forecast_id').references(() => logVolumeForecasts.id, { onDelete: 'set null' }),
+    alertType: text('alert_type').notNull(), // storage_warning, storage_critical, growth_rate_warning, growth_rate_critical
+    severity: text('severity').notNull(), // warning, critical
+    message: text('message').notNull(),
+    data: jsonb('data').default({}), // Additional alert data (thresholds, predictions, etc.)
+    status: text('status').default('active'), // active, acknowledged, resolved
+    acknowledgedBy: uuid('acknowledged_by').references(() => users.id, { onDelete: 'set null' }),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    resolvedAt: timestamp('resolved_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Log Redaction Rules - Configurable field-level redaction for PII protection
+export const logRedactionRules = pgTable('log_redaction_rules', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    fieldPath: text('field_path').notNull(), // JSON path to the field (e.g., 'user.email', 'request.headers.authorization')
+    redactionType: text('redaction_type').notNull(), // mask, hash, tokenize, remove
+    fieldType: text('field_type'), // email, phone, ssn, credit_card, ip_address, name, address, custom
+    pattern: text('pattern'), // Optional regex pattern for custom field detection
+    priority: integer('priority').default(50), // 0-100, higher priority rules are applied first
+    description: text('description'),
+    isActive: boolean('is_active').default(true),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 // Users Table
@@ -327,6 +416,561 @@ export const goalContributionLineItems = pgTable('goal_contribution_line_items',
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ============================================================================
+// GOAL CONTRIBUTION VOLATILITY SMOOTHER - Issue #713
+// ============================================================================
+
+// Goal Contribution Smoothing Configs - Configuration for contribution smoothing per user/goal
+export const goalContributionSmoothingConfigs = pgTable('goal_contribution_smoothing_configs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    
+    // Smoothing Parameters
+    rollingWindowMonths: integer('rolling_window_months').default(3),
+    smoothingFactor: numeric('smoothing_factor', { precision: 3, scale: 2 }).default('0.70'),
+    varianceThresholdPercentage: numeric('variance_threshold_percentage', { precision: 5, scale: 2 }).default('25.00'),
+    
+    // Guardrails
+    minContributionAmount: numeric('min_contribution_amount', { precision: 12, scale: 2 }).default('0'),
+    maxContributionAmount: numeric('max_contribution_amount', { precision: 12, scale: 2 }),
+    maxMonthOverMonthChangePct: numeric('max_month_over_month_change_pct', { precision: 5, scale: 2 }).default('30.00'),
+    
+    // Flags
+    enableSmoothing: boolean('enable_smoothing').default(true),
+    enableCashflowDetection: boolean('enable_cashflow_detection').default(true),
+    requireManualOverride: boolean('require_manual_override').default(false),
+    
+    // Metadata
+    lastCalculatedAt: timestamp('last_calculated_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Goal Cashflow History - Rolling cashflow history for smoothing calculations
+export const goalCashflowHistory = pgTable('goal_cashflow_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    
+    // Cashflow Data
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    periodType: text('period_type').default('monthly'),
+    
+    // Financial Metrics
+    totalIncome: numeric('total_income', { precision: 15, scale: 2 }).default('0').notNull(),
+    totalExpenses: numeric('total_expenses', { precision: 15, scale: 2 }).default('0').notNull(),
+    netCashflow: numeric('net_cashflow', { precision: 15, scale: 2 }).notNull(),
+    discretionaryCashflow: numeric('discretionary_cashflow', { precision: 15, scale: 2 }),
+    
+    // Goal Contributions
+    totalGoalContributions: numeric('total_goal_contributions', { precision: 15, scale: 2 }).default('0'),
+    contributionCount: integer('contribution_count').default(0),
+    
+    // Volatility Metrics
+    incomeVolatility: numeric('income_volatility', { precision: 5, scale: 2 }),
+    expenseVolatility: numeric('expense_volatility', { precision: 5, scale: 2 }),
+    cashflowVolatility: numeric('cashflow_volatility', { precision: 5, scale: 2 }),
+    
+    // Metadata
+    dataSource: text('data_source').default('calculated'),
+    isComplete: boolean('is_complete').default(true),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Goal Contribution Recommendations - Smoothed contribution recommendations
+export const goalContributionRecommendations = pgTable('goal_contribution_recommendations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    configId: uuid('config_id').references(() => goalContributionSmoothingConfigs.id, { onDelete: 'set null' }),
+    
+    // Recommendation Period
+    recommendationDate: timestamp('recommendation_date').notNull(),
+    validFrom: timestamp('valid_from').notNull(),
+    validUntil: timestamp('valid_until').notNull(),
+    
+    // Smoothed Recommendation
+    rawCalculatedAmount: numeric('raw_calculated_amount', { precision: 12, scale: 2 }).notNull(),
+    smoothedAmount: numeric('smoothed_amount', { precision: 12, scale: 2 }).notNull(),
+    previousAmount: numeric('previous_amount', { precision: 12, scale: 2 }),
+    amountChange: numeric('amount_change', { precision: 12, scale: 2 }),
+    amountChangePercentage: numeric('amount_change_percentage', { precision: 5, scale: 2 }),
+    
+    // Variance Band
+    varianceBandLower: numeric('variance_band_lower', { precision: 12, scale: 2 }).notNull(),
+    varianceBandUpper: numeric('variance_band_upper', { precision: 12, scale: 2 }).notNull(),
+    varianceBandPercentage: numeric('variance_band_percentage', { precision: 5, scale: 2 }).default('15.00'),
+    
+    // Confidence Metrics
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }).notNull(),
+    confidenceLevel: text('confidence_level').notNull(),
+    stabilityIndex: numeric('stability_index', { precision: 5, scale: 2 }),
+    
+    // Supporting Data
+    rollingAvgCashflow: numeric('rolling_avg_cashflow', { precision: 12, scale: 2 }),
+    rollingAvgContributions: numeric('rolling_avg_contributions', { precision: 12, scale: 2 }),
+    cashflowTrend: text('cashflow_trend'),
+    majorCashflowShiftDetected: boolean('major_cashflow_shift_detected').default(false),
+    
+    // Recommendation Status
+    status: text('status').default('pending'),
+    userFeedback: text('user_feedback'),
+    overrideAmount: numeric('override_amount', { precision: 12, scale: 2 }),
+    overrideReason: text('override_reason'),
+    
+    // Metadata
+    algorithmVersion: text('algorithm_version').default('v1.0'),
+    calculationMetadata: jsonb('calculation_metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    acceptedAt: timestamp('accepted_at'),
+});
+
+// Goal Cashflow Events - Major cashflow shifts that trigger recalculation
+export const goalCashflowEvents = pgTable('goal_cashflow_events', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    
+    // Event Details
+    eventType: text('event_type').notNull(),
+    detectedAt: timestamp('detected_at').notNull(),
+    eventDate: timestamp('event_date').notNull(),
+    severity: text('severity').notNull(),
+    
+    // Event Metrics
+    previousAvgValue: numeric('previous_avg_value', { precision: 12, scale: 2 }),
+    newValue: numeric('new_value', { precision: 12, scale: 2 }),
+    percentageChange: numeric('percentage_change', { precision: 5, scale: 2 }),
+    deviationFromNorm: numeric('deviation_from_norm', { precision: 5, scale: 2 }),
+    
+    // Impact on Goals
+    affectedGoalIds: jsonb('affected_goal_ids').default([]),
+    recommendationInvalidated: boolean('recommendation_invalidated').default(false),
+    
+    // Event Resolution
+    acknowledged: boolean('acknowledged').default(false),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    requiresUserAction: boolean('requires_user_action').default(false),
+    resolved: boolean('resolved').default(false),
+    resolvedAt: timestamp('resolved_at'),
+    
+    // Metadata
+    description: text('description'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================================================
+// GOAL ADJUSTMENT EXPLAINABILITY TIMELINE - Issue #715
+// ============================================================================
+
+// Goal Adjustment Explanations - Logs every significant change to contribution recommendations with detailed reasons
+export const goalAdjustmentExplanations = pgTable('goal_adjustment_explanations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Recommendation reference
+    previousRecommendationId: uuid('previous_recommendation_id').references(() => goalContributionRecommendations.id, { onDelete: 'set null' }),
+    newRecommendationId: uuid('new_recommendation_id').references(() => goalContributionRecommendations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Change details
+    previousAmount: numeric('previous_amount', { precision: 12, scale: 2 }).notNull(),
+    newAmount: numeric('new_amount', { precision: 12, scale: 2 }).notNull(),
+    amountChange: numeric('amount_change', { precision: 12, scale: 2 }).notNull(),
+    amountChangePercentage: numeric('amount_change_percentage', { precision: 5, scale: 2 }).notNull(),
+    
+    // Attribution Factors - Why did the recommendation change?
+    attributionFactors: jsonb('attribution_factors').default({}), // Array of {factor, description, impact_pct, severity}
+    
+    // Primary drivers
+    incomeDelta: numeric('income_delta', { precision: 12, scale: 2 }),
+    incomeDeltaPct: numeric('income_delta_pct', { precision: 5, scale: 2 }),
+    incomeContext: text('income_context'),
+    
+    expenseDelta: numeric('expense_delta', { precision: 12, scale: 2 }),
+    expenseDeltaPct: numeric('expense_delta_pct', { precision: 5, scale: 2 }),
+    expenseContext: text('expense_context'),
+    
+    // Temporal drivers
+    daysToDeadline: integer('days_to_deadline'),
+    deadlinePressureScore: numeric('deadline_pressure_score', { precision: 3, scale: 2 }), // 0.0 to 1.0
+    deadlinePressureReason: text('deadline_pressure_reason'),
+    
+    // Priority/Goal drivers
+    priorityShift: integer('priority_shift'), // Change in priority score
+    priorityContext: text('priority_context'),
+    goalProgressPct: numeric('goal_progress_pct', { precision: 5, scale: 2 }),
+    goalRemainingDays: integer('goal_remaining_days'),
+    
+    // Confidence and stability
+    confidenceScore: numeric('confidence_score', { precision: 3, scale: 2 }).notNull(), // 0.0 to 1.0
+    confidenceLevel: text('confidence_level').notNull(), // low, medium, high
+    stabilityIndex: numeric('stability_index', { precision: 5, scale: 2 }),
+    
+    // User behavior context
+    recentContributionHistory: jsonb('recent_contribution_history').default({}), // Last 6 months contributions
+    volatilityTrend: text('volatility_trend'), // increasing, stable, decreasing
+    
+    // Market/Economic context
+    macroFactors: jsonb('macro_factors').default({}), // Interest rates, inflation, market conditions
+    externalContext: text('external_context'),
+    
+    // Human-readable explanation
+    summary: text('summary').notNull(), // "Why changed" in plain language
+    detailedExplanation: text('detailed_explanation'), // Longer form explanation
+    recommendationText: text('recommendation_text'), // Action recommendation to user
+    
+    // Event classification
+    eventType: text('event_type').notNull().default('adjustment'), // 'adjustment', 'reset', 'goal_completion_adjustment'
+    severity: text('severity').notNull().default('normal'), // 'critical', 'high', 'normal', 'minor'
+    
+    // Approval/Review tracking
+    requiresReview: boolean('requires_review').default(false),
+    reviewedBy: uuid('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+    reviewStatus: text('review_status').default('pending'), // pending, approved, flagged, dismissed
+    reviewNotes: text('review_notes'),
+    reviewedAt: timestamp('reviewed_at'),
+    
+    // User response tracking
+    userAcknowledged: boolean('user_acknowledged').default(false),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    userFeedback: text('user_feedback'),
+    userFeedbackType: text('user_feedback_type'), // understood, confused, disagree_too_high, disagree_too_low
+    
+    // Metadata
+    algorithmVersion: text('algorithm_version').default('v1.0'),
+    triggerSource: text('trigger_source').notNull(), // 'cashflow_change', 'goal_progress_update', 'priority_shift', 'manual_override', 'system_rebalance'
+    calculationMetadata: jsonb('calculation_metadata').default({}),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Goal Adjustment Attribution Details - Detailed attribution showing which factors contributed to the change
+export const goalAdjustmentAttributionDetails = pgTable('goal_adjustment_attribution_details', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    explanationId: uuid('explanation_id').references(() => goalAdjustmentExplanations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Factor information
+    factorCategory: text('factor_category').notNull(), // 'income', 'expense', 'deadline', 'priority', 'cashflow', 'macro', 'user_behavior'
+    factorName: text('factor_name').notNull(), // Specific factor name
+    factorDescription: text('factor_description').notNull(), // Human-readable description
+    
+    // Attribution impact
+    impactPercentage: numeric('impact_percentage', { precision: 5, scale: 2 }).notNull(), // % contribution to the change
+    impactAmount: numeric('impact_amount', { precision: 12, scale: 2 }), // Absolute dollar impact
+    confidenceScore: numeric('confidence_score', { precision: 3, scale: 2 }), // 0.0 to 1.0
+    
+    // Metric values
+    previousValue: numeric('previous_value', { precision: 18, scale: 4 }),
+    currentValue: numeric('current_value', { precision: 18, scale: 4 }),
+    thresholdValue: numeric('threshold_value', { precision: 18, scale: 4 }),
+    
+    // Context details
+    comparisonText: text('comparison_text'), // e.g., "Income increased by 15% vs Aug average"
+    severityIndicator: text('severity_indicator'), // 'critical_change','significant_change', 'moderate_change', 'minor_change'
+    
+    // Related data
+    metricSource: text('metric_source'), // 'cashflow_analysis', 'goal_progress', 'calendar_countdown', 'priority_engine', 'macro_feed'
+    dataLookbackDays: integer('data_lookback_days'), // How far back data was analyzed
+    
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Goal Adjustment Timeline - Immutable timeline of all adjustments for audit and historical analysis
+export const goalAdjustmentTimeline = pgTable('goal_adjustment_timeline', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Timeline event
+    eventDate: timestamp('event_date').notNull().defaultNow(),
+    eventSequence: integer('event_sequence').notNull(), // Chronological order
+    
+    // Reference to detailed explanation
+    explanationId: uuid('explanation_id').references(() => goalAdjustmentExplanations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Summary snapshot
+    previousRecommendationAmount: numeric('previous_recommendation_amount', { precision: 12, scale: 2 }).notNull(),
+    newRecommendationAmount: numeric('new_recommendation_amount', { precision: 12, scale: 2 }).notNull(),
+    primaryDriverFactor: text('primary_driver_factor').notNull(), // top factor that drove change
+    
+    // User interaction tracking
+    userViewed: boolean('user_viewed').default(false),
+    userViewedAt: timestamp('user_viewed_at'),
+    userInteracted: boolean('user_interacted').default(false),
+    userInteractionType: text('user_interaction_type'), // 'acknowledged', 'dismissed', 'requested_adjustment', 'flagged_unclear'
+    userInteractionAt: timestamp('user_interaction_at'),
+    
+    // Engagement metric
+    engagementScore: integer('engagement_score').default(0), // Points for user engagement with explanation
+    
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Goal Adjustment Insights - Pre-computed insights for dashboard display
+export const goalAdjustmentInsights = pgTable('goal_adjustment_insights', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Most common adjustment drivers
+    topFactors: jsonb('top_factors').default({}), // [{factor, count, avg_impact_pct}, ...]
+    
+    // Volatility analysis
+    adjustmentFrequency: text('adjustment_frequency').notNull(), // 'very_stable', 'stable', 'volatile', 'very_volatile'
+    adjustmentsLast30Days: integer('adjustments_last_30_days').default(0),
+    avgDaysBetweenAdjustments: numeric('avg_days_between_adjustments', { precision: 10, scale: 2 }),
+    
+    // Trend analysis
+    trend: text('trend').notNull(), // 'increasing_recommendations', 'decreasing_recommendations', 'stable'
+    trendDirection: integer('trend_direction').default(0), // -1, 0, +1
+    
+    // Trust score
+    userTrustScore: numeric('user_trust_score', { precision: 3, scale: 2 }).default('0.5'), // Based on user feedback and engagement
+    clarityScore: numeric('clarity_score', { precision: 3, scale: 2 }).default('0.5'), // Based on user understanding (engagement metrics)
+    
+    // Recommendations for improvement
+    improvementAreas: jsonb('improvement_areas').default([]), // Areas where explanations could be clearer
+    
+    lastCalculatedAt: timestamp('last_calculated_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// Goal Adjustment Comparison - Store comparisons between predicted and actual recommendation changes
+export const goalAdjustmentComparison = pgTable('goal_adjustment_comparison', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    explanationId: uuid('explanation_id').references(() => goalAdjustmentExplanations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Model prediction vs actual
+    predictedAdjustmentAmount: numeric('predicted_adjustment_amount', { precision: 12, scale: 2 }),
+    actualAdjustmentAmount: numeric('actual_adjustment_amount', { precision: 12, scale: 2 }),
+    predictionAccuracyScore: numeric('prediction_accuracy_score', { precision: 3, scale: 2 }), // 0-1
+    
+    // Contributing factors comparison
+    predictedTopFactors: jsonb('predicted_top_factors'),
+    actualTopFactors: jsonb('actual_top_factors'),
+    factorAccuracyMatch: numeric('factor_accuracy_match', { precision: 3, scale: 2 }), // % of predicted factors that were actual
+    
+    // Model version
+    modelVersion: text('model_version'),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================================================
+// MULTI-GOAL BUDGET GUARDRAIL OPTIMIZER - Issue #714
+// ============================================================================
+
+// Budget Guardrail Policies - Define minimum essential expense coverage
+export const budgetGuardrailPolicies = pgTable('budget_guardrail_policies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    
+    // Policy Configuration
+    policyName: text('policy_name').notNull(),
+    description: text('description'),
+    
+    // Essential Expense Definition
+    protectedCategoryIds: jsonb('protected_category_ids').default([]),
+    minimumMonthlyLivingCost: numeric('minimum_monthly_living_cost', { precision: 12, scale: 2 }).notNull(),
+    livingCostCalculationMethod: text('living_cost_calculation_method').default('manual'),
+    
+    // Historical calculation parameters
+    historicalLookbackMonths: integer('historical_lookback_months').default(6),
+    percentileThreshold: numeric('percentile_threshold', { precision: 3, scale: 2 }).default('0.75'),
+    
+    // Buffer & Safety Settings
+    safetyBufferPercentage: numeric('safety_buffer_percentage', { precision: 5, scale: 2 }).default('15.00'),
+    includeEmergencyFundContribution: boolean('include_emergency_fund_contribution').default(true),
+    emergencyFundTargetMonths: integer('emergency_fund_target_months').default(3),
+    
+    // Goal Allocation Caps
+    maxGoalAllocationPercentage: numeric('max_goal_allocation_percentage', { precision: 5, scale: 2 }).default('50.00'),
+    priorityGoalIds: jsonb('priority_goal_ids').default([]),
+    
+    // Enforcement Flags
+    isActive: boolean('is_active').default(true),
+    enforceStrictly: boolean('enforce_strictly').default(true),
+    allowOverride: boolean('allow_override').default(false),
+    overrideRequireApproval: boolean('override_require_approval').default(true),
+    
+    // Metadata
+    lastCalculatedAt: timestamp('last_calculated_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Safe Allocation Calculations - Store calculated safe-to-allocate amounts
+export const safeAllocationCalculations = pgTable('safe_allocation_calculations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id').references(() => budgetGuardrailPolicies.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Calculation Period
+    calculationDate: timestamp('calculation_date').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    periodType: text('period_type').default('monthly'),
+    
+    // Income & Essential Expenses Breakdown
+    projectedIncome: numeric('projected_income', { precision: 15, scale: 2 }).notNull(),
+    projectedEssentialExpenses: numeric('projected_essential_expenses', { precision: 12, scale: 2 }).notNull(),
+    essentialExpenseBreakdown: jsonb('essential_expense_breakdown').default({}),
+    
+    // Safety Considerations
+    safetyBufferAmount: numeric('safety_buffer_amount', { precision: 12, scale: 2 }).notNull(),
+    emergencyFundContribution: numeric('emergency_fund_contribution', { precision: 12, scale: 2 }).default('0'),
+    discretionaryMinimum: numeric('discretionary_minimum', { precision: 12, scale: 2 }),
+    
+    // Allocation Limits
+    safeToAllocateAmount: numeric('safe_to_allocate_amount', { precision: 12, scale: 2 }).notNull(),
+    safeToAllocatePercentage: numeric('safe_to_allocate_percentage', { precision: 5, scale: 2 }).notNull(),
+    
+    // Goal Caps Per Goal
+    goalAllocationLimits: jsonb('goal_allocation_limits').notNull(),
+    
+    // Confidence & Coverage
+    confidenceLevel: text('confidence_level'),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }),
+    coverageStatus: text('coverage_status').notNull(),
+    
+    // Recommendations
+    recommendations: jsonb('recommendations').default([]),
+    
+    // Metadata
+    dataQuality: jsonb('data_quality').default({}),
+    calculationMetadata: jsonb('calculation_metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Guardrail Allocations - Track allocations made with guardrail enforcement
+export const guardrailAllocations = pgTable('guardrail_allocations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id').references(() => budgetGuardrailPolicies.id, { onDelete: 'cascade' }).notNull(),
+    calculationId: uuid('calculation_id').references(() => safeAllocationCalculations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Goal Allocation
+    goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Requested vs. Approved
+    requestedAmount: numeric('requested_amount', { precision: 12, scale: 2 }).notNull(),
+    approvedAmount: numeric('approved_amount', { precision: 12, scale: 2 }).notNull(),
+    guardrailReducedAmount: numeric('guardrail_reduced_amount', { precision: 12, scale: 2 }),
+    reductionReason: text('reduction_reason'),
+    
+    // Allocation Details
+    allocationDate: timestamp('allocation_date').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    
+    // Status & Approval
+    status: text('status').default('pending'),
+    approvalStatus: text('approval_status'),
+    
+    // Override Information
+    overridden: boolean('overridden').default(false),
+    overrideApprovedBy: uuid('override_approved_by').references(() => users.id, { onDelete: 'set null' }),
+    overrideApprovedAt: timestamp('override_approved_at'),
+    overrideReason: text('override_reason'),
+    
+    // Implementation
+    allocatedAt: timestamp('allocated_at'),
+    actualAllocatedAmount: numeric('actual_allocated_amount', { precision: 12, scale: 2 }),
+    
+    // Metadata
+    complianceNotes: text('compliance_notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Guardrail Violations - Track instances where allocations would violate guardrails
+export const guardrailViolations = pgTable('guardrail_violations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id').references(() => budgetGuardrailPolicies.id, { onDelete: 'cascade' }).notNull(),
+    allocationId: uuid('allocation_id').references(() => guardrailAllocations.id, { onDelete: 'set null' }),
+    
+    // Violation Details
+    violationType: text('violation_type').notNull(),
+    severity: text('severity').notNull(),
+    
+    // Calculation Details
+    thresholdValue: numeric('threshold_value', { precision: 12, scale: 2 }).notNull(),
+    actualValue: numeric('actual_value', { precision: 12, scale: 2 }).notNull(),
+    shortfallAmount: numeric('shortfall_amount', { precision: 12, scale: 2 }),
+    shortfallPercentage: numeric('shortfall_percentage', { precision: 5, scale: 2 }),
+    
+    // Detection
+    detectedAt: timestamp('detected_at').notNull(),
+    violationDate: timestamp('violation_date').notNull(),
+    
+    // Resolution
+    resolved: boolean('resolved').default(false),
+    resolvedAt: timestamp('resolved_at'),
+    resolutionAction: text('resolution_action'),
+    
+    // Context
+    affectedCategories: jsonb('affected_categories').default([]),
+    affectedGoals: jsonb('affected_goals').default([]),
+    recommendedAction: text('recommended_action'),
+    
+    // Metadata
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Guardrail Compliance Snapshots - Track compliance over time
+export const guardrailComplianceSnapshots = pgTable('guardrail_compliance_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id').references(() => budgetGuardrailPolicies.id, { onDelete: 'cascade' }).notNull(),
+    
+    // Period
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    periodType: text('period_type').default('monthly'),
+    
+    // Compliance Status
+    wasCompliant: boolean('was_compliant').notNull(),
+    compliancePercentage: numeric('compliance_percentage', { precision: 5, scale: 2 }),
+    violationsCount: integer('violations_count').default(0),
+    criticalViolationsCount: integer('critical_violations_count').default(0),
+    
+    // Financial Summary
+    actualIncome: numeric('actual_income', { precision: 15, scale: 2 }),
+    actualEssentialExpenses: numeric('actual_essential_expenses', { precision: 12, scale: 2 }),
+    actualGoalAllocations: numeric('actual_goal_allocations', { precision: 12, scale: 2 }),
+    actualDiscretionary: numeric('actual_discretionary', { precision: 12, scale: 2 }),
+    
+    // vs. Expected
+    varianceFromExpected: jsonb('variance_from_expected').default({}),
+    
+    // Health Score
+    guardrailHealthScore: numeric('guardrail_health_score', { precision: 5, scale: 2 }),
+    trend: text('trend'),
+    
+    // Metadata
+    notes: text('notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
 });
 
 // Device Sessions Table for token management
@@ -615,6 +1259,10 @@ export const tenantsRelations = relations(tenants, ({ one, many }) => ({
     rbacPermissions: many(rbacPermissions),
     rbacAuditLogs: many(rbacAuditLogs),
     auditLogs: many(auditLogs),
+    logSnapshots: many(logSnapshots),
+    logVolumeForecasts: many(logVolumeForecasts),
+    logVolumeMetrics: many(logVolumeMetrics),
+    capacityAlerts: many(capacityAlerts),
     budgetAlerts: many(budgetAlerts),
     budgetAggregates: many(budgetAggregates),
     alertDeduplication: many(alertDeduplication),
@@ -697,6 +1345,51 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
     }),
     actor: one(users, {
         fields: [auditLogs.actorUserId],
+        references: [users.id],
+    }),
+}));
+
+export const logSnapshotsRelations = relations(logSnapshots, ({ one }) => ({
+    tenant: one(tenants, {
+        fields: [logSnapshots.tenantId],
+        references: [tenants.id],
+    }),
+    requester: one(users, {
+        fields: [logSnapshots.requestedBy],
+        references: [users.id],
+    }),
+}));
+
+export const logVolumeForecastsRelations = relations(logVolumeForecasts, ({ one, many }) => ({
+    tenant: one(tenants, {
+        fields: [logVolumeForecasts.tenantId],
+        references: [tenants.id],
+    }),
+    generator: one(users, {
+        fields: [logVolumeForecasts.generatedBy],
+        references: [users.id],
+    }),
+    alerts: many(capacityAlerts),
+}));
+
+export const logVolumeMetricsRelations = relations(logVolumeMetrics, ({ one }) => ({
+    tenant: one(tenants, {
+        fields: [logVolumeMetrics.tenantId],
+        references: [tenants.id],
+    }),
+}));
+
+export const capacityAlertsRelations = relations(capacityAlerts, ({ one }) => ({
+    tenant: one(tenants, {
+        fields: [capacityAlerts.tenantId],
+        references: [tenants.id],
+    }),
+    forecast: one(logVolumeForecasts, {
+        fields: [capacityAlerts.forecastId],
+        references: [logVolumeForecasts.id],
+    }),
+    acknowledger: one(users, {
+        fields: [capacityAlerts.acknowledgedBy],
         references: [users.id],
     }),
 }));
@@ -792,6 +1485,227 @@ export const goalContributionLineItemsRelations = relations(goalContributionLine
     sourceExpense: one(expenses, {
         fields: [goalContributionLineItems.sourceExpenseId],
         references: [expenses.id],
+    }),
+}));
+
+// Relations for Goal Contribution Volatility Smoother - Issue #713
+export const goalContributionSmoothingConfigsRelations = relations(goalContributionSmoothingConfigs, ({ one, many }) => ({
+    user: one(users, {
+        fields: [goalContributionSmoothingConfigs.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalContributionSmoothingConfigs.goalId],
+        references: [goals.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalContributionSmoothingConfigs.vaultId],
+        references: [vaults.id],
+    }),
+    recommendations: many(goalContributionRecommendations),
+}));
+
+export const goalCashflowHistoryRelations = relations(goalCashflowHistory, ({ one }) => ({
+    user: one(users, {
+        fields: [goalCashflowHistory.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalCashflowHistory.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const goalContributionRecommendationsRelations = relations(goalContributionRecommendations, ({ one }) => ({
+    user: one(users, {
+        fields: [goalContributionRecommendations.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalContributionRecommendations.goalId],
+        references: [goals.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalContributionRecommendations.vaultId],
+        references: [vaults.id],
+    }),
+    config: one(goalContributionSmoothingConfigs, {
+        fields: [goalContributionRecommendations.configId],
+        references: [goalContributionSmoothingConfigs.id],
+    }),
+}));
+
+export const goalCashflowEventsRelations = relations(goalCashflowEvents, ({ one }) => ({
+    user: one(users, {
+        fields: [goalCashflowEvents.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalCashflowEvents.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+// Relations for Goal Adjustment Explainability Timeline - Issue #715
+export const goalAdjustmentExplanationsRelations = relations(goalAdjustmentExplanations, ({ one, many }) => ({
+    tenant: one(tenants, {
+        fields: [goalAdjustmentExplanations.tenantId],
+        references: [tenants.id],
+    }),
+    user: one(users, {
+        fields: [goalAdjustmentExplanations.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalAdjustmentExplanations.goalId],
+        references: [goals.id],
+    }),
+    previousRecommendation: one(goalContributionRecommendations, {
+        fields: [goalAdjustmentExplanations.previousRecommendationId],
+        references: [goalContributionRecommendations.id],
+    }),
+    newRecommendation: one(goalContributionRecommendations, {
+        fields: [goalAdjustmentExplanations.newRecommendationId],
+        references: [goalContributionRecommendations.id],
+    }),
+    reviewer: one(users, {
+        fields: [goalAdjustmentExplanations.reviewedBy],
+        references: [users.id],
+    }),
+    attributionDetails: many(goalAdjustmentAttributionDetails),
+    timelineEntries: many(goalAdjustmentTimeline),
+    comparison: one(goalAdjustmentComparison),
+}));
+
+export const goalAdjustmentAttributionDetailsRelations = relations(goalAdjustmentAttributionDetails, ({ one }) => ({
+    explanation: one(goalAdjustmentExplanations, {
+        fields: [goalAdjustmentAttributionDetails.explanationId],
+        references: [goalAdjustmentExplanations.id],
+    }),
+}));
+
+export const goalAdjustmentTimelineRelations = relations(goalAdjustmentTimeline, ({ one }) => ({
+    user: one(users, {
+        fields: [goalAdjustmentTimeline.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalAdjustmentTimeline.goalId],
+        references: [goals.id],
+    }),
+    explanation: one(goalAdjustmentExplanations, {
+        fields: [goalAdjustmentTimeline.explanationId],
+        references: [goalAdjustmentExplanations.id],
+    }),
+}));
+
+export const goalAdjustmentInsightsRelations = relations(goalAdjustmentInsights, ({ one }) => ({
+    user: one(users, {
+        fields: [goalAdjustmentInsights.userId],
+        references: [users.id],
+    }),
+    goal: one(goals, {
+        fields: [goalAdjustmentInsights.goalId],
+        references: [goals.id],
+    }),
+}));
+
+export const goalAdjustmentComparisonRelations = relations(goalAdjustmentComparison, ({ one }) => ({
+    explanation: one(goalAdjustmentExplanations, {
+        fields: [goalAdjustmentComparison.explanationId],
+        references: [goalAdjustmentExplanations.id],
+    }),
+}));
+
+// Relations for Multi-Goal Budget Guardrail Optimizer - Issue #714
+export const budgetGuardrailPoliciesRelations = relations(budgetGuardrailPolicies, ({ one, many }) => ({
+    user: one(users, {
+        fields: [budgetGuardrailPolicies.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [budgetGuardrailPolicies.vaultId],
+        references: [vaults.id],
+    }),
+    allocations: many(guardrailAllocations),
+    violations: many(guardrailViolations),
+    complianceSnapshots: many(guardrailComplianceSnapshots),
+    safeAllocations: many(safeAllocationCalculations),
+}));
+
+export const safeAllocationCalculationsRelations = relations(safeAllocationCalculations, ({ one }) => ({
+    user: one(users, {
+        fields: [safeAllocationCalculations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [safeAllocationCalculations.vaultId],
+        references: [vaults.id],
+    }),
+    policy: one(budgetGuardrailPolicies, {
+        fields: [safeAllocationCalculations.policyId],
+        references: [budgetGuardrailPolicies.id],
+    }),
+}));
+
+export const guardrailAllocationsRelations = relations(guardrailAllocations, ({ one }) => ({
+    user: one(users, {
+        fields: [guardrailAllocations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [guardrailAllocations.vaultId],
+        references: [vaults.id],
+    }),
+    policy: one(budgetGuardrailPolicies, {
+        fields: [guardrailAllocations.policyId],
+        references: [budgetGuardrailPolicies.id],
+    }),
+    calculation: one(safeAllocationCalculations, {
+        fields: [guardrailAllocations.calculationId],
+        references: [safeAllocationCalculations.id],
+    }),
+    goal: one(goals, {
+        fields: [guardrailAllocations.goalId],
+        references: [goals.id],
+    }),
+    approver: one(users, {
+        fields: [guardrailAllocations.overrideApprovedBy],
+        references: [users.id],
+    }),
+}));
+
+export const guardrailViolationsRelations = relations(guardrailViolations, ({ one }) => ({
+    user: one(users, {
+        fields: [guardrailViolations.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [guardrailViolations.vaultId],
+        references: [vaults.id],
+    }),
+    policy: one(budgetGuardrailPolicies, {
+        fields: [guardrailViolations.policyId],
+        references: [budgetGuardrailPolicies.id],
+    }),
+    allocation: one(guardrailAllocations, {
+        fields: [guardrailViolations.allocationId],
+        references: [guardrailAllocations.id],
+    }),
+}));
+
+export const guardrailComplianceSnapshotsRelations = relations(guardrailComplianceSnapshots, ({ one }) => ({
+    user: one(users, {
+        fields: [guardrailComplianceSnapshots.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [guardrailComplianceSnapshots.vaultId],
+        references: [vaults.id],
+    }),
+    policy: one(budgetGuardrailPolicies, {
+        fields: [guardrailComplianceSnapshots.policyId],
+        references: [budgetGuardrailPolicies.id],
     }),
 }));
 
@@ -3306,6 +4220,116 @@ export const multiSigApprovalsRelations = relations(multiSigApprovals, ({ one })
 }));
 
 // ============================================================================
+// GRACE PERIOD STATE MACHINE (#676)
+// ============================================================================
+
+export const successionGracePeriods = pgTable('succession_grace_periods', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    successionRuleId: uuid('succession_rule_id').references(() => successionRules.id, { onDelete: 'cascade' }).notNull(),
+    currentState: text('current_state').notNull(), // 'active', 'critical_inactivity', 'grace_period', 'transition_triggered', 'cancelled'
+    previousState: text('previous_state'),
+    stateChangedAt: timestamp('state_changed_at').defaultNow(),
+    gracePeriodEndsAt: timestamp('grace_period_ends_at'),
+    transitionTriggeredAt: timestamp('transition_triggered_at'),
+    cancelledAt: timestamp('cancelled_at'),
+    cancelReason: text('cancel_reason'), // 'owner_reauthenticated', 'manual_override', 'rule_deactivated'
+    inactivityScore: numeric('inactivity_score', { precision: 5, scale: 2 }),
+    daysInactive: integer('days_inactive'),
+    triggerEventData: jsonb('trigger_event_data').default({}), // Original CRITICAL_INACTIVITY event data
+    stateHistory: jsonb('state_history').default([]), // Array of state transitions with timestamps
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Relations for Grace Period State Machine
+export const successionGracePeriodsRelations = relations(successionGracePeriods, ({ one }) => ({
+    user: one(users, { fields: [successionGracePeriods.userId], references: [users.id] }),
+    successionRule: one(successionRules, { fields: [successionGracePeriods.successionRuleId], references: [successionRules.id] }),
+}));
+
+// ============================================================================
+// ACCESS SHARD FRAGMENTATION ENGINE (#677)
+// ============================================================================
+
+export const accessShards = pgTable('access_shards', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    successionRuleId: uuid('succession_rule_id').references(() => successionRules.id, { onDelete: 'cascade' }).notNull(),
+    shardIndex: integer('shard_index').notNull(), // Index of this shard (0 to N-1)
+    totalShards: integer('total_shards').notNull(), // Total number of shards (N)
+    threshold: integer('threshold').notNull(), // Minimum shards required for reconstruction (M)
+    shardData: text('shard_data').notNull(), // Encrypted shard data (base64 encoded)
+    checksum: text('checksum').notNull(), // SHA-256 checksum for integrity verification
+    custodianId: uuid('custodian_id'), // ID of the custodian holding this shard (could be user, entity, or external service)
+    custodianType: text('custodian_type').default('user'), // 'user', 'entity', 'external_service'
+    distributionMethod: text('distribution_method').notNull(), // 'manual', 'automated', 'hybrid'
+    status: text('status').default('active'), // 'active', 'revoked', 'reconstructed', 'compromised'
+    lastVerifiedAt: timestamp('last_verified_at'),
+    compromiseDetectedAt: timestamp('compromise_detected_at'),
+    metadata: jsonb('metadata').default({}), // Additional shard metadata
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userRuleIdx: index('idx_access_shards_user_rule').on(table.userId, table.successionRuleId),
+    custodianIdx: index('idx_access_shards_custodian').on(table.custodianId, table.custodianType),
+}));
+
+export const shardReconstructionAttempts = pgTable('shard_reconstruction_attempts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    successionRuleId: uuid('succession_rule_id').references(() => successionRules.id, { onDelete: 'cascade' }).notNull(),
+    attemptTimestamp: timestamp('attempt_timestamp').defaultNow(),
+    shardsProvided: integer('shards_provided').notNull(), // Number of shards provided in this attempt
+    thresholdRequired: integer('threshold_required').notNull(), // Threshold required for reconstruction
+    success: boolean('success').default(false),
+    reconstructedData: text('reconstructed_data'), // The reconstructed secret (only stored on success)
+    failureReason: text('failure_reason'), // 'insufficient_shards', 'tampered_shards', 'invalid_checksums'
+    tamperedShardIndices: jsonb('tampered_shard_indices').default([]), // Array of indices of tampered shards
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userRuleIdx: index('idx_reconstruction_user_rule').on(table.userId, table.successionRuleId),
+    successIdx: index('idx_reconstruction_success').on(table.success),
+}));
+
+export const shardCustodians = pgTable('shard_custodians', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    custodianId: uuid('custodian_id').notNull(), // Could reference users.id, entities.id, or external ID
+    custodianType: text('custodian_type').notNull(), // 'user', 'entity', 'external_service'
+    name: text('name').notNull(), // Display name
+    contactInfo: jsonb('contact_info').default({}), // Email, phone, etc.
+    trustLevel: text('trust_level').default('medium'), // 'low', 'medium', 'high', 'critical'
+    isActive: boolean('is_active').default(true),
+    lastContactAt: timestamp('last_contact_at'),
+    verificationStatus: text('verification_status').default('pending'), // 'pending', 'verified', 'failed'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    custodianIdx: index('idx_custodians_id_type').on(table.custodianId, table.custodianType),
+}));
+
+// Relations for Access Shard Fragmentation Engine
+export const accessShardsRelations = relations(accessShards, ({ one }) => ({
+    user: one(users, { fields: [accessShards.userId], references: [users.id] }),
+    successionRule: one(successionRules, { fields: [accessShards.successionRuleId], references: [successionRules.id] }),
+    custodian: one(shardCustodians, { fields: [accessShards.custodianId], references: [shardCustodians.id] }),
+}));
+
+export const shardReconstructionAttemptsRelations = relations(shardReconstructionAttempts, ({ one }) => ({
+    user: one(users, { fields: [shardReconstructionAttempts.userId], references: [users.id] }),
+    successionRule: one(successionRules, { fields: [shardReconstructionAttempts.successionRuleId], references: [successionRules.id] }),
+}));
+
+export const shardCustodiansRelations = relations(shardCustodians, ({ many }) => ({
+    shards: many(accessShards),
+}));
+
+// ============================================================================
 // PROBABILISTIC FORECASTING & ADAPTIVE REBALANCING (L3) (#361)
 // ============================================================================
 
@@ -3645,6 +4669,26 @@ export const approvalQuestsRelations = relations(approvalQuests, ({ one }) => ({
 
 export const successionRulesRelations = relations(successionRules, ({ one }) => ({
     user: one(users, { fields: [successionRules.userId], references: [users.id] }),
+}));
+
+// ============================================================================
+// SUCCESSION HEARTBEAT ENGINE (#675)
+// ============================================================================
+
+export const userHeartbeats = pgTable('user_heartbeats', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    channel: text('channel').notNull(), // 'email_confirmation', 'in_app_checkin', 'on_chain_activity', 'hardware_wallet'
+    timestamp: timestamp('timestamp').defaultNow().notNull(),
+    weight: numeric('weight', { precision: 3, scale: 2 }).default('1.00'), // Weight for inactivity calculation (0.00-1.00)
+    metadata: jsonb('metadata').default({}), // Additional context (e.g., transaction hash, email type)
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const userHeartbeatRelations = relations(userHeartbeats, ({ one }) => ({
+    user: one(users, { fields: [userHeartbeats.userId], references: [users.id] }),
 }));
 
 // ============================================================================
@@ -5695,6 +6739,1231 @@ export const successionAccessShardsRelations = relations(successionAccessShards,
 
 export const successionHeartbeatsRelations = relations(successionHeartbeats, ({ one }) => ({
     user: one(users, { fields: [successionHeartbeats.userId], references: [users.id] }),
+}));
+
+// ============================================================================
+// RECURRING TRANSACTIONS & BILL TRACKING (#663)
+// ============================================================================
+
+// Recurring Transactions - Auto-detected and manual recurring charges
+export const recurringTransactions = pgTable('recurring_transactions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    merchantId: uuid('merchant_id'),
+    transactionName: text('transaction_name').notNull(),
+    description: text('description'),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    currency: text('currency').default('USD'),
+    category: text('category'),
+    frequency: text('frequency').notNull(),
+    customFrequencyDays: integer('custom_frequency_days'),
+    customFrequencyCount: integer('custom_frequency_count').default(1),
+    nextDueDate: timestamp('next_due_date'),
+    lastPaymentDate: timestamp('last_payment_date'),
+    status: text('status').default('active'),
+    detectionMethod: text('detection_method').default('manual'),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }).default('0'),
+    notes: text('notes'),
+    autoDetectedAt: timestamp('auto_detected_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_recurring_transactions_user_id').on(table.userId),
+    vaultIdx: index('idx_recurring_transactions_vault_id').on(table.vaultId),
+    statusIdx: index('idx_recurring_transactions_status').on(table.status),
+    dueIdx: index('idx_recurring_transactions_next_due').on(table.nextDueDate),
+}));
+
+// Bill Payments - Individual bill payment tracking
+export const billPayments = pgTable('bill_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    billDate: timestamp('bill_date').notNull(),
+    dueDate: timestamp('due_date').notNull(),
+    status: text('status').default('scheduled'),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    actualAmount: numeric('actual_amount', { precision: 15, scale: 2 }),
+    paymentDate: timestamp('payment_date'),
+    paymentMethod: text('payment_method'),
+    notes: text('notes'),
+    relatedTransactionId: uuid('related_transaction_id').references(() => transactions.id),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_bill_payments_user_id').on(table.userId),
+    recurringIdx: index('idx_bill_payments_recurring_id').on(table.recurringTransactionId),
+    statusIdx: index('idx_bill_payments_status').on(table.status),
+    dueIdx: index('idx_bill_payments_due_date').on(table.dueDate),
+}));
+
+// Subscription Metadata - Details about subscriptions
+export const subscriptionMetadata = pgTable('subscription_metadata', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    recurringTransactionId: uuid('recurring_transaction_id').unique().references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    subscriptionType: text('subscription_type'),
+    accountId: text('account_id'),
+    accountEmail: text('account_email'),
+    serviceProvider: text('service_provider'),
+    businessName: text('business_name'),
+    cancellationUrl: text('cancellation_url'),
+    contactInfo: text('contact_info'),
+    autoRenewal: boolean('auto_renewal').default(true),
+    renewalDate: timestamp('renewal_date'),
+    estimatedYearlyValue: numeric('estimated_yearly_value', { precision: 15, scale: 2 }),
+    features: jsonb('features').default('[]'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Duplicate Subscriptions - Flag potential duplicate charges
+export const duplicateSubscriptions = pgTable('duplicate_subscriptions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    primaryRecurringId: uuid('primary_recurring_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    duplicateRecurringId: uuid('duplicate_recurring_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }),
+    reason: text('reason'),
+    status: text('status').default('pending_review'),
+    createdAt: timestamp('created_at').defaultNow(),
+    reviewedAt: timestamp('reviewed_at'),
+    reviewedBy: uuid('reviewed_by').references(() => users.id),
+}, (table) => ({
+    userIdx: index('idx_duplicate_subscriptions_user_id').on(table.userId),
+    primaryIdx: index('idx_duplicate_subscriptions_primary_id').on(table.primaryRecurringId),
+}));
+
+// Recurring Alerts - Notifications for bills and subscriptions
+export const recurringAlerts = pgTable('recurring_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }),
+    alertType: text('alert_type').notNull(),
+    alertDate: timestamp('alert_date').notNull(),
+    dueDate: timestamp('due_date'),
+    message: text('message').notNull(),
+    severity: text('severity').default('medium'),
+    isRead: boolean('is_read').default(false),
+    isResolved: boolean('is_resolved').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    resolvedAt: timestamp('resolved_at'),
+}, (table) => ({
+    userIdx: index('idx_recurring_alerts_user_id').on(table.userId),
+    typeIdx: index('idx_recurring_alerts_type').on(table.alertType),
+    readIdx: index('idx_recurring_alerts_is_read').on(table.isRead),
+}));
+
+// Bill Categories - User-defined bill categories
+export const billCategories = pgTable('bill_categories', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    categoryName: text('category_name').notNull(),
+    categoryType: text('category_type').notNull(),
+    budgetLimit: numeric('budget_limit', { precision: 15, scale: 2 }),
+    description: text('description'),
+    color: text('color').default('#3B82F6'),
+    icon: text('icon'),
+    isDefault: boolean('is_default').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_bill_categories_user_id').on(table.userId),
+}));
+
+// Payment Reminders - Notification scheduling
+export const paymentReminders = pgTable('payment_reminders', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    reminderDays: integer('reminder_days').default(7),
+    lastReminderDate: timestamp('last_reminder_date'),
+    nextReminderDate: timestamp('next_reminder_date'),
+    isActive: boolean('is_active').default(true),
+    reminderChannels: jsonb('reminder_channels').default('["email"]'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_payment_reminders_user_id').on(table.userId),
+    nextReminderIdx: index('idx_payment_reminders_next_reminder').on(table.nextReminderDate),
+}));
+
+// Recurring Transaction History - Change audit trail
+export const recurringTransactionHistory = pgTable('recurring_transaction_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    recurringTransactionId: uuid('recurring_transaction_id').references(() => recurringTransactions.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    previousAmount: numeric('previous_amount', { precision: 15, scale: 2 }),
+    newAmount: numeric('new_amount', { precision: 15, scale: 2 }),
+    previousFrequency: text('previous_frequency'),
+    newFrequency: text('new_frequency'),
+    previousStatus: text('previous_status'),
+    newStatus: text('new_status'),
+    changeType: text('change_type').notNull(),
+    reason: text('reason'),
+    changedDate: timestamp('changed_date').defaultNow(),
+    changedBy: uuid('changed_by').references(() => users.id),
+}, (table) => ({
+    recurringIdx: index('idx_recurring_transaction_history_recurring_id').on(table.recurringTransactionId),
+    userIdx: index('idx_recurring_transaction_history_user_id').on(table.userId),
+}));
+
+// Merchant Info - Known merchants for subscription detection
+export const merchantInfo = pgTable('merchant_info', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantName: text('merchant_name').notNull().unique(),
+    displayName: text('display_name'),
+    logoUrl: text('logo_url'),
+    websiteUrl: text('website_url'),
+    industry: text('industry'),
+    category: text('category'),
+    subscriptionType: text('subscription_type'),
+    commonFrequency: text('common_frequency'),
+    isKnownSubscription: boolean('is_known_subscription').default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    nameIdx: index('idx_merchant_info_name').on(table.merchantName),
+    categoryIdx: index('idx_merchant_info_category').on(table.category),
+}));
+
+// Bill Reports - Monthly/yearly bill summaries
+export const billReports = pgTable('bill_reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }),
+    reportMonth: text('report_month').notNull(),
+    totalRecurring: numeric('total_recurring', { precision: 15, scale: 2 }),
+    totalPaid: numeric('total_paid', { precision: 15, scale: 2 }),
+    billCount: integer('bill_count').default(0),
+    paidCount: integer('paid_count').default(0),
+    overdueCount: integer('overdue_count').default(0),
+    skippedCount: integer('skipped_count').default(0),
+    categoryBreakdown: jsonb('category_breakdown').default('{}'),
+    generatedAt: timestamp('generated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_bill_reports_user_id').on(table.userId),
+    monthIdx: index('idx_bill_reports_month').on(table.reportMonth),
+}));
+
+// Relations for Recurring Transactions
+export const recurringTransactionsRelations = relations(recurringTransactions, ({ one, many }) => ({
+    user: one(users, {
+        fields: [recurringTransactions.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [recurringTransactions.vaultId],
+        references: [vaults.id],
+    }),
+    billPayments: many(billPayments),
+    subscriptionMetadata: one(subscriptionMetadata, {
+        fields: [recurringTransactions.id],
+        references: [subscriptionMetadata.recurringTransactionId],
+    }),
+    alerts: many(recurringAlerts),
+    reminders: many(paymentReminders),
+    history: many(recurringTransactionHistory),
+}));
+
+export const billPaymentsRelations = relations(billPayments, ({ one }) => ({
+    user: one(users, {
+        fields: [billPayments.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [billPayments.vaultId],
+        references: [vaults.id],
+    }),
+    recurringTransaction: one(recurringTransactions, {
+        fields: [billPayments.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+    relatedTransaction: one(transactions, {
+        fields: [billPayments.relatedTransactionId],
+        references: [transactions.id],
+    }),
+}));
+
+export const subscriptionMetadataRelations = relations(subscriptionMetadata, ({ one }) => ({
+    recurringTransaction: one(recurringTransactions, {
+        fields: [subscriptionMetadata.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+}));
+
+export const duplicateSubscriptionsRelations = relations(duplicateSubscriptions, ({ one }) => ({
+    user: one(users, {
+        fields: [duplicateSubscriptions.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [duplicateSubscriptions.vaultId],
+        references: [vaults.id],
+    }),
+    primaryRecurring: one(recurringTransactions, {
+        fields: [duplicateSubscriptions.primaryRecurringId],
+        references: [recurringTransactions.id],
+    }),
+    duplicateRecurring: one(recurringTransactions, {
+        fields: [duplicateSubscriptions.duplicateRecurringId],
+        references: [recurringTransactions.id],
+    }),
+    reviewedByUser: one(users, {
+        fields: [duplicateSubscriptions.reviewedBy],
+        references: [users.id],
+    }),
+}));
+
+export const recurringAlertsRelations = relations(recurringAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [recurringAlerts.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [recurringAlerts.vaultId],
+        references: [vaults.id],
+    }),
+    recurringTransaction: one(recurringTransactions, {
+        fields: [recurringAlerts.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+}));
+
+export const billCategoriesRelations = relations(billCategories, ({ one }) => ({
+    user: one(users, {
+        fields: [billCategories.userId],
+        references: [users.id],
+    }),
+}));
+
+export const paymentRemindersRelations = relations(paymentReminders, ({ one }) => ({
+    user: one(users, {
+        fields: [paymentReminders.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [paymentReminders.vaultId],
+        references: [vaults.id],
+    }),
+    recurringTransaction: one(recurringTransactions, {
+        fields: [paymentReminders.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+}));
+
+export const recurringTransactionHistoryRelations = relations(recurringTransactionHistory, ({ one }) => ({
+    recurringTransaction: one(recurringTransactions, {
+        fields: [recurringTransactionHistory.recurringTransactionId],
+        references: [recurringTransactions.id],
+    }),
+    user: one(users, {
+        fields: [recurringTransactionHistory.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [recurringTransactionHistory.vaultId],
+        references: [vaults.id],
+    }),
+    changedByUser: one(users, {
+        fields: [recurringTransactionHistory.changedBy],
+        references: [users.id],
+    }),
+}));
+
+export const billReportsRelations = relations(billReports, ({ one }) => ({
+    user: one(users, {
+        fields: [billReports.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [billReports.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+// ============================================================================
+// FINANCIAL GOALS & SAVINGS TRACKER (#664)
+// ============================================================================
+
+// Financial Goals - Core goal definitions
+export const financialGoals = pgTable('financial_goals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    goalName: text('goal_name').notNull(),
+    description: text('description'),
+    goalType: text('goal_type').notNull(),
+    category: text('category').notNull(),
+    targetAmount: numeric('target_amount', { precision: 15, scale: 2 }).notNull(),
+    currentAmount: numeric('current_amount', { precision: 15, scale: 2 }).default('0'),
+    currency: text('currency').default('USD'),
+    targetDate: timestamp('target_date').notNull(),
+    priority: integer('priority').default(0),
+    importance: integer('importance').default(50),
+    riskTolerance: text('risk_tolerance').default('moderate'),
+    status: text('status').default('planning'),
+    progressPercentage: numeric('progress_percentage', { precision: 5, scale: 2 }).default('0'),
+    isAutoTracked: boolean('is_auto_tracked').default(false),
+    autoCalculateSavings: boolean('auto_calculate_savings').default(true),
+    tags: jsonb('tags').default('[]'),
+    notes: text('notes'),
+    customProperties: jsonb('custom_properties').default('{}'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    startedAt: timestamp('started_at'),
+    achievedAt: timestamp('achieved_at'),
+    abandonedAt: timestamp('abandoned_at'),
+}, (table) => ({
+    userIdx: index('idx_financial_goals_user_id').on(table.userId),
+    vaultIdx: index('idx_financial_goals_vault_id').on(table.vaultId),
+    statusIdx: index('idx_financial_goals_status').on(table.status),
+    categoryIdx: index('idx_financial_goals_category').on(table.category),
+    targetDateIdx: index('idx_financial_goals_target_date').on(table.targetDate),
+    priorityIdx: index('idx_financial_goals_priority').on(table.priority),
+}));
+
+// Goal Progress Snapshots - Versioned progress tracking
+export const goalProgressSnapshots = pgTable('goal_progress_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    contributedAmount: numeric('contributed_amount', { precision: 15, scale: 2 }).notNull(),
+    contributedPercentage: numeric('contributed_percentage', { precision: 5, scale: 2 }).notNull(),
+    remainingAmount: numeric('remaining_amount', { precision: 15, scale: 2 }).notNull(),
+    status: text('status').notNull(),
+    daysElapsed: integer('days_elapsed'),
+    daysRemaining: integer('days_remaining'),
+    paceRatio: numeric('pace_ratio', { precision: 5, scale: 2 }),
+    requiredMonthlyAmount: numeric('required_monthly_amount', { precision: 15, scale: 2 }),
+    requiredWeeklyAmount: numeric('required_weekly_amount', { precision: 15, scale: 2 }),
+    monthlyContributionTrend: numeric('monthly_contribution_trend', { precision: 15, scale: 2 }),
+    achievementProbability: numeric('achievement_probability', { precision: 5, scale: 2 }),
+    confidenceLevel: text('confidence_level'),
+    projectedCompletionDate: timestamp('projected_completion_date'),
+    varianceFromPace: numeric('variance_from_pace', { precision: 5, scale: 2 }),
+    varianceTrend: text('variance_trend'),
+    snapshotType: text('snapshot_type').default('periodic'),
+    calculatedBy: text('calculated_by').default('system'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_progress_snapshots_goal_id').on(table.goalId),
+    userIdx: index('idx_progress_snapshots_user_id').on(table.userId),
+    statusIdx: index('idx_progress_snapshots_status').on(table.status),
+}));
+
+// Savings Plans - Contribution schedules
+export const savingsPlans = pgTable('savings_plans', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    startingAmount: numeric('starting_amount', { precision: 15, scale: 2 }).notNull(),
+    targetAmount: numeric('target_amount', { precision: 15, scale: 2 }).notNull(),
+    currentAmount: numeric('current_amount', { precision: 15, scale: 2 }).notNull(),
+    timeToTargetMonths: integer('time_to_target_months').notNull(),
+    baseMonthlyAmount: numeric('base_monthly_amount', { precision: 15, scale: 2 }).notNull(),
+    weeklyAmount: numeric('weekly_amount', { precision: 15, scale: 2 }),
+    biweeklyAmount: numeric('biweekly_amount', { precision: 15, scale: 2 }),
+    requiredMonthlyAmount: numeric('required_monthly_amount', { precision: 15, scale: 2 }),
+    contributionFrequency: text('contribution_frequency').default('monthly'),
+    customFrequencyDays: integer('custom_frequency_days'),
+    bufferPercentage: numeric('buffer_percentage', { precision: 5, scale: 2 }).default('10'),
+    bufferAmount: numeric('buffer_amount', { precision: 15, scale: 2 }),
+    adjustedMonthlyAmount: numeric('adjusted_monthly_amount', { precision: 15, scale: 2 }),
+    paymentMethod: text('payment_method'),
+    autoDebitEnabled: boolean('auto_debit_enabled').default(false),
+    autoDebitDate: integer('auto_debit_date'),
+    targetAccountId: uuid('target_account_id'),
+    previousVersions: integer('previous_versions').default(0),
+    adjustmentReason: text('adjustment_reason'),
+    lastAdjustedAt: timestamp('last_adjusted_at'),
+    status: text('status').default('active'),
+    successRate: numeric('success_rate', { precision: 5, scale: 2 }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_savings_plans_goal_id').on(table.goalId),
+    userIdx: index('idx_savings_plans_user_id').on(table.userId),
+    statusIdx: index('idx_savings_plans_status').on(table.status),
+}));
+
+// Goal Milestones - Progress checkpoints
+export const goalMilestones = pgTable('goal_milestones', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    milestoneName: text('milestone_name').notNull(),
+    milestoneType: text('milestone_type').notNull(),
+    milestoneValue: numeric('milestone_value', { precision: 15, scale: 2 }),
+    percentageValue: numeric('percentage_value', { precision: 5, scale: 2 }),
+    targetDate: timestamp('target_date'),
+    sequenceOrder: integer('sequence_order').default(0),
+    status: text('status').default('pending'),
+    achievedDate: timestamp('achieved_date'),
+    timeToAchieveDays: integer('time_to_achieve_days'),
+    celebrationEnabled: boolean('celebration_enabled').default(true),
+    celebrationMessage: text('celebration_message'),
+    badgeEarned: text('badge_earned'),
+    motivationMessage: text('motivation_message'),
+    notificationSent: boolean('notification_sent').default(false),
+    isAutomatic: boolean('is_automatic').default(false),
+    customProperties: jsonb('custom_properties').default('{}'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_milestones_goal_id').on(table.goalId),
+    userIdx: index('idx_milestones_user_id').on(table.userId),
+    statusIdx: index('idx_milestones_status').on(table.status),
+    sequenceIdx: index('idx_milestones_sequence').on(table.sequenceOrder),
+}));
+
+// Milestone Achievements - Track completions
+export const milestoneAchievements = pgTable('milestone_achievements', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    milestoneId: uuid('milestone_id').references(() => goalMilestones.id, { onDelete: 'cascade' }).notNull(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    achievedDate: timestamp('achieved_date').notNull(),
+    achievementStatus: text('achievement_status').default('completed'),
+    daysAheadOrBehind: integer('days_ahead_or_behind'),
+    badgeType: text('badge_type'),
+    badgeDescription: text('badge_description'),
+    pointsEarned: integer('points_earned').default(0),
+    celebrationShared: boolean('celebration_shared').default(false),
+    sharedAt: timestamp('shared_at'),
+    sharingPlatform: text('sharing_platform'),
+    motivationFactor: numeric('motivation_factor', { precision: 5, scale: 2 }),
+    nextMilestoneId: uuid('next_milestone_id').references(() => goalMilestones.id, { onDelete: 'set null' }),
+    achievementNote: text('achievement_note'),
+    mediaUrl: text('media_url'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    milestoneIdx: index('idx_achievements_milestone_id').on(table.milestoneId),
+    goalIdx: index('idx_achievements_goal_id').on(table.goalId),
+    userIdx: index('idx_achievements_user_id').on(table.userId),
+}));
+
+// Goal Transactions Link - Connect transactions to goals
+export const goalTransactionsLink = pgTable('goal_transactions_link', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    transactionId: uuid('transaction_id').references(() => transactions.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    contributedAmount: numeric('contributed_amount', { precision: 15, scale: 2 }).notNull(),
+    contributionDate: timestamp('contribution_date').notNull(),
+    transactionType: text('transaction_type'),
+    isAutomatic: boolean('is_automatic').default(false),
+    confidenceScore: numeric('confidence_score', { precision: 5, scale: 2 }),
+    linkingReason: text('linking_reason'),
+    notes: text('notes'),
+    linkedAt: timestamp('linked_at').defaultNow(),
+    unlinkedAt: timestamp('unlinked_at'),
+}, (table) => ({
+    goalIdx: index('idx_goal_transactions_goal_id').on(table.goalId),
+    transactionIdx: index('idx_goal_transactions_transaction_id').on(table.transactionId),
+    userIdx: index('idx_goal_transactions_user_id').on(table.userId),
+}));
+
+// Goal Timeline Projections - Monte Carlo simulations
+export const goalTimelineProjections = pgTable('goal_timeline_projections', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    projectionType: text('projection_type').notNull(),
+    simulationCount: integer('simulation_count').default(1000),
+    successProbability: numeric('success_probability', { precision: 5, scale: 2 }),
+    confidenceLevel: text('confidence_level'),
+    projectedCompletionDate: timestamp('projected_completion_date'),
+    medianCompletionDate: timestamp('median_completion_date'),
+    earliestCompletionDate: timestamp('earliest_completion_date'),
+    latestCompletionDate: timestamp('latest_completion_date'),
+    currentAmount: numeric('current_amount', { precision: 15, scale: 2 }),
+    targetAmount: numeric('target_amount', { precision: 15, scale: 2 }),
+    bestCaseAmount: numeric('best_case_amount', { precision: 15, scale: 2 }),
+    worstCaseAmount: numeric('worst_case_amount', { precision: 15, scale: 2 }),
+    mostLikelyAmount: numeric('most_likely_amount', { precision: 15, scale: 2 }),
+    monthlyVariance: numeric('monthly_variance', { precision: 15, scale: 2 }),
+    returnVariance: numeric('return_variance', { precision: 5, scale: 2 }),
+    percentiles: jsonb('percentiles').default('{}'),
+    scenarioResults: jsonb('scenario_results').default('{}'),
+    generatedAt: timestamp('generated_at').notNull(),
+    validUntil: timestamp('valid_until'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_projections_goal_id').on(table.goalId),
+    userIdx: index('idx_projections_user_id').on(table.userId),
+    successIdx: index('idx_projections_success_probability').on(table.successProbability),
+}));
+
+// Goal Analytics Snapshots - Historical insights
+export const goalAnalyticsSnapshots = pgTable('goal_analytics_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+    snapshotMonth: text('snapshot_month').notNull(),
+    healthScore: numeric('health_score', { precision: 5, scale: 2 }),
+    healthStatus: text('health_status'),
+    riskLevel: text('risk_level'),
+    priorityScore: numeric('priority_score', { precision: 5, scale: 2 }),
+    achievabilityScore: numeric('achievability_score', { precision: 5, scale: 2 }),
+    progressVelocity: numeric('progress_velocity', { precision: 15, scale: 2 }),
+    trendDirection: text('trend_direction'),
+    trendStrength: text('trend_strength'),
+    momentum: numeric('momentum', { precision: 5, scale: 2 }),
+    recommendedAction: text('recommended_action'),
+    insightMessages: jsonb('insight_messages').default('[]'),
+    alerts: jsonb('alerts').default('[]'),
+    metrics: jsonb('metrics').default('{}'),
+    analysisData: jsonb('analysis_data').default('{}'),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    goalIdx: index('idx_analytics_goal_id').on(table.goalId),
+    userIdx: index('idx_analytics_user_id').on(table.userId),
+    monthIdx: index('idx_analytics_snapshot_month').on(table.snapshotMonth),
+    healthIdx: index('idx_analytics_health_status').on(table.healthStatus),
+}));
+
+// Relations for Financial Goals
+export const financialGoalsRelations = relations(financialGoals, ({ one, many }) => ({
+    user: one(users, {
+        fields: [financialGoals.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [financialGoals.vaultId],
+        references: [vaults.id],
+    }),
+    progressSnapshots: many(goalProgressSnapshots),
+    savingsPlan: one(savingsPlans, {
+        fields: [financialGoals.id],
+        references: [savingsPlans.goalId],
+    }),
+    milestones: many(goalMilestones),
+    transactionLinks: many(goalTransactionsLink),
+    projections: many(goalTimelineProjections),
+    analytics: many(goalAnalyticsSnapshots),
+}));
+
+export const goalProgressSnapshotsRelations = relations(goalProgressSnapshots, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [goalProgressSnapshots.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [goalProgressSnapshots.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalProgressSnapshots.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const savingsPlansRelations = relations(savingsPlans, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [savingsPlans.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [savingsPlans.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [savingsPlans.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const goalMilestonesRelations = relations(goalMilestones, ({ one, many }) => ({
+    goal: one(financialGoals, {
+        fields: [goalMilestones.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [goalMilestones.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalMilestones.vaultId],
+        references: [vaults.id],
+    }),
+    achievements: many(milestoneAchievements),
+}));
+
+export const milestoneAchievementsRelations = relations(milestoneAchievements, ({ one }) => ({
+    milestone: one(goalMilestones, {
+        fields: [milestoneAchievements.milestoneId],
+        references: [goalMilestones.id],
+    }),
+    goal: one(financialGoals, {
+        fields: [milestoneAchievements.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [milestoneAchievements.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [milestoneAchievements.vaultId],
+        references: [vaults.id],
+    }),
+    nextMilestone: one(goalMilestones, {
+        fields: [milestoneAchievements.nextMilestoneId],
+        references: [goalMilestones.id],
+    }),
+}));
+
+export const goalTransactionsLinkRelations = relations(goalTransactionsLink, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [goalTransactionsLink.goalId],
+        references: [financialGoals.id],
+    }),
+    transaction: one(transactions, {
+        fields: [goalTransactionsLink.transactionId],
+        references: [transactions.id],
+    }),
+    user: one(users, {
+        fields: [goalTransactionsLink.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalTransactionsLink.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const goalTimelineProjectionsRelations = relations(goalTimelineProjections, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [goalTimelineProjections.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [goalTimelineProjections.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalTimelineProjections.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+export const goalAnalyticsSnapshotsRelations = relations(goalAnalyticsSnapshots, ({ one }) => ({
+    goal: one(financialGoals, {
+        fields: [goalAnalyticsSnapshots.goalId],
+        references: [financialGoals.id],
+    }),
+    user: one(users, {
+        fields: [goalAnalyticsSnapshots.userId],
+        references: [users.id],
+    }),
+    vault: one(vaults, {
+        fields: [goalAnalyticsSnapshots.vaultId],
+        references: [vaults.id],
+    }),
+}));
+
+// ============================================================================
+// MULTI-ACCOUNT AGGREGATION & HOUSEHOLD PORTFOLIO MANAGEMENT (#656)
+// ============================================================================
+
+// Household Groups - Multi-account household aggregation
+export const households = pgTable('households', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    description: text('description'),
+    householdType: text('household_type').default('family'), // 'family', 'joint', 'business', 'trust'
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+    baseCurrency: text('base_currency').default('USD'),
+    aggregationFrequency: text('aggregation_frequency').default('daily'), // 'real_time', 'hourly', 'daily', 'weekly'
+    rebalancingEnabled: boolean('rebalancing_enabled').default(false),
+    collaborativeApprovalsRequired: boolean('collaborative_approvals_required').default(false),
+    minApproversRequired: integer('min_approvers_required').default(1),
+    isPrivate: boolean('is_private').default(true),
+    hiddenAssets: jsonb('hidden_assets').default([]),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    createdByIdx: index('idx_households_created_by').on(table.createdBy),
+    typeIdx: index('idx_households_type').on(table.householdType),
+}));
+
+// Household Members - Multi-member roles and permissions
+export const householdMembers = pgTable('household_members', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    role: text('role').notNull().default('member'), // 'primary', 'secondary', 'viewer', 'approver', 'advisor'
+    permissions: jsonb('permissions').default([]),
+    canApproveRebalancing: boolean('can_approve_rebalancing').default(false),
+    canApproveTransfers: boolean('can_approve_transfers').default(false),
+    canViewAllAccounts: boolean('can_view_all_accounts').default(true),
+    visibleVaultIds: jsonb('visible_vault_ids').default([]),
+    hiddenVaultIds: jsonb('hidden_vault_ids').default([]),
+    relationship: text('relationship'), // 'spouse', 'child', 'parent', 'business_partner', 'trustee', 'advisor', 'other'
+    joinedAt: timestamp('joined_at').defaultNow(),
+    status: text('status').default('active'), // 'active', 'pending', 'inactive', 'revoked'
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_household_members_household').on(table.householdId),
+    userIdx: index('idx_household_members_user').on(table.userId),
+    roleIdx: index('idx_household_members_role').on(table.role),
+    uniqueMembers: sql`CONSTRAINT unique_household_member UNIQUE (household_id, user_id)`,
+}));
+
+// Household Accounts - Links vaults to households
+export const householdAccounts = pgTable('household_accounts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    vaultId: uuid('vault_id').notNull(),
+    accountName: text('account_name').notNull(),
+    accountType: text('account_type').notNull(), // 'checking', 'savings', 'investment', 'retirement', 'real_estate', 'crypto'
+    primaryOwnerId: uuid('primary_owner_id').references(() => users.id, { onDelete: 'set null' }),
+    isJoint: boolean('is_joint').default(false),
+    jointOwnerIds: jsonb('joint_owner_ids').default([]),
+    requiredForTaxReporting: boolean('required_for_tax_reporting').default(false),
+    taxFileId: text('tax_file_id'),
+    isHidden: boolean('is_hidden').default(false),
+    hiddenFromMemberIds: jsonb('hidden_from_member_ids').default([]),
+    includeInNetWorth: boolean('include_in_net_worth').default(true),
+    weight: numeric('weight', { precision: 5, scale: 4 }).default('1.0'),
+    metadata: jsonb('metadata').default({}),
+    addedAt: timestamp('added_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_household_accounts_household').on(table.householdId),
+    vaultIdx: index('idx_household_accounts_vault').on(table.vaultId),
+    jointIdx: index('idx_household_accounts_joint').on(table.isJoint),
+    uniqueAccount: sql`CONSTRAINT unique_household_vault UNIQUE (household_id, vault_id)`,
+}));
+
+// Household Snapshots - Daily aggregated net worth & allocation snapshots
+export const householdSnapshots = pgTable('household_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    snapshotDate: text('snapshot_date').notNull(), // YYYY-MM-DD format for easy querying
+    totalNetWorth: numeric('total_net_worth', { precision: 20, scale: 2 }).notNull(),
+    totalAssets: numeric('total_assets', { precision: 20, scale: 2 }).notNull(),
+    totalLiabilities: numeric('total_liabilities', { precision: 20, scale: 2 }).notNull(),
+    cashBalance: numeric('cash_balance', { precision: 20, scale: 2 }).default('0'),
+    investmentValue: numeric('investment_value', { precision: 20, scale: 2 }).default('0'),
+    realEstateValue: numeric('real_estate_value', { precision: 20, scale: 2 }).default('0'),
+    cryptoValue: numeric('crypto_value', { precision: 20, scale: 2 }).default('0'),
+    accountCount: integer('account_count').default(0),
+    baseCurrency: text('base_currency').default('USD'),
+    includesHiddenAccounts: boolean('includes_hidden_accounts').default(false),
+    assetAllocation: jsonb('asset_allocation').default({}),
+    allocationVsTarget: jsonb('allocation_vs_target').default({}),
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    householdDateIdx: index('idx_household_snapshots_household_date').on(table.householdId, table.snapshotDate),
+    dateIdx: index('idx_household_snapshots_date').on(table.snapshotDate),
+}));
+
+// Rebalancing Orders - Household-wide rebalancing moves
+export const householdRebalancingOrders = pgTable('household_rebalancing_orders', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    initiatedBy: uuid('initiated_by').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+    orderType: text('order_type').notNull(), // 'auto', 'manual', 'scenario'
+    targetAllocation: jsonb('target_allocation').notNull(),
+    currentAllocation: jsonb('current_allocation').notNull(),
+    suggestedMoves: jsonb('suggested_moves').notNull(),
+    estimatedTransactionCosts: numeric('estimated_transaction_costs', { precision: 20, scale: 2 }).default('0'),
+    estimatedTaxImpact: numeric('estimated_tax_impact', { precision: 20, scale: 2 }).default('0'),
+    requiresApproval: boolean('requires_approval').default(false),
+    approvals: jsonb('approvals').default([]),
+    allApprovalsReceived: boolean('all_approvals_received').default(false),
+    status: text('status').notNull().default('proposed'), // 'proposed', 'approved', 'executing', 'completed', 'cancelled'
+    executedAt: timestamp('executed_at'),
+    executionNotes: text('execution_notes'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_rebalancing_household').on(table.householdId),
+    initiatedByIdx: index('idx_rebalancing_initiated_by').on(table.initiatedBy),
+    statusIdx: index('idx_rebalancing_status').on(table.status),
+}));
+
+// Joint Goals - Household-level financial goals
+export const householdGoals = pgTable('household_goals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+    goalName: text('goal_name').notNull(),
+    goalType: text('goal_type').notNull(), // 'education', 'home', 'vacation', 'retirement', 'emergency', 'custom'
+    description: text('description'),
+    targetAmount: numeric('target_amount', { precision: 20, scale: 2 }).notNull(),
+    currentAmount: numeric('current_amount', { precision: 20, scale: 2 }).default('0'),
+    currency: text('currency').default('USD'),
+    deadline: timestamp('deadline').notNull(),
+    priority: text('priority').default('medium'), // 'low', 'medium', 'high', 'critical'
+    fundingStrategy: text('funding_strategy').default('proportional'), // 'proportional', 'equal', 'custom'
+    memberContributions: jsonb('member_contributions').default({}),
+    approvalRequired: boolean('approval_required').default(false),
+    requiresConsensus: boolean('requires_consensus').default(false),
+    approvedBy: jsonb('approved_by').default([]),
+    status: text('status').default('active'), // 'active', 'paused', 'completed', 'abandoned'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_household_goals_household').on(table.householdId),
+    deadlineIdx: index('idx_household_goals_deadline').on(table.deadline),
+    statusIdx: index('idx_household_goals_status').on(table.status),
+}));
+
+// Household Spending - Consolidated spending across all member accounts
+export const householdSpendingSummaries = pgTable('household_spending_summaries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    summaryDate: text('summary_date').notNull(), // YYYY-MM-DD format
+    summaryPeriod: text('summary_period').default('month'), // 'day', 'week', 'month', 'quarter', 'year'
+    totalSpending: numeric('total_spending', { precision: 20, scale: 2 }).notNull(),
+    totalIncome: numeric('total_income', { precision: 20, scale: 2 }).default('0'),
+    netCashFlow: numeric('net_cash_flow', { precision: 20, scale: 2 }).default('0'),
+    memberSpending: jsonb('member_spending').default({}),
+    memberIncome: jsonb('member_income').default({}),
+    categoryBreakdown: jsonb('category_breakdown').default({}),
+    percentChangeFromPrior: numeric('percent_change_from_prior', { precision: 5, scale: 2 }).default('0'),
+    forecastedMonthlySpend: numeric('forecasted_monthly_spend', { precision: 20, scale: 2 }).default('0'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    householdDateIdx: index('idx_household_spending_household_date').on(table.householdId, table.summaryDate),
+}));
+
+// Collaborative Approvals - General approval workflow for household changes
+export const householdApprovals = pgTable('household_approvals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').references(() => households.id, { onDelete: 'cascade' }).notNull(),
+    requestType: text('request_type').notNull(), // 'rebalancing', 'transfer', 'goal_change', 'member_add', 'account_link'
+    referenceId: uuid('reference_id'),
+    requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+    description: text('description'),
+    requiredApprovers: jsonb('required_approvers').notNull().default([]),
+    currentApprovals: jsonb('current_approvals').default([]),
+    rejections: jsonb('rejections').default([]),
+    minApprovalsRequired: integer('min_approvals_required').default(1),
+    status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected', 'withdrawn'
+    decidedAt: timestamp('decided_at'),
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at'),
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    householdIdx: index('idx_household_approvals_household').on(table.householdId),
+    statusIdx: index('idx_household_approvals_status').on(table.status),
+    typeIdx: index('idx_household_approvals_type').on(table.requestType),
+}));
+
+// Relations
+export const householdsRelations = relations(households, ({ one, many }) => ({
+    createdByUser: one(users, { fields: [households.createdBy], references: [users.id] }),
+    members: many(householdMembers),
+    accounts: many(householdAccounts),
+    snapshots: many(householdSnapshots),
+    rebalancingOrders: many(householdRebalancingOrders),
+    goals: many(householdGoals),
+    spendingSummaries: many(householdSpendingSummaries),
+    approvals: many(householdApprovals),
+}));
+
+export const householdMembersRelations = relations(householdMembers, ({ one }) => ({
+    household: one(households, { fields: [householdMembers.householdId], references: [households.id] }),
+    user: one(users, { fields: [householdMembers.userId], references: [users.id] }),
+}));
+
+export const householdAccountsRelations = relations(householdAccounts, ({ one }) => ({
+    household: one(households, { fields: [householdAccounts.householdId], references: [households.id] }),
+    primaryOwner: one(users, { fields: [householdAccounts.primaryOwnerId], references: [users.id] }),
+}));
+
+export const householdSnapshotsRelations = relations(householdSnapshots, ({ one }) => ({
+    household: one(households, { fields: [householdSnapshots.householdId], references: [households.id] }),
+}));
+
+export const householdRebalancingOrdersRelations = relations(householdRebalancingOrders, ({ one }) => ({
+    household: one(households, { fields: [householdRebalancingOrders.householdId], references: [households.id] }),
+    initiator: one(users, { fields: [householdRebalancingOrders.initiatedBy], references: [users.id] }),
+}));
+
+export const householdGoalsRelations = relations(householdGoals, ({ one }) => ({
+    household: one(households, { fields: [householdGoals.householdId], references: [households.id] }),
+    createdBy: one(users, { fields: [householdGoals.createdByUserId], references: [users.id] }),
+}));
+
+export const householdSpendingSummariesRelations = relations(householdSpendingSummaries, ({ one }) => ({
+    household: one(households, { fields: [householdSpendingSummaries.householdId], references: [households.id] }),
+}));
+
+export const householdApprovalsRelations = relations(householdApprovals, ({ one }) => ({
+    household: one(households, { fields: [householdApprovals.householdId], references: [households.id] }),
+    requestedByUser: one(users, { fields: [householdApprovals.requestedBy], references: [users.id] }),
+    decidedByUser: one(users, { fields: [householdApprovals.decidedBy], references: [users.id] }),
+}));
+
+// ==========================================
+// ISSUE #716: Goal Failure Early-Warning System
+// ==========================================
+
+// Track risk score changes over time for goals
+export const goalRiskTracking = pgTable('goal_risk_tracking', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    previousRiskLevel: text('previous_risk_level'), // 'low', 'medium', 'high'
+    currentRiskLevel: text('current_risk_level').notNull(),
+    riskScore: numeric('risk_score', { precision: 5, scale: 2 }).notNull(), // 0-100
+    previousRiskScore: numeric('previous_risk_score', { precision: 5, scale: 2 }),
+    transitionType: text('transition_type'), // 'escalation', 'improvement', 'stable'
+    contributingFactors: jsonb('contributing_factors').default('{}'), // { missedContributions, deadlineProximity, paceRatio, etc. }
+    calculatedAt: timestamp('calculated_at').defaultNow(),
+    metadata: jsonb('metadata').default('{}'),
+}, (table) => ({
+    goalIdx: index('idx_goal_risk_tracking_goal_id').on(table.goalId),
+    userIdx: index('idx_goal_risk_tracking_user_id').on(table.userId),
+    riskLevelIdx: index('idx_goal_risk_tracking_risk_level').on(table.currentRiskLevel),
+    calculatedAtIdx: index('idx_goal_risk_tracking_calculated_at').on(table.calculatedAt),
+}));
+
+// Track contribution streaks and missed contributions
+export const contributionStreaks = pgTable('contribution_streaks', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    streakType: text('streak_type').notNull(), // 'active', 'missed', 'recovered'
+    currentStreak: integer('current_streak').default(0), // Days or contribution periods
+    longestStreak: integer('longest_streak').default(0),
+    lastContributionDate: timestamp('last_contribution_date'),
+    missedCount: integer('missed_count').default(0), // Consecutive missed contributions
+    expectedFrequency: text('expected_frequency').default('monthly'), // 'weekly', 'biweekly', 'monthly'
+    nextExpectedDate: timestamp('next_expected_date'),
+    isAtRisk: boolean('is_at_risk').default(false), // True if approaching threshold
+    riskThreshold: integer('risk_threshold').default(2), // Number of missed contributions before alert
+    lastUpdated: timestamp('last_updated').defaultNow(),
+    metadata: jsonb('metadata').default('{}'),
+}, (table) => ({
+    goalIdx: index('idx_contribution_streaks_goal_id').on(table.goalId),
+    userIdx: index('idx_contribution_streaks_user_id').on(table.userId),
+    atRiskIdx: index('idx_contribution_streaks_at_risk').on(table.isAtRisk),
+}));
+
+// Goal Failure Early-Warning Alerts Log
+export const goalFailureAlerts = pgTable('goal_failure_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id').references(() => financialGoals.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    alertType: text('alert_type').notNull(), // 'risk_escalation', 'missed_contribution_streak', 'deadline_proximity', 'recovery_needed'
+    severity: text('severity').notNull(), // 'low', 'medium', 'high', 'critical'
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    recoveryActions: jsonb('recovery_actions').default('[]'), // Array of recommended actions
+    triggerData: jsonb('trigger_data').default('{}'), // Data that triggered the alert
+    sentVia: jsonb('sent_via').default('[]'), // ['in-app', 'push', 'email']
+    isRead: boolean('is_read').default(false),
+    readAt: timestamp('read_at'),
+    isDismissed: boolean('is_dismissed').default(false),
+    dismissedAt: timestamp('dismissed_at'),
+    actionTaken: text('action_taken'), // User's response
+    actionTakenAt: timestamp('action_taken_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    expiresAt: timestamp('expires_at'), // Alert expiry (optional)
+    metadata: jsonb('metadata').default('{}'),
+}, (table) => ({
+    goalIdx: index('idx_goal_failure_alerts_goal_id').on(table.goalId),
+    userIdx: index('idx_goal_failure_alerts_user_id').on(table.userId),
+    alertTypeIdx: index('idx_goal_failure_alerts_alert_type').on(table.alertType),
+    severityIdx: index('idx_goal_failure_alerts_severity').on(table.severity),
+    isReadIdx: index('idx_goal_failure_alerts_is_read').on(table.isRead),
+    createdAtIdx: index('idx_goal_failure_alerts_created_at').on(table.createdAt),
+}));
+
+// Relations for Goal Failure Early-Warning System
+export const goalRiskTrackingRelations = relations(goalRiskTracking, ({ one }) => ({
+    goal: one(financialGoals, { fields: [goalRiskTracking.goalId], references: [financialGoals.id] }),
+    user: one(users, { fields: [goalRiskTracking.userId], references: [users.id] }),
+}));
+
+export const contributionStreaksRelations = relations(contributionStreaks, ({ one }) => ({
+    goal: one(financialGoals, { fields: [contributionStreaks.goalId], references: [financialGoals.id] }),
+    user: one(users, { fields: [contributionStreaks.userId], references: [users.id] }),
+}));
+
+export const goalFailureAlertsRelations = relations(goalFailureAlerts, ({ one }) => ({
+    goal: one(financialGoals, { fields: [goalFailureAlerts.goalId], references: [financialGoals.id] }),
+    user: one(users, { fields: [goalFailureAlerts.userId], references: [users.id] }),
+}));
+
+// ====================
+// Lifestyle Inflation Detection & Alert System (ISSUE-736)
+// ====================
+
+// Income History - Track income changes over time
+export const incomeHistory = pgTable('income_history', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    monthlyIncome: numeric('monthly_income', { precision: 12, scale: 2 }).notNull(),
+    recordDate: timestamp('record_date').notNull(),
+    source: text('source').default('manual'), // 'manual', 'automatic', 'bank_sync'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_income_history_user').on(table.userId),
+    userDateIdx: index('idx_income_history_user_date').on(table.userId, table.recordDate),
+    tenantIdx: index('idx_income_history_tenant').on(table.tenantId),
+}));
+
+// Lifestyle Inflation Snapshots - Periodic inflation analysis results
+export const lifestyleInflationSnapshots = pgTable('lifestyle_inflation_snapshots', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    incomeIncreaseDate: timestamp('income_increase_date').notNull(),
+    previousIncome: numeric('previous_income', { precision: 12, scale: 2 }).notNull(),
+    currentIncome: numeric('current_income', { precision: 12, scale: 2 }).notNull(),
+    incomeIncreasePct: numeric('income_increase_pct', { precision: 5, scale: 2 }).notNull(),
+    beforeSpending: numeric('before_spending', { precision: 12, scale: 2 }).notNull(),
+    afterSpending: numeric('after_spending', { precision: 12, scale: 2 }).notNull(),
+    spendingIncreasePct: numeric('spending_increase_pct', { precision: 5, scale: 2 }).notNull(),
+    beforeSavingsRate: numeric('before_savings_rate', { precision: 5, scale: 2 }).notNull(),
+    afterSavingsRate: numeric('after_savings_rate', { precision: 5, scale: 2 }).notNull(),
+    savingsRateChange: numeric('savings_rate_change', { precision: 5, scale: 2 }).notNull(),
+    inflationScore: integer('inflation_score').notNull(), // 0-100
+    categoryBreakdown: jsonb('category_breakdown').default([]), // Array of category analysis
+    goalImpact: jsonb('goal_impact').default([]), // Array of impacted goals
+    recommendations: jsonb('recommendations').default([]), // Array of rollback recommendations
+    analysisDate: timestamp('analysis_date').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_lifestyle_inflation_snapshots_user').on(table.userId),
+    tenantIdx: index('idx_lifestyle_inflation_snapshots_tenant').on(table.tenantId),
+    scoreIdx: index('idx_lifestyle_inflation_snapshots_score').on(table.inflationScore),
+    analysisDateIdx: index('idx_lifestyle_inflation_snapshots_analysis_date').on(table.analysisDate),
+}));
+
+// Lifestyle Inflation Alerts - Active alerts for users
+export const lifestyleInflationAlerts = pgTable('lifestyle_inflation_alerts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    snapshotId: uuid('snapshot_id').references(() => lifestyleInflationSnapshots.id, { onDelete: 'cascade' }),
+    alertType: text('alert_type').notNull(), // 'savings_rate_drop', 'category_inflation', 'goal_delay'
+    severity: text('severity').notNull(), // 'low', 'medium', 'high', 'critical'
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    actionRequired: boolean('action_required').default(false),
+    isRead: boolean('is_read').default(false),
+    readAt: timestamp('read_at'),
+    acknowledgedAt: timestamp('acknowledged_at'),
+    status: text('status').default('active'), // 'active', 'acknowledged', 'dismissed', 'resolved'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_lifestyle_inflation_alerts_user').on(table.userId),
+    tenantIdx: index('idx_lifestyle_inflation_alerts_tenant').on(table.tenantId),
+    snapshotIdx: index('idx_lifestyle_inflation_alerts_snapshot').on(table.snapshotId),
+    statusIdx: index('idx_lifestyle_inflation_alerts_status').on(table.status),
+    severityIdx: index('idx_lifestyle_inflation_alerts_severity').on(table.severity),
+}));
+
+// Alias for goals compatibility
+export const goals = financialGoals;
+
+// Relations for Lifestyle Inflation System
+export const incomeHistoryRelations = relations(incomeHistory, ({ one }) => ({
+    user: one(users, { fields: [incomeHistory.userId], references: [users.id] }),
+    tenant: one(tenants, { fields: [incomeHistory.tenantId], references: [tenants.id] }),
+}));
+
+export const lifestyleInflationSnapshotsRelations = relations(lifestyleInflationSnapshots, ({ one, many }) => ({
+    user: one(users, { fields: [lifestyleInflationSnapshots.userId], references: [users.id] }),
+    tenant: one(tenants, { fields: [lifestyleInflationSnapshots.tenantId], references: [tenants.id] }),
+    alerts: many(lifestyleInflationAlerts),
+}));
+
+export const lifestyleInflationAlertsRelations = relations(lifestyleInflationAlerts, ({ one }) => ({
+    user: one(users, { fields: [lifestyleInflationAlerts.userId], references: [users.id] }),
+    tenant: one(tenants, { fields: [lifestyleInflationAlerts.tenantId], references: [tenants.id] }),
+    snapshot: one(lifestyleInflationSnapshots, { fields: [lifestyleInflationAlerts.snapshotId], references: [lifestyleInflationSnapshots.id] }),
+}));
+
+// ====================
+// Multi-Scenario Retirement Planning Engine (ISSUE-737)
+// ====================
+
+// Retirement Simulations - Monte Carlo simulation results
+export const retirementSimulations = pgTable('retirement_simulations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    simulationParams: jsonb('simulation_params').notNull(), // Input parameters
+    numSimulations: integer('num_simulations').notNull(),
+    successRate: numeric('success_rate', { precision: 5, scale: 2 }).notNull(), // Percentage
+    medianFinalBalance: numeric('median_final_balance', { precision: 15, scale: 2 }),
+    confidenceIntervals: jsonb('confidence_intervals').default({}), // p10, p25, p50, p75, p90
+    failureModes: jsonb('failure_modes').default({}), // Analysis of failure scenarios
+    recommendations: jsonb('recommendations').default([]), // Actionable recommendations
+    survivalCurve: jsonb('survival_curve').default([]), // Year-by-year survival probability
+    executionTimeMs: integer('execution_time_ms'),
+    withdrawalStrategy: text('withdrawal_strategy').notNull(), // 'fixed_real', 'percentage', etc
+    includeRecession: boolean('include_recession').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdx: index('idx_retirement_simulations_user').on(table.userId),
+    tenantIdx: index('idx_retirement_simulations_tenant').on(table.tenantId),
+    successRateIdx: index('idx_retirement_simulations_success_rate').on(table.successRate),
+    createdAtIdx: index('idx_retirement_simulations_created_at').on(table.createdAt),
+}));
+
+// Retirement Scenarios - Individual scenario details (optional detailed storage)
+export const retirementScenarios = pgTable('retirement_scenarios', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    simulationId: uuid('simulation_id').references(() => retirementSimulations.id, { onDelete: 'cascade' }).notNull(),
+    scenarioNumber: integer('scenario_number').notNull(),
+    success: boolean('success').notNull(),
+    finalBalance: numeric('final_balance', { precision: 15, scale: 2 }).notNull(),
+    depletionYear: integer('depletion_year'), // Year when funds depleted (null if successful)
+    yearlyBalances: jsonb('yearly_balances').default([]), // Array of yearly balance values
+    yearlyWithdrawals: jsonb('yearly_withdrawals').default([]), // Array of yearly withdrawal amounts
+    averageReturn: numeric('average_return', { precision: 5, scale: 4 }),
+    worstYearReturn: numeric('worst_year_return', { precision: 5, scale: 4 }),
+    sequenceRiskScore: numeric('sequence_risk_score', { precision: 5, scale: 4 }), // First 10 years avg return
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+    simulationIdx: index('idx_retirement_scenarios_simulation').on(table.simulationId),
+    successIdx: index('idx_retirement_scenarios_success').on(table.success),
+}));
+
+// Relations for Retirement Planning System
+export const retirementSimulationsRelations = relations(retirementSimulations, ({ one, many }) => ({
+    user: one(users, { fields: [retirementSimulations.userId], references: [users.id] }),
+    tenant: one(tenants, { fields: [retirementSimulations.tenantId], references: [tenants.id] }),
+    scenarios: many(retirementScenarios),
+}));
+
+export const retirementScenariosRelations = relations(retirementScenarios, ({ one }) => ({
+    simulation: one(retirementSimulations, { fields: [retirementScenarios.simulationId], references: [retirementSimulations.id] }),
 }));
 
 // Export forecast schema tables

@@ -7,6 +7,10 @@ import { protect, checkOwnership } from "../middleware/auth.js";
 import { apiIdempotency } from "../middleware/apiIdempotency.js";
 import { RecurringPaymentService } from "../services/recurringPaymentService.js";
 import { FXConversionService } from "../services/fxConversionService.js";
+import smartSavingsAllocationService from "../services/smartSavingsAllocationService.js";
+import goalsDashboardService from "../services/goalsDashboardService.js";
+import goalProgressTrackingService from "../services/goalProgressTrackingService.js";
+import goalDependencyService from "../services/goalDependencyService.js";
 
 const router = express.Router();
 const recurringPaymentService = new RecurringPaymentService();
@@ -1020,6 +1024,270 @@ router.post("/:id/fx-recalculate", protect, checkOwnership("Goal"), async (req, 
     res.status(500).json({
       success: false,
       message: error.message || "Server error while recalculating progress"
+    });
+  }
+});
+
+// ============================================================
+// SMART SAVINGS GOALS ENDPOINTS (Issue #640)
+// ============================================================
+
+router.get("/smart/priorities", protect, async (req, res) => {
+  try {
+    const data = await smartSavingsAllocationService.getPrioritizedGoals(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart priorities error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to calculate priorities" });
+  }
+});
+
+router.post("/smart/auto-allocation", protect, async (req, res) => {
+  try {
+    const { monthlySurplus, strategy = "balanced" } = req.body || {};
+    const data = await smartSavingsAllocationService.recommendAutoAllocation(req.user.id, {
+      monthlySurplus,
+      strategy,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart auto-allocation error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to generate allocation" });
+  }
+});
+
+router.get("/smart/conflicts", protect, async (req, res) => {
+  try {
+    const data = await smartSavingsAllocationService.detectGoalConflicts(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart conflicts error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to detect conflicts" });
+  }
+});
+
+router.post("/smart/scenario", protect, async (req, res) => {
+  try {
+    const { monthlyDelta = 0, monthlySurplus, strategy = "balanced" } = req.body || {};
+    const data = await smartSavingsAllocationService.runSavingsScenario(req.user.id, {
+      monthlyDelta,
+      monthlySurplus,
+      strategy,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart scenario error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to run scenario" });
+  }
+});
+
+router.post("/smart/contribution-auto-adjust", protect, async (req, res) => {
+  try {
+    const { strategy = "balanced" } = req.body || {};
+    const data = await smartSavingsAllocationService.suggestContributionAutoAdjustments(req.user.id, {
+      strategy,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart contribution auto-adjust error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to auto-adjust contributions" });
+  }
+});
+
+router.get("/smart/templates", protect, async (_req, res) => {
+  try {
+    const data = smartSavingsAllocationService.getGoalTemplates();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart templates error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get templates" });
+  }
+});
+
+router.get("/smart/reminders", protect, async (req, res) => {
+  try {
+    const data = await smartSavingsAllocationService.getSmartReminders(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart reminders error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get reminders" });
+  }
+});
+
+// ============================================================
+// GOAL DEPENDENCY PLANNER ENDPOINTS (Issue #708)
+// ============================================================
+
+router.get("/smart/dependencies", protect, async (req, res) => {
+  try {
+    const data = await goalDependencyService.getDependencyStatusForAllGoals(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart dependencies error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get dependency status" });
+  }
+});
+
+router.post("/smart/allocation-with-dependencies", protect, async (req, res) => {
+  try {
+    const { monthlySurplus, strategy = "balanced" } = req.body || {};
+    const data = await smartSavingsAllocationService.recommendDependencyAwareAllocation(req.user.id, {
+      monthlySurplus,
+      strategy,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart allocation with dependencies error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to generate dependency-aware allocation" });
+  }
+});
+
+// ============================================================
+// SMART GOALS DASHBOARD ENDPOINTS (Issue #693)
+// ============================================================
+
+router.get("/smart/dashboard", protect, async (req, res) => {
+  try {
+    const data = await goalsDashboardService.getGoalsDashboard(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart dashboard error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get dashboard" });
+  }
+});
+
+router.get("/smart/dashboard/summary", protect, async (req, res) => {
+  try {
+    const dashboard = await goalsDashboardService.getGoalsDashboard(req.user.id);
+    res.json({
+      success: true,
+      data: {
+        summary: dashboard.summary,
+        goalsOverview: dashboard.goalsOverview,
+      },
+    });
+  } catch (error) {
+    console.error("Smart dashboard summary error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get dashboard summary" });
+  }
+});
+
+router.get("/smart/dashboard/insights", protect, async (req, res) => {
+  try {
+    const dashboard = await goalsDashboardService.getGoalsDashboard(req.user.id);
+    res.json({
+      success: true,
+      data: {
+        insights: dashboard.insights,
+        nextActions: dashboard.nextActions,
+        milestones: dashboard.milestones,
+      },
+    });
+  } catch (error) {
+    console.error("Smart dashboard insights error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get insights" });
+  }
+});
+
+router.get("/smart/:goalId/progress", protect, async (req, res) => {
+  try {
+    const data = await goalProgressTrackingService.getGoalProgressMetrics(req.params.goalId, req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart goal progress error:", error);
+    res.status(error.message === "Goal not found" ? 404 : 500).json({
+      success: false,
+      message: error.message || "Failed to get goal progress",
+    });
+  }
+});
+
+router.get("/smart/:goalId/indicators", protect, async (req, res) => {
+  try {
+    const data = await goalProgressTrackingService.getProgressIndicators(req.params.goalId, req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart goal indicators error:", error);
+    res.status(error.message === "Goal not found" ? 404 : 500).json({
+      success: false,
+      message: error.message || "Failed to get progress indicators",
+    });
+  }
+});
+
+router.get("/smart/:goalId/health", protect, async (req, res) => {
+  try {
+    const data = await goalProgressTrackingService.getGoalHealthScore(req.params.goalId, req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart goal health error:", error);
+    res.status(error.message === "Goal not found" ? 404 : 500).json({
+      success: false,
+      message: error.message || "Failed to get goal health",
+    });
+  }
+});
+
+router.get("/smart/:goalId/streak", protect, async (req, res) => {
+  try {
+    const data = await goalProgressTrackingService.getContributionStreak(req.params.goalId, req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart goal streak error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get contribution streak" });
+  }
+});
+
+router.get("/smart/:goalId/comparative", protect, async (req, res) => {
+  try {
+    const data = await goalProgressTrackingService.getComparativeMetrics(req.params.goalId, req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart goal comparative error:", error);
+    res.status(error.message === "Goal not found" ? 404 : 500).json({
+      success: false,
+      message: error.message || "Failed to get comparative metrics",
+    });
+  }
+});
+
+router.get("/smart/:goalId/monthly-breakdown", protect, async (req, res) => {
+  try {
+    const months = req.query.months ? Number(req.query.months) : 12;
+    const boundedMonths = Number.isFinite(months) ? Math.max(1, Math.min(24, months)) : 12;
+    const data = await goalProgressTrackingService.getMonthlyBreakdown(req.params.goalId, req.user.id, boundedMonths);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Smart goal monthly breakdown error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to get monthly breakdown" });
+  }
+});
+
+router.post("/smart/:goalId/contribution", protect, async (req, res) => {
+  try {
+    const { amount, note = "" } = req.body || {};
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, message: "Valid contribution amount is required" });
+    }
+
+    if (!req.user.tenantId) {
+      return res.status(400).json({ success: false, message: "Tenant context is required for contribution tracking" });
+    }
+
+    const data = await goalProgressTrackingService.recordContribution(
+      req.params.goalId,
+      req.user.id,
+      req.user.tenantId,
+      Number(amount),
+      note,
+    );
+
+    res.json({ success: true, data, message: "Contribution recorded successfully" });
+  } catch (error) {
+    console.error("Smart goal contribution error:", error);
+    res.status(error.message === "Goal not found" ? 404 : 500).json({
+      success: false,
+      message: error.message || "Failed to record contribution",
     });
   }
 });
