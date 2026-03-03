@@ -36,6 +36,7 @@ import delinquencyEarlyWarningService from '../services/delinquencyEarlyWarningS
 import taxEfficientDebtCoordinatorService from '../services/taxEfficientDebtCoordinatorService.js';
 import dtiRatioOptimizerService from '../services/dtiRatioOptimizerService.js';
 import incomeBasedPaymentFlexibilityService from '../services/incomeBasedPaymentFlexibilityService.js';
+import creditorNegotiationAssistantService from '../services/creditorNegotiationAssistantService.js';
 
 const router = express.Router();
 
@@ -1603,6 +1604,52 @@ router.post('/income-flexibility/optimize', protect, [
         200,
         result,
         'Income-based payment flexibility analysis complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/negotiate/suggest
+ * @desc    Generate creditor negotiation strategies
+ * @access  Private
+ */
+router.post('/negotiate/suggest', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical']),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.openedDate', 'Each debt openedDate should be a valid date').optional().isISO8601(),
+    body('creditScore', 'Credit score must be numeric between 300 and 850').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 300 && Number(v) <= 850),
+    body('options', 'Options must be an object').optional().isObject()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await creditorNegotiationAssistantService.optimize(
+        req.user.id,
+        req.body.debts || [],
+        req.body.creditScore || 650,
+        req.body.options || {}
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Creditor negotiation strategies generated'
     ).send(res);
 }));
 
