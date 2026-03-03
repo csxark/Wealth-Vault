@@ -4,6 +4,9 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import successionPilot from '../services/successionPilot.js';
 import encryptionVault from '../utils/encryptionVault.js';
+import consensusTransition from '../services/consensusTransition.js';
+import probateAutomation from '../services/probateAutomation.js';
+import successionGuard, { successionGuardMiddleware } from '../middleware/successionGuard.js';
 import db from '../config/db.js';
 import { digitalWillDefinitions, heirIdentityVerifications, trusteeVoteLedger } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -47,9 +50,9 @@ router.post('/verify-identity', protect, asyncHandler(async (req, res) => {
 
 /**
  * @route   POST /api/succession/trustee/vote
- * @desc    Cast a vote for/against succession trigger (Trustees only)
+ * @desc    Cast a vote for/against succession trigger (Trustees only) (PROTECTED)
  */
-router.post('/trustee/vote', protect, asyncHandler(async (req, res) => {
+router.post('/trustee/vote', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
     const { willId, result, reason } = req.body;
     const [vote] = await db.insert(trusteeVoteLedger).values({
         willId,
@@ -63,9 +66,9 @@ router.post('/trustee/vote', protect, asyncHandler(async (req, res) => {
 
 /**
  * @route   GET /api/succession/claim/:willId
- * @desc    Claim fractional ownership of assets (Heirs only)
+ * @desc    Claim fractional ownership of assets (Heirs only) (PROTECTED)
  */
-router.get('/claim/:willId', protect, asyncHandler(async (req, res) => {
+router.get('/claim/:willId', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
     const will = await db.query.digitalWillDefinitions.findFirst({
         where: and(eq(digitalWillDefinitions.id, req.params.willId), eq(digitalWillDefinitions.status, 'settled'))
     });
@@ -80,6 +83,143 @@ router.get('/claim/:willId', protect, asyncHandler(async (req, res) => {
         assetsReleased: true,
         secrets: secret
     }).send(res);
+}));
+
+/**
+ * @route   POST /api/succession/consensus/approve
+ * @desc    Submit cryptographic approval for shard reconstruction (PROTECTED)
+ */
+router.post('/consensus/approve', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
+    const { shardId, signature, reconstructionRequestId } = req.body;
+
+    const result = await consensusTransition.submitApproval(
+        req.user.id,
+        shardId,
+        signature,
+        reconstructionRequestId
+    );
+
+    if (result.success) {
+        new ApiResponse(200, result, 'Approval submitted successfully').send(res);
+    } else {
+        new ApiResponse(400, result, 'Approval submission failed').send(res);
+    }
+}));
+
+/**
+ * @route   GET /api/succession/consensus/status/:reconstructionRequestId
+ * @desc    Get consensus status for a reconstruction request
+ */
+router.get('/consensus/status/:reconstructionRequestId', protect, asyncHandler(async (req, res) => {
+    const status = await consensusTransition.getConsensusStatus(req.params.reconstructionRequestId);
+    new ApiResponse(200, status, 'Consensus status retrieved').send(res);
+}));
+
+/**
+ * @route   GET /api/succession/ledger/generate/:willId
+ * @desc    Generate digital asset ledger for probate
+ */
+router.get('/ledger/generate/:willId', protect, asyncHandler(async (req, res) => {
+    // Verify user owns the will
+    const [will] = await db.select()
+        .from(digitalWillDefinitions)
+        .where(and(eq(digitalWillDefinitions.id, req.params.willId), eq(digitalWillDefinitions.userId, req.user.id)));
+
+    if (!will) {
+        return new ApiResponse(404, null, 'Digital will not found').send(res);
+    }
+
+    const ledger = await probateAutomation.generateDigitalAssetLedger(req.user.id, req.params.willId);
+    new ApiResponse(200, ledger, 'Digital asset ledger generated successfully').send(res);
+}));
+
+/**
+ * @route   GET /api/succession/ledger/export/:willId
+ * @desc    Export digital asset ledger in specified format
+ */
+router.get('/ledger/export/:willId', protect, asyncHandler(async (req, res) => {
+    const { format = 'json' } = req.query;
+
+    // Verify user owns the will
+    const [will] = await db.select()
+        .from(digitalWillDefinitions)
+        .where(and(eq(digitalWillDefinitions.id, req.params.willId), eq(digitalWillDefinitions.userId, req.user.id)));
+
+    if (!will) {
+        return new ApiResponse(404, null, 'Digital will not found').send(res);
+    }
+
+    // Generate ledger
+    const ledger = await probateAutomation.generateDigitalAssetLedger(req.user.id, req.params.willId);
+
+    // Export in requested format
+    const exportResult = await probateAutomation.exportLedger(ledger, format);
+
+    // Set response headers
+    res.setHeader('Content-Type', exportResult.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${exportResult.filename}"`);
+
+    // Send the file content
+    res.send(exportResult.content);
+}));
+
+/**
+ * @route   POST /api/succession/ledger/verify
+ * @desc    Verify digital asset ledger signature and integrity
+ */
+router.post('/ledger/verify', protect, asyncHandler(async (req, res) => {
+    const { ledger } = req.body;
+
+    if (!ledger) {
+        return new ApiResponse(400, null, 'Ledger data is required').send(res);
+    }
+
+    const isValid = probateAutomation.verifyLedgerSignature(ledger);
+
+    new ApiResponse(200, {
+        valid: isValid,
+        verifiedAt: new Date().toISOString()
+    }, isValid ? 'Ledger signature verified successfully' : 'Ledger signature verification failed').send(res);
+})));
+
+/**
+ * @route   POST /api/succession/emergency-override/activate
+ * @desc    Activate emergency override for succession protection (Admin/Trustee only)
+ */
+router.post('/emergency-override/activate', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
+    const { targetUserId, reason, durationHours = 72 } = req.body;
+
+    // In production, check if requester has admin/trustee permissions
+    const result = await successionGuard.activateEmergencyOverride(
+        targetUserId,
+        req.user.id,
+        reason,
+        durationHours
+    );
+
+    new ApiResponse(200, result, 'Emergency override activated successfully').send(res);
+}));
+
+/**
+ * @route   POST /api/succession/emergency-override/deactivate
+ * @desc    Deactivate emergency override (Admin/Trustee only)
+ */
+router.post('/emergency-override/deactivate', protect, successionGuardMiddleware, asyncHandler(async (req, res) => {
+    const { targetUserId } = req.body;
+
+    const result = await successionGuard.deactivateEmergencyOverride(targetUserId, req.user.id);
+
+    new ApiResponse(200, result, 'Emergency override deactivated successfully').send(res);
+}));
+
+/**
+ * @route   GET /api/succession/protection-status/:userId
+ * @desc    Get current protection status for a user
+ */
+router.get('/protection-status/:userId', protect, asyncHandler(async (req, res) => {
+    const status = await successionGuard.getProtectionStatus(req.params.userId);
+
+    new ApiResponse(200, status, 'Protection status retrieved successfully').send(res);
 }));
 
 export default router;

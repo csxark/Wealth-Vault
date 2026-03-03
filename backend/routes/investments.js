@@ -5,6 +5,7 @@ import investmentService from '../services/investmentService.js';
 import portfolioService from '../services/portfolioService.js';
 import priceService from '../services/priceService.js';
 import investmentAnalyticsService from '../services/investmentAnalyticsService.js';
+import investmentPortfolioRiskAnalyzerService from '../services/investmentPortfolioRiskAnalyzerService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../utils/AppError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -279,6 +280,40 @@ router.post('/portfolios/:id/optimize', [
 
   const optimizationResult = await portfolioService.optimizePortfolio(req.params.id, req.user.id, optimizationParams);
   return new ApiResponse(200, optimizationResult, 'Portfolio optimization completed').send(res);
+}));
+
+/**
+ * @route POST /api/investments/portfolios/:id/risk-analyzer
+ * @desc Analyze portfolio risk exposures, volatility, concentration, stress outcomes, and rebalance guidance
+ */
+router.post('/portfolios/:id/risk-analyzer', [
+  param('id').isUUID(),
+  body('riskTolerance').optional().isIn(['conservative', 'moderate', 'aggressive']),
+  body('holdings').optional().isArray(),
+  body('holdings.*.symbol').optional().isString(),
+  body('holdings.*.assetClass').optional().isString(),
+  body('holdings.*.type').optional().isString(),
+  body('holdings.*.sector').optional().isString(),
+  body('holdings.*.country').optional().isString(),
+  body('holdings.*.currentValue').optional().isNumeric(),
+  body('holdings.*.marketValue').optional().isNumeric(),
+  body('holdings.*.quantity').optional().isNumeric(),
+  body('holdings.*.currentPrice').optional().isNumeric(),
+  body('holdings.*.averageCost').optional().isNumeric(),
+  handleValidationErrors,
+], asyncHandler(async (req, res) => {
+  const providedHoldings = Array.isArray(req.body.holdings) ? req.body.holdings : [];
+
+  const loadedHoldings = providedHoldings.length > 0
+    ? providedHoldings
+    : await investmentService.getInvestments(req.user.id, { portfolioId: req.params.id, isActive: true });
+
+  const result = investmentPortfolioRiskAnalyzerService.analyze(
+    loadedHoldings,
+    { riskTolerance: req.body.riskTolerance || 'moderate' }
+  );
+
+  return new ApiResponse(200, result, 'Investment portfolio risk analysis completed').send(res);
 }));
 
 /**

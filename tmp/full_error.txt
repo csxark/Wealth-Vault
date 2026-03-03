@@ -1,0 +1,41 @@
+﻿node : file:///D:/Wealth-Vau
+lt/backend/db/schema.js:2761
+At line:1 char:1
++ node --input-type=module 
+-e "import * as schema from 
+'./backend/db/sc ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+    + CategoryInfo          
+    : NotSpecified: (file:  
+  ///D:/Weal.../schema.js   
+ :2761:String) [], Remot    
+eException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 
+export const usersRelations 
+= relations(users, ({ many, 
+one }) => ({
+             ^
+
+SyntaxError: Identifier 
+'usersRelations' has 
+already been declared
+    at 
+compileSourceTextModule (nod
+e:internal/modules/esm/utils
+:344:16)
+    at 
+ModuleLoader.moduleStrategy 
+(node:internal/modules/esm/t
+ranslators:105:18)
+    at #translate (node:inte
+rnal/modules/esm/loader:534:
+12)
+    at ModuleLoader.loadAndT
+ranslate (node:internal/modu
+les/esm/loader:581:27)
+
+Node.js v22.17.0
