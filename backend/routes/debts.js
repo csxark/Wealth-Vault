@@ -38,6 +38,7 @@ import dtiRatioOptimizerService from '../services/dtiRatioOptimizerService.js';
 import incomeBasedPaymentFlexibilityService from '../services/incomeBasedPaymentFlexibilityService.js';
 import creditorNegotiationAssistantService from '../services/creditorNegotiationAssistantService.js';
 import paymentAutopilotService from '../services/paymentAutopilotService.js';
+import debtConsolidationRoiCalculatorService from '../services/debtConsolidationRoiCalculatorService.js';
 
 const router = express.Router();
 
@@ -1699,6 +1700,59 @@ router.post('/autopilot/configure', protect, [
         200,
         result,
         'Payment autopilot configured with smart adjustments'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/consolidation/roi
+ * @desc    Calculate ROI for debt consolidation scenarios
+ * @access  Private
+ */
+router.post('/consolidation/roi', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical']),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.isFederalStudentLoan', 'isFederalStudentLoan must be boolean').optional().isBoolean(),
+    body('options', 'Options must be an object').optional().isObject(),
+    body('options.personalLoan.apr', 'Personal loan APR must be numeric 0-100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('options.personalLoan.termMonths', 'Personal loan termMonths must be between 1 and 600').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 600),
+    body('options.personalLoan.originationFeePercent', 'Personal loan origination fee % must be 0-25').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 25),
+    body('options.balanceTransfer.apr', 'Balance transfer APR must be numeric 0-100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('options.balanceTransfer.promoApr', 'Balance transfer promo APR must be numeric 0-100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('options.balanceTransfer.promoMonths', 'Balance transfer promo months must be between 0 and 60').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 60),
+    body('options.balanceTransfer.transferFeePercent', 'Balance transfer fee % must be 0-10').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 10),
+    body('options.heloc.apr', 'HELOC APR must be numeric 0-100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('options.heloc.termMonths', 'HELOC termMonths must be between 1 and 600').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 600),
+    body('options.refinance.apr', 'Refinance APR must be numeric 0-100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('options.refinance.termMonths', 'Refinance termMonths must be between 1 and 600').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 600)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = debtConsolidationRoiCalculatorService.optimize(
+        req.user.id,
+        req.body.debts || [],
+        req.body.options || {}
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Debt consolidation ROI analysis complete'
     ).send(res);
 }));
 
