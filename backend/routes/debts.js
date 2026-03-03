@@ -33,6 +33,7 @@ import lifeEventDebtStrategyService from '../services/lifeEventDebtStrategyServi
 import debtNudgeAndMicroPaymentService from '../services/debtNudgeAndMicroPaymentService.js';
 import householdDebtOptimizerService from '../services/householdDebtOptimizerService.js';
 import delinquencyEarlyWarningService from '../services/delinquencyEarlyWarningService.js';
+import taxEfficientDebtCoordinatorService from '../services/taxEfficientDebtCoordinatorService.js';
 
 const router = express.Router();
 
@@ -1432,6 +1433,54 @@ router.post('/delinquency/risk', protect, [
         200,
         result,
         'Delinquency early-warning assessment complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/tax-efficient/optimize
+ * @desc    Co-optimize debt payoff and tax-advantaged savings allocation
+ * @access  Private
+ */
+router.post('/tax-efficient/optimize', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical']),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.currentBalance', 'Each debt currentBalance must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('monthlySurplus', 'Monthly surplus must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('marginaltaxRate', 'Marginal tax rate must be between 0 and 45%').optional()
+        .isNumeric()
+        .custom(v => Number(v) >= 0 && Number(v) <= 0.45),
+    body('savingsOptions', 'Savings options must be an array').optional().isArray(),
+    body('savingsOptions.*.type', 'Each savings type must be valid').optional().isIn(['401k', 'traditional-ira', 'roth-ira', 'hsa', 'none']),
+    body('savingsOptions.*.employerMatch', 'Employer match must be numeric').optional().isNumeric(),
+    body('savingsOptions.*.matchCap', 'Match cap must be numeric').optional().isNumeric(),
+    body('savingsOptions.*.contributionLimit', 'Contribution limit must be numeric').optional().isNumeric(),
+    body('savingsOptions.*.fundedBalance', 'Funded balance must be numeric').optional().isNumeric(),
+    body('savingsOptions.*.estimatedReturn', 'Estimated return must be numeric').optional().isNumeric()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await taxEfficientDebtCoordinatorService.optimize(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Tax-efficient debt and savings optimization complete'
     ).send(res);
 }));
 
