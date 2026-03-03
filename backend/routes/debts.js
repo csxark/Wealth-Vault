@@ -50,6 +50,7 @@ import payoffOrderOptimizationEngineService from '../services/payoffOrderOptimiz
 import debtConsolidationLoanAnalyzerService from '../services/debtConsolidationLoanAnalyzerService.js';
 import creditInquiryImpactForecasterService from '../services/creditInquiryImpactForecasterService.js';
 import incomeBasedStudentLoanRepaymentOptimizerService from '../services/incomeBasedStudentLoanRepaymentOptimizerService.js';
+import balanceTransferRateArbitrageEngineService from '../services/balanceTransferRateArbitrageEngineService.js';
 
 const router = express.Router();
 
@@ -2275,6 +2276,39 @@ router.post('/credit-inquiry/forecast-impact', protect, [
 }));
 
 export default router;
+
+/**
+ * @route   POST /api/debts/balance-transfer/optimize
+ * @desc    Optimize balance transfer rate arbitrage for credit cardholders
+ * @access  Private
+ */
+router.post(
+    '/balance-transfer/optimize',
+    protect,
+    [
+        body('cards').isArray({ min: 1 }).withMessage('Cards array required'),
+        body('debts').isArray({ min: 1 }).withMessage('Debts array required'),
+        body('transferOffers').isArray({ min: 1 }).withMessage('Transfer offers array required')
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json(new ApiResponse(400, null, errors.array()));
+        }
+        const { cards, debts, transferOffers } = req.body;
+        const engine = new balanceTransferRateArbitrageEngineService({ cards, debts, transferOffers });
+        const recommendations = engine.recommendTransfers();
+        const actionPlan = engine.generateActionPlan();
+        const utilizationFlags = engine.flagCreditUtilization();
+        const sequentialPlan = engine.simulateSequentialTransfers();
+        return res.json(new ApiResponse(200, {
+            recommendations,
+            actionPlan,
+            utilizationFlags,
+            sequentialPlan
+        }));
+    })
+);
 
 /**
  * @route   POST /api/debts/student-loans/repayment-optimizer
