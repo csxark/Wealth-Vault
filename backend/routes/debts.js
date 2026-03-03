@@ -51,6 +51,7 @@ import debtConsolidationLoanAnalyzerService from '../services/debtConsolidationL
 import creditInquiryImpactForecasterService from '../services/creditInquiryImpactForecasterService.js';
 import incomeBasedStudentLoanRepaymentOptimizerService from '../services/incomeBasedStudentLoanRepaymentOptimizerService.js';
 import balanceTransferRateArbitrageEngineService from '../services/balanceTransferRateArbitrageEngineService.js';
+import medicalDebtNegotiationOptimizerService from '../services/medicalDebtNegotiationOptimizerService.js';
 
 const router = express.Router();
 
@@ -2274,6 +2275,53 @@ router.post('/credit-inquiry/forecast-impact', protect, [
         'Credit inquiry impact forecast complete'
     ).send(res);
 }));
+
+/**
+ * @route   POST /api/debts/medical/optimize-settlement
+ * @desc    Optimize medical debt negotiation and settlement strategies
+ * @access  Private
+ */
+router.post(
+    '/medical/optimize-settlement',
+    protect,
+    [
+        body('medicalDebts').isArray({ min: 1 }).withMessage('Medical debts array required'),
+        body('medicalDebts.*.id').isString().withMessage('Each debt must have an id'),
+        body('medicalDebts.*.creditor').isString().withMessage('Each debt must have a creditor'),
+        body('medicalDebts.*.amount').isNumeric().withMessage('Each debt must have an amount'),
+        body('medicalDebts.*.originalDate').isISO8601().withMessage('Each debt must have a valid originalDate'),
+        body('medicalDebts.*.creditorType').optional().isIn(['hospital', 'provider', 'collection-agency']),
+        body('userIncome').optional().isNumeric().withMessage('User income must be numeric'),
+        body('cashAvailable').optional().isNumeric().withMessage('Cash available must be numeric'),
+        body('taxBracket').optional().isNumeric().withMessage('Tax bracket must be numeric')
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json(new ApiResponse(400, null, errors.array()));
+        }
+        const { medicalDebts, userIncome, cashAvailable, taxBracket } = req.body;
+        const optimizer = new medicalDebtNegotiationOptimizerService({
+            medicalDebts,
+            userIncome,
+            cashAvailable,
+            taxBracket
+        });
+        const rankedDebts = optimizer.rankDebts();
+        const recommendations = rankedDebts.map(debt => ({
+            debt,
+            settlementOffers: optimizer.modelSettlementOffers(debt),
+            negotiationScript: optimizer.generateNegotiationScript(debt),
+            scenarios: optimizer.simulateScenarios(debt),
+            timing: optimizer.recommendTiming(debt)
+        }));
+        return res.json(new ApiResponse(200, {
+            rankedDebts,
+            recommendations,
+            totalPotentialSavings: rankedDebts.reduce((sum, d) => sum + d.bestOffer.netSavings, 0)
+        }));
+    })
+);
 
 export default router;
 
