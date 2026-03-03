@@ -73,7 +73,13 @@ services:
       - NODE_ENV=production
       - FRONTEND_URL=${FRONTEND_URL}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      # AI Provider Configuration
+      - AI_PROVIDER=${AI_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama2}
+      - LMSTUDIO_BASE_URL=${LMSTUDIO_BASE_URL:-http://localhost:1234/v1}
+      - LMSTUDIO_MODEL=${LMSTUDIO_MODEL:-local-model}
       - SENDGRID_API_KEY=${SENDGRID_API_KEY}
     volumes:
       - backend_prod_logs:/app/logs

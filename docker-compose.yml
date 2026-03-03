@@ -27,6 +27,13 @@ services:
       JWT_EXPIRE: 7d
       NODE_ENV: development
       FRONTEND_URL: http://localhost:3000
+      # AI Provider Configuration (optional)
+      AI_PROVIDER: ${AI_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama2}
+      LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
+      LMSTUDIO_MODEL: ${LMSTUDIO_MODEL:-local-model}
     volumes:
       # Bind mount for hot-reloading
       - ./backend:/app

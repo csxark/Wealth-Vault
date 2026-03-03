@@ -202,8 +202,20 @@ FRONTEND_URL=http://localhost:3000
 # Redis Configuration
 REDIS_URL=redis://redis:6379
 
-# AI Configuration
+# AI Provider Configuration
+# Choose: gemini, ollama, or lmstudio
+AI_PROVIDER=gemini
+
+# Gemini Configuration (if using AI_PROVIDER=gemini)
 GEMINI_API_KEY=your-gemini-api-key-here
+
+# Ollama Configuration (if using AI_PROVIDER=ollama)
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=llama2
+
+# LM Studio Configuration (if using AI_PROVIDER=lmstudio)
+LMSTUDIO_BASE_URL=http://host.docker.internal:1234/v1
+LMSTUDIO_MODEL=local-model
 
 # Email Configuration (Optional)
 SENDGRID_API_KEY=your-sendgrid-api-key
@@ -232,8 +244,15 @@ FRONTEND_URL=https://yourdomain.com
 # Redis Configuration (Use managed Redis)
 REDIS_URL=redis://your-redis-host:6379
 
-# AI Configuration
+# AI Provider Configuration
+AI_PROVIDER=gemini
+
+# Gemini Configuration (if using cloud AI)
 GEMINI_API_KEY=your-production-gemini-key
+
+# Ollama Configuration (if using local LLM)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama2
 
 # Email Configuration
 SENDGRID_API_KEY=your-production-sendgrid-key

@@ -57,8 +57,10 @@ These features are implemented in the current main branch:
   Set, track, and visualize progress toward financial objectives.
 
 - 🤖 **AI Financial Coach**  
-  Personalized insights and actionable recommendations.
-  - Requires configuring `GEMINI_API_KEY` for live AI responses; without it, the coach falls back to limited guidance.
+  Personalized insights and actionable recommendations powered by AI.
+  - **Multiple Provider Options**: Choose between cloud (Gemini) or local LLMs (Ollama, LM Studio)
+  - **Privacy-First**: Use local models to keep your financial data completely private
+  - See [LOCAL_LLM_GUIDE.md](LOCAL_LLM_GUIDE.md) for setup instructions
 
 - 📷 **QR Code Expense Entry**  
   Log expenses using QR codes and UPI, including receipt and expense QR flows.
@@ -100,7 +102,7 @@ These items should be considered **in development / coming soon**, not guarantee
 | Charts       | Chart.js, React-Chartjs-2   |
 | Icons        | Lucide React                |
 | QR Scanning  | @zxing/browser              |
-| AI           | Google Gemini API           |
+| AI           | Gemini, Ollama, LM Studio   |
 | Caching      | Redis                       |
 
 ---
@@ -308,7 +310,7 @@ More implementation details are available in [MFA_README.md](MFA_README.md).
 - Centralized rate limiting middleware protects critical endpoints:
   - General API routes: defensive limits against bulk abuse.
   - Authentication routes: stricter limits to slow brute-force login attempts.
-  - AI / Gemini routes: dedicated limits to protect upstream APIs and control cost.
+  - AI routes: dedicated limits to protect upstream APIs and control cost.
 
 ### Security Headers & Transport
 
@@ -413,7 +415,12 @@ All tables have Row Level Security (RLS) enabled to ensure users can only access
 | `NODE_ENV`        | Environment (development/production) | No       |
 | `FRONTEND_URL`    | Frontend application URL             | No       |
 | `REDIS_URL`       | Redis connection string              | No       |
-| `GEMINI_API_KEY`  | Google Gemini AI API key             | No       |
+| `AI_PROVIDER`     | AI provider: gemini, ollama, lmstudio| No       |
+| `GEMINI_API_KEY`  | Google Gemini AI API key (if using)  | No       |
+| `OLLAMA_BASE_URL` | Ollama server URL (if using)         | No       |
+| `OLLAMA_MODEL`    | Ollama model name (if using)         | No       |
+| `LMSTUDIO_BASE_URL` | LM Studio server URL (if using)    | No       |
+| `LMSTUDIO_MODEL`  | LM Studio model name (if using)      | No       |
 
 ### Frontend Variables
 
@@ -537,7 +544,10 @@ For a secure production setup, configure at minimum the following:
 - `JWT_EXPIRE` — token lifetime (for example, `24h`)
 - `FRONTEND_URL` — public URL of the frontend (for example, `https://yourdomain.com`)
 - `REDIS_URL` — Redis instance URL (for caching, if used)
-- `GEMINI_API_KEY` — AI provider key (if using AI features)
+- `AI_PROVIDER` — AI provider: `gemini`, `ollama`, or `lmstudio` (default: gemini)
+- `GEMINI_API_KEY` — Google Gemini API key (if using cloud AI)
+- `OLLAMA_BASE_URL` / `OLLAMA_MODEL` — Ollama configuration (if using local LLM)
+- `LMSTUDIO_BASE_URL` / `LMSTUDIO_MODEL` — LM Studio configuration (if using local LLM)
 - `SENDGRID_API_KEY` or other email provider keys
 
 **Frontend (examples):**
