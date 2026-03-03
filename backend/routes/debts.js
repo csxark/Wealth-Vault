@@ -56,6 +56,7 @@ import creditScoreRecoveryRoadmapService from '../services/creditScoreRecoveryRo
 import promotionalRateShoppingSequencerService from '../services/promotionalRateShoppingSequencerService.js';
 
 import hardshipProgramNegotiationEngineService from '../services/hardshipProgramNegotiationEngineService.js';
+import debtToIncomeAutoQualificationSimulatorService from '../services/debtToIncomeAutoQualificationSimulatorService.js';
 
 const router = express.Router();
 
@@ -69,6 +70,15 @@ router.post(
     protect,
     asyncHandler(async (req, res) => {
         const userData = req.body;
+router.post(
+    '/dti/auto-qualification',
+    protect,
+    asyncHandler(async (req, res) => {
+        const userData = req.body;
+        const result = await debtToIncomeAutoQualificationSimulatorService.simulateDTIQualification(userData);
+        res.json(new ApiResponse(result));
+    })
+);
         const result = await promotionalRateShoppingSequencerService.sequencePromotionalRates(userData);
         res.json(new ApiResponse(result));
     })
