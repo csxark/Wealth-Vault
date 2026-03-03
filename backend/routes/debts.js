@@ -40,6 +40,7 @@ import creditorNegotiationAssistantService from '../services/creditorNegotiation
 import paymentAutopilotService from '../services/paymentAutopilotService.js';
 import debtConsolidationRoiCalculatorService from '../services/debtConsolidationRoiCalculatorService.js';
 import rateArbitrageEngineService from '../services/rateArbitrageEngineService.js';
+import taxSmartDebtSequencerService from '../services/taxSmartDebtSequencerService.js';
 
 const router = express.Router();
 
@@ -1806,6 +1807,63 @@ router.post('/arbitrage/discover', protect, [
         200,
         result,
         'Rate arbitrage opportunities discovered'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/tax-optimize/plan
+ * @desc    Generate tax-smart debt payoff sequencing plan
+ * @access  Private
+ */
+router.post('/tax-optimize/plan', protect, [
+    body('debts', 'Debts must be a non-empty array').isArray({ min: 1 }),
+    body('debts.*.id', 'Each debt id must be a string').optional().isString(),
+    body('debts.*.name', 'Each debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Each debt type must be valid').optional().isIn(['mortgage', 'student-loan', 'heloc', 'credit-card', 'auto-loan', 'personal-loan', 'medical', 'medical', 'other']),
+    body('debts.*.apr', 'Each debt APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.balance', 'Each debt balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.minimumPayment', 'Each debt minimumPayment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.monthlyPayment', 'Monthly payment must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.isStudentLoan', 'isStudentLoan must be boolean').optional().isBoolean(),
+    body('debts.*.annualInterestDue', 'Annual interest due must be numeric').optional().isNumeric(),
+    body('taxProfile', 'Tax profile must be an object').isObject(),
+    body('taxProfile.filingStatus', 'Filing status must be valid').optional().isIn(['single', 'married-joint', 'married-sep', 'head-household']),
+    body('taxProfile.grossAnnualIncome', 'Gross annual income must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('taxProfile.taxableIncome', 'Taxable income must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('taxProfile.investmentLosses', 'Investment losses must be numeric').optional().isNumeric(),
+    body('taxProfile.studentLoanDebtOwnedByUser', 'studentLoanDebtOwnedByUser must be boolean').optional().isBoolean(),
+    body('taxProfile.otherDeductions', 'Other deductions must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('taxProfile.estimatedTaxRatePercent', 'Tax rate must be between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('taxProfile.expectedRefundAmount', 'Expected refund must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('taxProfile.refundMonth', 'Refund month must be between 1 and 12').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 12),
+    body('taxProfile.historicalRefundTiming', 'Refund timing must be numeric').optional().isNumeric(),
+    body('refunds', 'Refunds must be an object').optional().isObject(),
+    body('lumpSumPlans', 'Lump sum plans must be an object').optional().isObject()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = taxSmartDebtSequencerService.plan(
+        req.body.debts || [],
+        req.body.taxProfile || {},
+        req.body.refunds || {},
+        req.body.lumpSumPlans || {}
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Tax-smart debt payoff plan generated'
     ).send(res);
 }));
 
