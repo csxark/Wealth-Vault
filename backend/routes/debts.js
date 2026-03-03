@@ -24,6 +24,7 @@ import debtAvalancheSnowballOptimizer from '../services/debtAvalancheSnowballOpt
 import emergencyFundAdequacyAnalyzer from '../services/emergencyFundAdequacyAnalyzer.js';
 import debtConsolidationRecommenderService from '../services/debtConsolidationRecommenderService.js';
 import debtWhatIfSimulatorService from '../services/debtWhatIfSimulatorService.js';
+import debtVariableAprOptimizerService from '../services/debtVariableAprOptimizerService.js';
 
 const router = express.Router();
 
@@ -906,6 +907,59 @@ router.post('/emergency-fund/recalibrate', protect, [
             recalibrated: true
         },
         'Emergency fund recommendation recalibrated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/variable-apr/optimize
+ * @desc    Optimize debt payoff under variable APR scenarios with stress bands
+ * @access  Private
+ */
+router.post('/variable-apr/optimize', protect, [
+    body('horizonMonths', 'Horizon months must be between 1 and 600').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 1 && parseInt(v, 10) <= 600),
+    body('strategies', 'Strategies must be an array').optional()
+        .isArray({min: 1}),
+    body('strategies.*', 'Each strategy must be avalanche, snowball, or hybrid').optional()
+        .isIn(['avalanche', 'snowball', 'hybrid']),
+    body('rateSchedules', 'Rate schedules must be an object').optional()
+        .isObject(),
+    body('rateSchedules.*', 'Each rate schedule must be an array').optional()
+        .isArray({min: 1}),
+    body('rateSchedules.*.*.month', 'Schedule month must be between 1 and 600').optional()
+        .isNumeric()
+        .custom(v => {
+            const month = Number(v);
+            return month >= 1 && month <= 600;
+        }),
+    body('rateSchedules.*.*.apr', 'Schedule APR must be between 0 and 50').optional()
+        .isNumeric()
+        .custom(v => {
+            const apr = Number(v);
+            return apr >= 0 && apr <= 50;
+        })
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtVariableAprOptimizerService.optimize(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Variable APR optimization complete with stress band scenarios'
     ).send(res);
 }));
 
