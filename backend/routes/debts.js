@@ -49,6 +49,7 @@ import loanPrepaymentPenaltyOptimizerService from '../services/loanPrepaymentPen
 import payoffOrderOptimizationEngineService from '../services/payoffOrderOptimizationEngineService.js';
 import debtConsolidationLoanAnalyzerService from '../services/debtConsolidationLoanAnalyzerService.js';
 import creditInquiryImpactForecasterService from '../services/creditInquiryImpactForecasterService.js';
+import incomeBasedStudentLoanRepaymentOptimizerService from '../services/incomeBasedStudentLoanRepaymentOptimizerService.js';
 
 const router = express.Router();
 
@@ -2274,3 +2275,49 @@ router.post('/credit-inquiry/forecast-impact', protect, [
 }));
 
 export default router;
+
+/**
+ * @route   POST /api/debts/student-loans/repayment-optimizer
+ * @desc    Optimize student loan repayment plan based on income and scenario
+ * @access  Private
+ */
+router.post(
+    '/student-loans/repayment-optimizer',
+    protect,
+    [
+        body('loans').isArray({ min: 1 }).withMessage('Loans array required'),
+        body('income').isNumeric().withMessage('Income required'),
+        body('familySize').isInt({ min: 1 }).withMessage('Family size required'),
+        body('publicServiceMonths').optional().isInt({ min: 0 }),
+        body('povertyLine').optional().isNumeric(),
+        body('incomeHistory').optional().isArray(),
+        body('employmentHistory').optional().isArray()
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json(new ApiResponse(400, null, errors.array()));
+        }
+        const {
+            loans,
+            income,
+            familySize,
+            employmentHistory,
+            publicServiceMonths,
+            povertyLine,
+            incomeHistory
+        } = req.body;
+        const optimizer = new incomeBasedStudentLoanRepaymentOptimizerService({
+            loans,
+            income,
+            familySize,
+            employmentHistory,
+            publicServiceMonths,
+            povertyLine,
+            incomeHistory
+        });
+        // Default ranking: lowest monthly payment
+        const rankedPlans = optimizer.rankPlans('lowestMonthlyPayment');
+        return res.json(new ApiResponse(200, rankedPlans));
+    })
+);
