@@ -52,6 +52,7 @@ import creditInquiryImpactForecasterService from '../services/creditInquiryImpac
 import incomeBasedStudentLoanRepaymentOptimizerService from '../services/incomeBasedStudentLoanRepaymentOptimizerService.js';
 import balanceTransferRateArbitrageEngineService from '../services/balanceTransferRateArbitrageEngineService.js';
 import medicalDebtNegotiationOptimizerService from '../services/medicalDebtNegotiationOptimizerService.js';
+import creditScoreRecoveryRoadmapService from '../services/creditScoreRecoveryRoadmapService.js';
 
 const router = express.Router();
 
@@ -2275,6 +2276,59 @@ router.post('/credit-inquiry/forecast-impact', protect, [
         'Credit inquiry impact forecast complete'
     ).send(res);
 }));
+
+/**
+ * @route   POST /api/credit/recovery-roadmap
+ * @desc    Generate personalized credit score recovery roadmap
+ * @access  Private
+ */
+router.post(
+    '/recovery-roadmap',
+    protect,
+    [
+        body('currentScore').isInt({ min: 300, max: 850 }).withMessage('Credit score must be between 300-850'),
+        body('negativeItems').optional().isArray().withMessage('Negative items must be an array'),
+        body('negativeItems.*.type').optional().isIn(['late-payment', 'collection', 'charge-off', 'error', 'bankruptcy', 'inaccuracy']),
+        body('negativeItems.*.age').optional().isInt({ min: 0 }).withMessage('Age must be non-negative'),
+        body('negativeItems.*.severity').optional().isIn(['low', 'medium', 'high']),
+        body('negativeItems.*.amount').optional().isNumeric(),
+        body('negativeItems.*.status').optional().isString(),
+        body('utilization').optional().isInt({ min: 0, max: 100 }).withMessage('Utilization must be 0-100%'),
+        body('inquiries').optional().isInt({ min: 0 }).withMessage('Inquiries must be non-negative'),
+        body('creditHistory').optional().isObject(),
+        body('creditHistory.accountCount').optional().isInt({ min: 0 }),
+        body('creditHistory.ageYears').optional().isNumeric(),
+        body('creditHistory.paymentHistory').optional().isString()
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json(new ApiResponse(400, null, errors.array()));
+        }
+        const { currentScore, negativeItems, utilization, inquiries, creditHistory } = req.body;
+        const roadmap = new creditScoreRecoveryRoadmapService({
+            currentScore,
+            negativeItems,
+            utilization,
+            inquiries,
+            creditHistory
+        });
+        const profile = roadmap.analyzeProfile();
+        const timeline = roadmap.projectRecoveryTimeline();
+        const actions = roadmap.rankActions();
+        const quickWins = roadmap.identifyQuickWins();
+        const eligibility = roadmap.estimateLoanEligibility();
+        const plan = roadmap.generateRecoveryPlan();
+        return res.json(new ApiResponse(200, {
+            profile,
+            timeline,
+            rankedActions: actions,
+            quickWins,
+            loanEligibility: eligibility,
+            monthlyRecoveryPlan: plan
+        }));
+    })
+);
 
 /**
  * @route   POST /api/debts/medical/optimize-settlement
