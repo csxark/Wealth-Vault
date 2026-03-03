@@ -26,6 +26,9 @@ import debtConsolidationRecommenderService from '../services/debtConsolidationRe
 import debtWhatIfSimulatorService from '../services/debtWhatIfSimulatorService.js';
 import debtVariableAprOptimizerService from '../services/debtVariableAprOptimizerService.js';
 import debtAdherenceRiskScoringService from '../services/debtAdherenceRiskScoringService.js';
+import debtPaymentOrchestratorService from '../services/debtPaymentOrchestratorService.js';
+import debtEmergencyFundBalancerService from '../services/debtEmergencyFundBalancerService.js';
+import debtSequencingOptimizerService from '../services/debtSequencingOptimizerService.js';
 
 const router = express.Router();
 
@@ -996,6 +999,172 @@ router.post('/adherence/score', protect, [
         200,
         result,
         'Adherence risk scoring complete with stickiness-adjusted recommendations'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/orchestration/orchestrate
+ * @desc    Orchestrate optimal debt payment allocation and scheduling
+ * @access  Private
+ */
+router.post('/orchestration/orchestrate', protect, [
+    body('monthlyIncome', 'Monthly income must be numeric').optional()
+        .isNumeric(),
+    body('monthlyExpenses', 'Monthly expenses must be numeric').optional()
+        .isNumeric(),
+    body('minCashBuffer', 'Minimum cash buffer must be numeric').optional()
+        .isNumeric(),
+    body('strategy', 'Strategy must be avalanche, snowball, or hybrid').optional()
+        .isIn(['avalanche', 'snowball', 'hybrid']),
+    body('autoIncreasePercentage', 'Auto-increase percentage must be 0-10').optional()
+        .isNumeric()
+        .custom(v => parseFloat(v) >= 0 && parseFloat(v) <= 10)
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtPaymentOrchestratorService.orchestratePayments(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Debt payment orchestration generated with next-month recommendation'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/orchestration/schedule
+ * @desc    Setup automated payment schedule with rebalancing
+ * @access  Private
+ */
+router.post('/orchestration/schedule', protect, [
+    body('strategy', 'Strategy must be avalanche, snowball, or hybrid').optional()
+        .isIn(['avalanche', 'snowball', 'hybrid']),
+    body('frequency', 'Frequency must be monthly, bi-weekly, or weekly').optional()
+        .isIn(['monthly', 'bi-weekly', 'weekly']),
+    body('rebalanceFrequency', 'Rebalance frequency must be monthly or quarterly').optional()
+        .isIn(['monthly', 'quarterly']),
+    body('autoIncreasePercentage', 'Auto-increase percentage must be 0-10').optional()
+        .isNumeric()
+        .custom(v => parseFloat(v) >= 0 && parseFloat(v) <= 10)
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtPaymentOrchestratorService.setupPaymentSchedule(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Automated payment schedule configured'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/balance/optimize
+ * @desc    Optimize balance between emergency fund and debt payoff
+ * @access  Private
+ */
+router.post('/balance/optimize', protect, [
+    body('monthlyIncome', 'Monthly income must be numeric').optional()
+        .isNumeric(),
+    body('monthlyExpenses', 'Monthly expenses must be numeric').optional()
+        .isNumeric(),
+    body('horizonMonths', 'Horizon months must be between 1 and 120').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 1 && parseInt(v, 10) <= 120),
+    body('jobType', 'Job type must be stable, moderate, or volatile').optional()
+        .isIn(['stable', 'moderate', 'volatile']),
+    body('yearsEmployed', 'Years employed must be numeric').optional()
+        .isNumeric(),
+    body('industryVolatility', 'Industry volatility must be low, moderate, or high').optional()
+        .isIn(['low', 'moderate', 'high'])
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtEmergencyFundBalancerService.optimize(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Emergency fund and debt payoff balance optimization complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/sequencing/optimize
+ * @desc    Optimize debt payoff sequence with constraint handling
+ * @access  Private
+ */
+router.post('/sequencing/optimize', protect, [
+    body('horizonMonths', 'Horizon months must be between 1 and 360').optional()
+        .isNumeric()
+        .custom(v => parseInt(v, 10) >= 1 && parseInt(v, 10) <= 360),
+    body('constraints', 'Constraints must be an object').optional()
+        .isObject(),
+    body('constraints.minimumBalance', 'Minimum balance must be an object').optional()
+        .isObject(),
+    body('constraints.noTouch', 'No-touch must be an array of debt IDs').optional()
+        .isArray(),
+    body('constraints.priority', 'Priority must be an array of debt IDs').optional()
+        .isArray(),
+    body('customSequence', 'Custom sequence must be an array of debt IDs').optional()
+        .isArray()
+], asyncHandler(async (req, res) => {
+    // Express-validator check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = await debtSequencingOptimizerService.optimize(req.user.id, req.body);
+
+    if (!result.success) {
+        return new ApiResponse(400, result, result.message).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Debt sequencing optimization complete with constraint handling'
     ).send(res);
 }));
 
