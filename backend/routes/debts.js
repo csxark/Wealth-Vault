@@ -53,8 +53,24 @@ import incomeBasedStudentLoanRepaymentOptimizerService from '../services/incomeB
 import balanceTransferRateArbitrageEngineService from '../services/balanceTransferRateArbitrageEngineService.js';
 import medicalDebtNegotiationOptimizerService from '../services/medicalDebtNegotiationOptimizerService.js';
 import creditScoreRecoveryRoadmapService from '../services/creditScoreRecoveryRoadmapService.js';
+import promotionalRateShoppingSequencerService from '../services/promotionalRateShoppingSequencerService.js';
 
 const router = express.Router();
+
+/**
+ * @route   POST /api/debts/promo-rate/sequence
+ * @desc    Sequence 0% APR & promotional rate actions for cardholders
+ * @access  Protected
+ */
+router.post(
+    '/promo-rate/sequence',
+    protect,
+    asyncHandler(async (req, res) => {
+        const userData = req.body;
+        const result = await promotionalRateShoppingSequencerService.sequencePromotionalRates(userData);
+        res.json(new ApiResponse(result));
+    })
+);
 
 /**
  * @route   GET /api/debts
