@@ -464,6 +464,78 @@ class ConsensusTransitionService {
             };
         }
     }
+
+    /**
+     * Get succession status for a user
+     * @param {string} userId - User ID
+     * @returns {Object} Succession status
+     */
+    async getSuccessionStatus(userId) {
+        try {
+            const [gracePeriod] = await db.select()
+                .from(successionGracePeriods)
+                .where(and(
+                    eq(successionGracePeriods.userId, userId),
+                    eq(successionGracePeriods.currentState, 'transition_triggered')
+                ))
+                .orderBy(desc(successionGracePeriods.createdAt));
+
+            if (!gracePeriod) {
+                return {
+                    userId,
+                    successionTriggered: false,
+                    gracePeriodActive: false,
+                    shardsDistributed: false
+                };
+            }
+
+            // Check if shards have been distributed
+            const distributedShards = await db.select()
+                .from(accessShards)
+                .where(and(
+                    eq(accessShards.userId, userId),
+                    eq(accessShards.status, 'distributed')
+                ));
+
+            return {
+                userId,
+                successionTriggered: true,
+                gracePeriodActive: new Date() < new Date(gracePeriod.gracePeriodEndsAt),
+                gracePeriodEndsAt: gracePeriod.gracePeriodEndsAt,
+                shardsDistributed: distributedShards.length > 0,
+                distributedShardCount: distributedShards.length
+            };
+
+        } catch (error) {
+            console.error('[Consensus Transition] Error getting succession status:', error);
+            return {
+                userId,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Check if succession has been triggered for a user
+     * @param {string} userId - User ID
+     * @returns {boolean} True if succession triggered
+     */
+    async isSuccessionTriggered(userId) {
+        try {
+            const [gracePeriod] = await db.select()
+                .from(successionGracePeriods)
+                .where(and(
+                    eq(successionGracePeriods.userId, userId),
+                    eq(successionGracePeriods.currentState, 'transition_triggered')
+                ))
+                .orderBy(desc(successionGracePeriods.createdAt));
+
+            return !!gracePeriod;
+        } catch (error) {
+            console.error('[Consensus Transition] Error checking succession trigger:', error);
+            return false;
+        }
+    }
 }
 
 export default new ConsensusTransitionService();

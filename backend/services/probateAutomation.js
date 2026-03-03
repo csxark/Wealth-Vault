@@ -605,6 +605,63 @@ class ProbateAutomationService {
 
         return xml;
     }
+
+    /**
+     * Get ledger status for a will
+     * @param {string} willId - Will ID
+     * @returns {Object} Ledger status
+     */
+    async getLedgerStatus(willId) {
+        try {
+            const [ledger] = await db.select()
+                .from(digitalWillDefinitions)
+                .where(eq(digitalWillDefinitions.id, willId));
+
+            if (!ledger) {
+                return {
+                    willId,
+                    ledgerGenerated: false,
+                    lastGeneratedAt: null,
+                    signatureValid: false
+                };
+            }
+
+            // Check if ledger data exists and is valid
+            const hasLedgerData = ledger.ledgerData && Object.keys(ledger.ledgerData).length > 0;
+            const signatureValid = hasLedgerData ? await this.verifyLedgerSignature(ledger.ledgerData) : false;
+
+            return {
+                willId,
+                ledgerGenerated: hasLedgerData,
+                lastGeneratedAt: ledger.updatedAt,
+                signatureValid,
+                assetCount: hasLedgerData ? ledger.ledgerData.assets?.length || 0 : 0,
+                custodianCount: hasLedgerData ? ledger.ledgerData.custodians?.length || 0 : 0
+            };
+
+        } catch (error) {
+            logError(`[Probate Automation] Error getting ledger status:`, error);
+            return {
+                willId,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Check if ledger has been generated for a will
+     * @param {string} willId - Will ID
+     * @returns {boolean} True if ledger generated
+     */
+    async isLedgerGenerated(willId) {
+        try {
+            const status = await this.getLedgerStatus(willId);
+            return status.ledgerGenerated && status.signatureValid;
+        } catch (error) {
+            logError(`[Probate Automation] Error checking ledger generation:`, error);
+            return false;
+        }
+    }
 }
 
 export default new ProbateAutomationService();
