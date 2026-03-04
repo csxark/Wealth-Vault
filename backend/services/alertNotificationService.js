@@ -254,6 +254,26 @@ class AlertNotificationService {
     }
 
     /**
+     * Generate rebalancing alert
+     * @param {String} userId - User ID
+     * @param {Number} drift - Portfolio drift
+     * @param {Array} actions - Rebalancing actions
+     * @returns {Object} Rebalancing alert
+     */
+    static generateRebalancingAlert(userId, drift, actions) {
+        return {
+            userId,
+            alertType: 'rebalancing',
+            severity: drift > 5 ? 'high' : drift > 2 ? 'medium' : 'low',
+            message: drift > 2 ? `Portfolio drift detected: ${drift.toFixed(2)}%. Rebalancing recommended.` : 'Portfolio is within target allocations.',
+            actions,
+            createdAt: new Date(),
+            isRead: false,
+            isResolved: false
+        };
+    }
+
+    /**
      * Filter alerts based on criteria
      * @param {Array} alerts - Alerts to filter
      * @param {Object} criteria - Filter criteria
@@ -358,11 +378,7 @@ class AlertNotificationService {
      * @returns {Object} Updated alert
      */
     static markAsRead(alert) {
-        return {
-            ...alert,
-            isRead: true,
-            readAt: new Date(),
-        };
+        return { ...alert, isRead: true, readAt: new Date() };
     }
 
     /**
@@ -372,12 +388,7 @@ class AlertNotificationService {
      * @returns {Object} Updated alert
      */
     static markAsResolved(alert, action = null) {
-        return {
-            ...alert,
-            isResolved: true,
-            resolvedAt: new Date(),
-            resolvedAction: action,
-        };
+        return { ...alert, isResolved: true, resolvedAt: new Date(), resolvedAction: action };
     }
 
     /**
