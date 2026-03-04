@@ -45,8 +45,60 @@ import debtPaymentDateOptimizerService from '../services/debtPaymentDateOptimize
 import creditUtilizationSmoothingService from '../services/creditUtilizationSmoothingService.js';
 import minimumPaymentShockPredictorService from '../services/minimumPaymentShockPredictorService.js';
 import debtRecastVsRefinanceAnalyzerService from '../services/debtRecastVsRefinanceAnalyzerService.js';
+import loanPrepaymentPenaltyOptimizerService from '../services/loanPrepaymentPenaltyOptimizerService.js';
+import payoffOrderOptimizationEngineService from '../services/payoffOrderOptimizationEngineService.js';
+import debtConsolidationLoanAnalyzerService from '../services/debtConsolidationLoanAnalyzerService.js';
+import creditInquiryImpactForecasterService from '../services/creditInquiryImpactForecasterService.js';
+import incomeBasedStudentLoanRepaymentOptimizerService from '../services/incomeBasedStudentLoanRepaymentOptimizerService.js';
+import balanceTransferRateArbitrageEngineService from '../services/balanceTransferRateArbitrageEngineService.js';
+import medicalDebtNegotiationOptimizerService from '../services/medicalDebtNegotiationOptimizerService.js';
+import creditScoreRecoveryRoadmapService from '../services/creditScoreRecoveryRoadmapService.js';
+import promotionalRateShoppingSequencerService from '../services/promotionalRateShoppingSequencerService.js';
+import multiLoanConsolidationRecommenderService from '../services/multiLoanConsolidationRecommenderService.js';
+
+import hardshipProgramNegotiationEngineService from '../services/hardshipProgramNegotiationEngineService.js';
+import debtToIncomeAutoQualificationSimulatorService from '../services/debtToIncomeAutoQualificationSimulatorService.js';
 
 const router = express.Router();
+
+/**
+ * @route   POST /api/debts/promo-rate/sequence
+ * @desc    Sequence 0% APR & promotional rate actions for cardholders
+ * @access  Protected
+ */
+router.post(
+    '/promo-rate/sequence',
+    protect,
+    asyncHandler(async (req, res) => {
+        const userData = req.body;
+router.post(
+    '/dti/auto-qualification',
+    protect,
+    asyncHandler(async (req, res) => {
+        const userData = req.body;
+        const result = await debtToIncomeAutoQualificationSimulatorService.simulateDTIQualification(userData);
+        res.json(new ApiResponse(result));
+    })
+);
+        const result = await promotionalRateShoppingSequencerService.sequencePromotionalRates(userData);
+        res.json(new ApiResponse(result));
+    })
+);
+
+/**
+ * @route   POST /api/debts/hardship/negotiation
+ * @desc    Assess hardship eligibility and generate negotiation materials
+ * @access  Protected
+ */
+router.post(
+    '/hardship/negotiation',
+    protect,
+    asyncHandler(async (req, res) => {
+        const userData = req.body;
+        const result = await hardshipProgramNegotiationEngineService.evaluateHardshipPrograms(userData);
+        res.json(new ApiResponse(result));
+    })
+);
 
 /**
  * @route   GET /api/debts
@@ -856,6 +908,46 @@ router.post('/consolidation/recommend', protect, [
         200,
         recommendation,
         'Smart debt consolidation recommendation generated'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/multi-loan-consolidation/recommend
+ * @desc    Recommend best multi-loan consolidation option and timing - Issue #832
+ */
+router.post('/multi-loan-consolidation/recommend', protect, [
+    body('loans').optional().isArray().withMessage('loans must be an array'),
+    body('loans.*.id').optional().isString().withMessage('loan id must be a string'),
+    body('loans.*.name').optional().isString().withMessage('loan name must be a string'),
+    body('loans.*.currentBalance').optional().isNumeric().withMessage('loan currentBalance must be numeric'),
+    body('loans.*.balance').optional().isNumeric().withMessage('loan balance must be numeric'),
+    body('loans.*.minimumPayment').optional().isNumeric().withMessage('loan minimumPayment must be numeric'),
+    body('loans.*.apr').optional().isNumeric().withMessage('loan apr must be numeric'),
+    body('loans.*.type').optional().isString().withMessage('loan type must be a string'),
+    body('loans.*.debtType').optional().isString().withMessage('loan debtType must be a string'),
+    body('loans.*.monthsRemaining').optional().isInt({ min: 1, max: 480 }).withMessage('monthsRemaining must be between 1 and 480'),
+    body('loans.*.hasFederalBenefits').optional().isBoolean().withMessage('hasFederalBenefits must be boolean'),
+    body('loans.*.hasRateDiscountBenefits').optional().isBoolean().withMessage('hasRateDiscountBenefits must be boolean'),
+    body('scenarioOptions').optional().isArray().withMessage('scenarioOptions must be an array'),
+    body('scenarioOptions.*.name').optional().isString().withMessage('scenario name must be string'),
+    body('scenarioOptions.*.apr').optional().isNumeric().withMessage('scenario apr must be numeric'),
+    body('scenarioOptions.*.termMonths').optional().isInt({ min: 1, max: 480 }).withMessage('scenario termMonths must be between 1 and 480'),
+    body('scenarioOptions.*.originationFeePercent').optional().isFloat({ min: 0, max: 10 }).withMessage('scenario originationFeePercent must be between 0 and 10'),
+    body('scenarioOptions.*.fixedFees').optional().isNumeric().withMessage('scenario fixedFees must be numeric'),
+    body('timing').optional().isObject().withMessage('timing must be an object'),
+    body('timing.expectedRateShiftBps').optional().isNumeric().withMessage('timing.expectedRateShiftBps must be numeric')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json(new ApiResponse(400, { errors: errors.array() }, 'Validation failed'));
+    }
+
+    const result = await multiLoanConsolidationRecommenderService.recommend(req.user.id, req.body || {});
+
+    return new ApiResponse(
+        200,
+        result,
+        'Multi-loan consolidation recommendation generated'
     ).send(res);
 }));
 
@@ -2077,4 +2169,375 @@ router.post('/recast-refinance/analyze', protect, [
     ).send(res);
 }));
 
+/**
+ * @route   POST /api/debts/prepayment-penalty/optimize
+ * @desc    Analyze prepayment penalties and optimize acceleration strategy
+ * @access  Private
+ */
+router.post('/prepayment-penalty/optimize', protect, [
+    body('debts', 'Debts must be an array').isArray(),
+    body('debts.*.id', 'Each debt must have an id').optional().isString(),
+    body('debts.*.name', 'Debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Debt type must be valid').optional().isIn(['auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'heloc']),
+    body('debts.*.balance', 'Balance must be numeric').optional().isNumeric(),
+    body('debts.*.currentBalance', 'Current balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.apr', 'APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.monthlyPayment', 'Monthly payment must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.monthsRemaining', 'Months remaining must be between 1 and 360').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('debts.*.hasPrepaymentPenalty', 'Has prepayment penalty must be a boolean').optional().isBoolean(),
+    body('debts.*.penaltyType', 'Penalty type must be valid').optional().isIn(['fixed', 'percent-of-balance', 'declining-schedule', 'none']),
+    body('debts.*.penaltyAmount', 'Penalty amount must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.penaltyPercent', 'Penalty percent must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.penaltyExpirationMonths', 'Penalty expiration months must be non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.penaltyStartDate', 'Penalty start date must be a valid date string').optional().isISO8601(),
+    body('debts.*.penaltyEndDate', 'Penalty end date must be a valid date string').optional().isISO8601(),
+    body('debts.*.penaltySchedule', 'Penalty schedule must be an array').optional().isArray(),
+    body('debts.*.penaltySchedule.*.month', 'Schedule month must be numeric').optional().isNumeric(),
+    body('debts.*.penaltySchedule.*.percent', 'Schedule percent must be numeric').optional().isNumeric(),
+    body('debts.*.estimatedInterestSavingsPerMonth', 'Interest savings must be numeric').optional().isNumeric()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = loanPrepaymentPenaltyOptimizerService.optimize(
+        req.body.debts || []
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Prepayment penalty optimization complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/payoff-order/optimize
+ * @desc    Analyze and rank optimal debt payoff sequences (Avalanche, Snowball, Hybrid, Custom)
+ * @access  Private
+ */
+router.post('/payoff-order/optimize', protect, [
+    body('debts', 'Debts must be an array').isArray(),
+    body('debts.*.id', 'Each debt must have an id').optional().isString(),
+    body('debts.*.name', 'Debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Debt type must be valid').optional().isIn(['auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'heloc', 'credit-card']),
+    body('debts.*.balance', 'Balance must be numeric').optional().isNumeric(),
+    body('debts.*.currentBalance', 'Current balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.apr', 'APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.minimumPayment', 'Minimum payment must be numeric and positive').isNumeric().custom(v => Number(v) > 0),
+    body('debts.*.monthsRemaining', 'Months remaining must be between 1 and 360').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('debts.*.priority', 'Priority must be numeric').optional().isNumeric(),
+    body('preferences', 'Preferences must be an object').optional().isObject(),
+    body('preferences.minimizeInterest', 'Minimize interest weight must be between 0 and 1').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 1),
+    body('preferences.fastestCompletion', 'Fastest completion weight must be between 0 and 1').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 1),
+    body('preferences.earlyWins', 'Early wins weight must be between 0 and 1').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 1),
+    body('monthlyExtraPayment', 'Monthly extra payment must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = payoffOrderOptimizationEngineService.optimize(
+        req.body.debts || [],
+        req.body.preferences || {},
+        req.body.monthlyExtraPayment || 0
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Payoff order optimization complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/consolidation-loan/analyze
+ * @desc    Analyze consolidation loan offer vs stay-the-course baseline
+ * @access  Private
+ */
+router.post('/consolidation-loan/analyze', protect, [
+    body('debts', 'Debts must be an array').isArray(),
+    body('debts.*.id', 'Each debt must have an id').optional().isString(),
+    body('debts.*.name', 'Debt name must be a string').optional().isString(),
+    body('debts.*.type', 'Debt type must be valid').optional().isIn(['auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'heloc', 'credit-card']),
+    body('debts.*.balance', 'Balance must be numeric').optional().isNumeric(),
+    body('debts.*.currentBalance', 'Current balance must be numeric and non-negative').isNumeric().custom(v => Number(v) >= 0),
+    body('debts.*.apr', 'APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('debts.*.minimumPayment', 'Minimum payment must be numeric and positive').isNumeric().custom(v => Number(v) > 0),
+    body('debts.*.monthsRemaining', 'Months remaining must be between 1 and 360').optional().isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('consolidationOffer', 'Consolidation offer must be an object').isObject(),
+    body('consolidationOffer.apr', 'Offer APR must be numeric between 0 and 100').isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('consolidationOffer.termMonths', 'Offer term must be between 1 and 360').isNumeric().custom(v => Number(v) >= 1 && Number(v) <= 360),
+    body('consolidationOffer.originationFeePercent', 'Origination fee % must be between 0 and 10').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 10),
+    body('consolidationOffer.closingCosts', 'Closing costs must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('monthlyExtraPayment', 'Monthly extra payment must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0)
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = debtConsolidationLoanAnalyzerService.analyze(
+        req.body.debts || [],
+        req.body.consolidationOffer || {},
+        req.body.monthlyExtraPayment || 0
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Debt consolidation analysis complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/debts/credit-inquiry/forecast-impact
+ * @desc    Forecast credit inquiry impact on credit score and borrowing rates
+ * @access  Private
+ */
+router.post('/credit-inquiry/forecast-impact', protect, [
+    body('currentScore', 'Credit score must be between 300 and 850').isNumeric().custom(v => Number(v) >= 300 && Number(v) <= 850),
+    body('inquiryCount', 'Inquiry count must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 10),
+    body('debtBalance', 'Debt balance must be numeric and non-negative').optional().isNumeric().custom(v => Number(v) >= 0),
+    body('currentAPR', 'Current APR must be numeric between 0 and 100').optional().isNumeric().custom(v => Number(v) >= 0 && Number(v) <= 100),
+    body('inquiryType', 'Inquiry type must be valid').optional().isIn(['auto', 'mortgage', 'creditcard', 'personal']),
+    body('portfolioScenarios', 'Portfolio scenarios must be an array').optional().isArray(),
+    body('portfolioScenarios.*.accountType', 'Account type must be valid').optional().isIn(['mortgage', 'auto', 'creditcard'])
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation error',
+            errors: errors.array()
+        });
+    }
+
+    const result = creditInquiryImpactForecasterService.forecast(
+        req.body.currentScore,
+        {
+            inquiryCount: req.body.inquiryCount || 0,
+            debtBalance: req.body.debtBalance || 0,
+            currentAPR: req.body.currentAPR || 0,
+            inquiryType: req.body.inquiryType || 'auto',
+            portfolioScenarios: req.body.portfolioScenarios || []
+        }
+    );
+
+    if (result.error) {
+        return new ApiResponse(400, result, result.error).send(res);
+    }
+
+    return new ApiResponse(
+        200,
+        result,
+        'Credit inquiry impact forecast complete'
+    ).send(res);
+}));
+
+/**
+ * @route   POST /api/credit/recovery-roadmap
+ * @desc    Generate personalized credit score recovery roadmap
+ * @access  Private
+ */
+router.post(
+    '/recovery-roadmap',
+    protect,
+    [
+        body('currentScore').isInt({ min: 300, max: 850 }).withMessage('Credit score must be between 300-850'),
+        body('negativeItems').optional().isArray().withMessage('Negative items must be an array'),
+        body('negativeItems.*.type').optional().isIn(['late-payment', 'collection', 'charge-off', 'error', 'bankruptcy', 'inaccuracy']),
+        body('negativeItems.*.age').optional().isInt({ min: 0 }).withMessage('Age must be non-negative'),
+        body('negativeItems.*.severity').optional().isIn(['low', 'medium', 'high']),
+        body('negativeItems.*.amount').optional().isNumeric(),
+        body('negativeItems.*.status').optional().isString(),
+        body('utilization').optional().isInt({ min: 0, max: 100 }).withMessage('Utilization must be 0-100%'),
+        body('inquiries').optional().isInt({ min: 0 }).withMessage('Inquiries must be non-negative'),
+        body('creditHistory').optional().isObject(),
+        body('creditHistory.accountCount').optional().isInt({ min: 0 }),
+        body('creditHistory.ageYears').optional().isNumeric(),
+        body('creditHistory.paymentHistory').optional().isString()
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json(new ApiResponse(400, null, errors.array()));
+        }
+        const { currentScore, negativeItems, utilization, inquiries, creditHistory } = req.body;
+        const roadmap = new creditScoreRecoveryRoadmapService({
+            currentScore,
+            negativeItems,
+            utilization,
+            inquiries,
+            creditHistory
+        });
+        const profile = roadmap.analyzeProfile();
+        const timeline = roadmap.projectRecoveryTimeline();
+        const actions = roadmap.rankActions();
+        const quickWins = roadmap.identifyQuickWins();
+        const eligibility = roadmap.estimateLoanEligibility();
+        const plan = roadmap.generateRecoveryPlan();
+        return res.json(new ApiResponse(200, {
+            profile,
+            timeline,
+            rankedActions: actions,
+            quickWins,
+            loanEligibility: eligibility,
+            monthlyRecoveryPlan: plan
+        }));
+    })
+);
+
+/**
+ * @route   POST /api/debts/medical/optimize-settlement
+ * @desc    Optimize medical debt negotiation and settlement strategies
+ * @access  Private
+ */
+router.post(
+    '/medical/optimize-settlement',
+    protect,
+    [
+        body('medicalDebts').isArray({ min: 1 }).withMessage('Medical debts array required'),
+        body('medicalDebts.*.id').isString().withMessage('Each debt must have an id'),
+        body('medicalDebts.*.creditor').isString().withMessage('Each debt must have a creditor'),
+        body('medicalDebts.*.amount').isNumeric().withMessage('Each debt must have an amount'),
+        body('medicalDebts.*.originalDate').isISO8601().withMessage('Each debt must have a valid originalDate'),
+        body('medicalDebts.*.creditorType').optional().isIn(['hospital', 'provider', 'collection-agency']),
+        body('userIncome').optional().isNumeric().withMessage('User income must be numeric'),
+        body('cashAvailable').optional().isNumeric().withMessage('Cash available must be numeric'),
+        body('taxBracket').optional().isNumeric().withMessage('Tax bracket must be numeric')
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json(new ApiResponse(400, null, errors.array()));
+        }
+        const { medicalDebts, userIncome, cashAvailable, taxBracket } = req.body;
+        const optimizer = new medicalDebtNegotiationOptimizerService({
+            medicalDebts,
+            userIncome,
+            cashAvailable,
+            taxBracket
+        });
+        const rankedDebts = optimizer.rankDebts();
+        const recommendations = rankedDebts.map(debt => ({
+            debt,
+            settlementOffers: optimizer.modelSettlementOffers(debt),
+            negotiationScript: optimizer.generateNegotiationScript(debt),
+            scenarios: optimizer.simulateScenarios(debt),
+            timing: optimizer.recommendTiming(debt)
+        }));
+        return res.json(new ApiResponse(200, {
+            rankedDebts,
+            recommendations,
+            totalPotentialSavings: rankedDebts.reduce((sum, d) => sum + d.bestOffer.netSavings, 0)
+        }));
+    })
+);
+
 export default router;
+
+/**
+ * @route   POST /api/debts/balance-transfer/optimize
+ * @desc    Optimize balance transfer rate arbitrage for credit cardholders
+ * @access  Private
+ */
+router.post(
+    '/balance-transfer/optimize',
+    protect,
+    [
+        body('cards').isArray({ min: 1 }).withMessage('Cards array required'),
+        body('debts').isArray({ min: 1 }).withMessage('Debts array required'),
+        body('transferOffers').isArray({ min: 1 }).withMessage('Transfer offers array required')
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json(new ApiResponse(400, null, errors.array()));
+        }
+        const { cards, debts, transferOffers } = req.body;
+        const engine = new balanceTransferRateArbitrageEngineService({ cards, debts, transferOffers });
+        const recommendations = engine.recommendTransfers();
+        const actionPlan = engine.generateActionPlan();
+        const utilizationFlags = engine.flagCreditUtilization();
+        const sequentialPlan = engine.simulateSequentialTransfers();
+        return res.json(new ApiResponse(200, {
+            recommendations,
+            actionPlan,
+            utilizationFlags,
+            sequentialPlan
+        }));
+    })
+);
+
+/**
+ * @route   POST /api/debts/student-loans/repayment-optimizer
+ * @desc    Optimize student loan repayment plan based on income and scenario
+ * @access  Private
+ */
+router.post(
+    '/student-loans/repayment-optimizer',
+    protect,
+    [
+        body('loans').isArray({ min: 1 }).withMessage('Loans array required'),
+        body('income').isNumeric().withMessage('Income required'),
+        body('familySize').isInt({ min: 1 }).withMessage('Family size required'),
+        body('publicServiceMonths').optional().isInt({ min: 0 }),
+        body('povertyLine').optional().isNumeric(),
+        body('incomeHistory').optional().isArray(),
+        body('employmentHistory').optional().isArray()
+    ],
+    asyncHandler(async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json(new ApiResponse(400, null, errors.array()));
+        }
+        const {
+            loans,
+            income,
+            familySize,
+            employmentHistory,
+            publicServiceMonths,
+            povertyLine,
+            incomeHistory
+        } = req.body;
+        const optimizer = new incomeBasedStudentLoanRepaymentOptimizerService({
+            loans,
+            income,
+            familySize,
+            employmentHistory,
+            publicServiceMonths,
+            povertyLine,
+            incomeHistory
+        });
+        // Default ranking: lowest monthly payment
+        const rankedPlans = optimizer.rankPlans('lowestMonthlyPayment');
+        return res.json(new ApiResponse(200, rankedPlans));
+    })
+);
