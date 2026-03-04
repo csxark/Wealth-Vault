@@ -6,7 +6,8 @@ import { Expense, Category } from '../../types';
 import { ExpenseList } from './ExpenseList';
 import { ExpenseForm } from './ExpenseForm';
 import { ExpenseFilters } from './ExpenseFilters';
-import { Plus, Download, Filter } from 'lucide-react';
+import { VoiceAssistant } from './VoiceAssistant';
+import { Plus, Download, Filter, Mic } from 'lucide-react';
 
 interface Filters {
   startDate?: string;
@@ -27,6 +28,7 @@ export const Expenses: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [showVoiceAssistant, setShowVoiceAssistant] = useState(false);
   const [filters, setFilters] = useState<Filters>({
     sortBy: 'date',
     sortOrder: 'desc'
@@ -216,6 +218,16 @@ export const Expenses: React.FC = () => {
             Export
           </button>
           
+          {/* Voice Assistant Button */}
+          <button
+            onClick={() => setShowVoiceAssistant(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
+            title="Add expense by voice"
+          >
+            <Mic className="h-4 w-4" />
+            Voice
+          </button>
+          
           <button
             onClick={handleAddNewClick}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -260,6 +272,13 @@ export const Expenses: React.FC = () => {
         onPageChange={handlePageChange}
         onEdit={handleEditClick}
         onDelete={handleDeleteExpense}
+      />
+
+      {/* Voice Assistant Modal */}
+      <VoiceAssistant
+        isOpen={showVoiceAssistant}
+        onClose={() => setShowVoiceAssistant(false)}
+        onSuccess={fetchExpenses}
       />
     </div>
   );
