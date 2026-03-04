@@ -1,5 +1,8 @@
 // backend/services/taxFilingDeadlineAlertService.js
 
+const AlertNotificationService = require('./alertNotificationService');
+const { calculateDeadline, riskScore, generateStrategy } = require('../utils/taxFilingUtils');
+
 class TaxFilingDeadlineAlertService {
   constructor(taxRepo) {
     this.taxRepo = taxRepo;
@@ -99,6 +102,97 @@ class TaxFilingDeadlineAlertService {
     if (filing.status === "on-time") return "compliant";
     if (filing.status === "late") return "non-compliant";
     return "pending";
+  }
+
+  /**
+   * Batch analyze all users' filings for admin dashboard
+   * @param {Array} userIds
+   * @returns {Array} Batch analysis results
+   */
+  async batchAnalyzeDeadlines(userIds, options = {}) {
+    const results = [];
+    for (const userId of userIds) {
+      const result = await this.analyzeDeadlines(userId, options);
+      results.push({ userId, ...result });
+    }
+    return results;
+  }
+
+  /**
+   * Export alerts to JSON/CSV for reporting
+   * @param {Array} alerts
+   * @param {String} format
+   * @returns {String}
+   */
+  exportAlerts(alerts, format = 'json') {
+    if (format === 'csv') {
+      return AlertNotificationService.exportToCSV(alerts);
+    }
+    return AlertNotificationService.exportToJSON(alerts);
+  }
+
+  /**
+   * Escalate unresolved alerts for compliance
+   * @param {Array} alerts
+   * @returns {Array} Escalation steps
+   */
+  escalateAlerts(alerts) {
+    return alerts.map(alert => ({
+      ...alert,
+      escalation: AlertNotificationService.getEscalationPath(alert)
+    }));
+  }
+
+  /**
+   * Mark alerts as read/resolved in batch
+   * @param {Array} alerts
+   * @param {String} action
+   * @returns {Array} Updated alerts
+   */
+  markAlerts(alerts, action = 'read') {
+    return alerts.map(alert =>
+      action === 'resolved'
+        ? AlertNotificationService.markAsResolved(alert, 'Auto batch resolve')
+        : AlertNotificationService.markAsRead(alert)
+    );
+  }
+
+  /**
+   * Generate filing summary for dashboard
+   * @param {Array} filings
+   * @returns {Object} Summary stats
+   */
+  getFilingSummary(filings) {
+    const summary = {
+      total: filings.length,
+      onTime: filings.filter(f => f.status === 'on-time').length,
+      late: filings.filter(f => f.status === 'late').length,
+      pending: filings.filter(f => f.status === 'pending').length,
+      penalties: filings.reduce((sum, f) => sum + (f.penalties || 0), 0)
+    };
+    return summary;
+  }
+
+  /**
+   * Utility: Calculate next filing deadline for user
+   * @param {Array} filings
+   * @returns {Date|null}
+   */
+  getNextDeadline(filings) {
+    const pending = filings.filter(f => f.status === 'pending');
+    if (!pending.length) return null;
+    return pending.reduce((min, f) =>
+      new Date(f.deadline) < new Date(min.deadline) ? f : min
+    ).deadline;
+  }
+
+  /**
+   * Utility: Generate filing strategies for all years
+   * @param {Array} filings
+   * @returns {Array} Strategies
+   */
+  getAllStrategies(filings) {
+    return filings.map(f => generateStrategy(f));
   }
 }
 
