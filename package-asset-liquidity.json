@@ -1,0 +1,18 @@
+{
+  "name": "Asset Liquidity Forecaster",
+  "version": "1.0.0",
+  "description": "Analyzes asset types, market conditions, and user needs to project liquidity timelines and recommend rebalancing strategies.",
+  "main": "backend/services/assetLiquidityForecasterService.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "author": "Ayaanshaikh12243",
+  "license": "MIT"
+}
