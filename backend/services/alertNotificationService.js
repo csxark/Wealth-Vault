@@ -294,6 +294,27 @@ class AlertNotificationService {
     }
 
     /**
+     * Generate retirement gap alert
+     * @param {String} userId - User ID
+     * @param {Number} gap - Retirement gap
+     * @param {Number} percentShortfall - Percent shortfall
+     * @returns {Object} Retirement gap alert
+     */
+    static generateRetirementGapAlert(userId, gap, percentShortfall) {
+        return {
+            userId,
+            alertType: 'retirement_gap',
+            severity: percentShortfall > 20 ? 'high' : percentShortfall > 10 ? 'medium' : 'low',
+            message: percentShortfall > 0 ? `Retirement goal shortfall: $${gap}. Consider catch-up strategies.` : 'On track for retirement goal.',
+            gap,
+            percentShortfall,
+            createdAt: new Date(),
+            isRead: false,
+            isResolved: false
+        };
+    }
+
+    /**
      * Filter alerts based on criteria
      * @param {Array} alerts - Alerts to filter
      * @param {Object} criteria - Filter criteria
