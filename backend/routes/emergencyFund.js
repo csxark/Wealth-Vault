@@ -273,3 +273,20 @@ router.delete("/goals/:id", protect, [
 });
 
 export default router;
+/**
+ * @route   POST /api/emergency-fund/health/analyze
+ * @desc    Analyze emergency fund health and generate alerts
+ * @access  Private
+ */
+import EmergencyFundHealthMonitorService from "../services/emergencyFundHealthMonitorService.js";
+import EmergencyFund from "../models/emergencyFund.js";
+router.post("/health/analyze", protect, async (req, res) => {
+    const { scenarioType, adequacyThreshold } = req.body;
+    const service = new EmergencyFundHealthMonitorService(EmergencyFund);
+    try {
+        const result = await service.analyzeFundHealth(req.user.id, { scenarioType, adequacyThreshold });
+        res.json({ success: true, data: result });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
