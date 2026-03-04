@@ -2,7 +2,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const AI_CONFIG = {
-    defaultProvider: 'gemini',
+    // Set the default provider: 'gemini', 'ollama', 'lmstudio', 'openai', or 'anthropic'
+    // Can be overridden via AI_PROVIDER environment variable
+    defaultProvider: process.env.AI_PROVIDER || 'gemini',
 
     // Provider-specific configurations
     providers: {
@@ -16,6 +18,33 @@ export const AI_CONFIG = {
                 pro: 'gemini-pro',
                 experimental: 'gemini-2.0-flash-exp',
                 vision: 'gemini-pro-vision'
+            }
+        },
+        // Ollama - Local LLM support (https://ollama.ai)
+        ollama: {
+            baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+            defaultModel: process.env.OLLAMA_MODEL || 'llama2',
+            models: {
+                fast: process.env.OLLAMA_MODEL || 'llama2',
+                pro: 'llama2:70b',
+                // Popular open-source models that work with Ollama
+                // Users can download these via: ollama pull <model-name>
+                llama2: 'llama2',
+                llama3: 'llama3',
+                mistral: 'mistral',
+                mixtral: 'mixtral',
+                codellama: 'codellama',
+                phi: 'phi',
+                gemma: 'gemma',
+            }
+        },
+        // LM Studio - Local LLM with OpenAI-compatible API (https://lmstudio.ai)
+        lmstudio: {
+            baseUrl: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
+            defaultModel: process.env.LMSTUDIO_MODEL || 'local-model',
+            models: {
+                fast: process.env.LMSTUDIO_MODEL || 'local-model',
+                pro: process.env.LMSTUDIO_MODEL || 'local-model',
             }
         },
         openai: {

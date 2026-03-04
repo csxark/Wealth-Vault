@@ -124,6 +124,206 @@ class GeminiProvider extends BaseAIProvider {
 }
 
 /**
+ * Ollama Provider Implementation
+ * Supports local Ollama instances for running open-source LLMs
+ */
+class OllamaProvider extends BaseAIProvider {
+    constructor(config = AI_CONFIG.providers.ollama) {
+        super(config);
+        this.baseUrl = config.baseUrl || 'http://localhost:11434';
+        this.defaultModel = config.defaultModel || 'llama2';
+        console.log(`OllamaProvider initialized with baseUrl: ${this.baseUrl}, model: ${this.defaultModel}`);
+    }
+
+    resolveModel(modelKey) {
+        if (this.config.models && this.config.models[modelKey]) {
+            return this.config.models[modelKey];
+        }
+        return modelKey || this.defaultModel;
+    }
+
+    async generateText(prompt, options = {}) {
+        const modelName = this.resolveModel(options.model);
+
+        try {
+            let messages;
+            if (Array.isArray(prompt)) {
+                // Convert chat history to Ollama format
+                messages = prompt.map(msg => ({
+                    role: msg.role || 'user',
+                    content: msg.content || msg.parts?.[0]?.text || ''
+                }));
+            } else {
+                messages = [{ role: 'user', content: prompt }];
+            }
+
+            const response = await fetch(`${this.baseUrl}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: modelName,
+                    messages,
+                    stream: false,
+                    options: {
+                        temperature: options.temperature || 0.7,
+                        top_p: options.top_p || 0.9,
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Ollama API error (${response.status}): ${errorText}`);
+            }
+
+            const data = await response.json();
+            return data.message?.content || data.response || '';
+        } catch (error) {
+            console.error('Ollama generateText error:', error);
+            throw new Error(`Failed to connect to Ollama: ${error.message}. Ensure Ollama is running on ${this.baseUrl}`);
+        }
+    }
+
+    async generateJSON(prompt, options = {}) {
+        const modelName = this.resolveModel(options.model);
+
+        try {
+            const jsonPrompt = typeof prompt === 'string'
+                ? `${prompt}\n\nReturn the result as a valid JSON object only, with no additional text or markdown.`
+                : prompt;
+
+            const textResponse = await this.generateText(jsonPrompt, options);
+
+            try {
+                // Clean markdown code blocks if present
+                const cleanText = textResponse.replace(/```json\n?|\n?```/g, '').trim();
+                return JSON.parse(cleanText);
+            } catch (parseError) {
+                console.error('Failed to parse JSON response:', textResponse);
+                throw new Error('AI response was not valid JSON');
+            }
+        } catch (error) {
+            console.error('Ollama generateJSON error:', error);
+            throw error;
+        }
+    }
+}
+
+/**
+ * LM Studio Provider Implementation
+ * Supports local LM Studio instances compatible with OpenAI API
+ */
+class LMStudioProvider extends BaseAIProvider {
+    constructor(config = AI_CONFIG.providers.lmstudio) {
+        super(config);
+        this.baseUrl = config.baseUrl || 'http://localhost:1234/v1';
+        this.defaultModel = config.defaultModel || 'local-model';
+        console.log(`LMStudioProvider initialized with baseUrl: ${this.baseUrl}, model: ${this.defaultModel}`);
+    }
+
+    resolveModel(modelKey) {
+        if (this.config.models && this.config.models[modelKey]) {
+            return this.config.models[modelKey];
+        }
+        return modelKey || this.defaultModel;
+    }
+
+    async generateText(prompt, options = {}) {
+        const modelName = this.resolveModel(options.model);
+
+        try {
+            let messages;
+            if (Array.isArray(prompt)) {
+                // Convert chat history to OpenAI format
+                messages = prompt.map(msg => ({
+                    role: msg.role || 'user',
+                    content: msg.content || msg.parts?.[0]?.text || ''
+                }));
+            } else {
+                messages = [{ role: 'user', content: prompt }];
+            }
+
+            const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: modelName,
+                    messages,
+                    temperature: options.temperature || 0.7,
+                    max_tokens: options.max_tokens || 2000,
+                    stream: false
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`LM Studio API error (${response.status}): ${errorText}`);
+            }
+
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content || '';
+        } catch (error) {
+            console.error('LM Studio generateText error:', error);
+            throw new Error(`Failed to connect to LM Studio: ${error.message}. Ensure LM Studio is running on ${this.baseUrl}`);
+        }
+    }
+
+    async generateJSON(prompt, options = {}) {
+        const modelName = this.resolveModel(options.model);
+
+        try {
+            let messages;
+            const jsonPrompt = typeof prompt === 'string'
+                ? `${prompt}\n\nReturn the result as a valid JSON object only, with no additional text or markdown.`
+                : prompt;
+
+            if (Array.isArray(jsonPrompt)) {
+                messages = jsonPrompt;
+            } else {
+                messages = [{ role: 'user', content: jsonPrompt }];
+            }
+
+            const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: modelName,
+                    messages,
+                    temperature: options.temperature || 0.3,
+                    max_tokens: options.max_tokens || 2000,
+                    response_format: { type: 'json_object' }, // Request JSON mode if supported
+                    stream: false
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`LM Studio API error (${response.status}): ${errorText}`);
+            }
+
+            const data = await response.json();
+            const textResponse = data.choices?.[0]?.message?.content || '';
+
+            try {
+                // Clean markdown code blocks if present
+                const cleanText = textResponse.replace(/```json\n?|\n?```/g, '').trim();
+                return JSON.parse(cleanText);
+            } catch (parseError) {
+                console.error('Failed to parse JSON response:', textResponse);
+                throw new Error('AI response was not valid JSON');
+            }
+        } catch (error) {
+            console.error('LM Studio generateJSON error:', error);
+            throw error;
+        }
+    }
+}
+
+/**
  * Mock Provider for Testing
  */
 class MockProvider extends BaseAIProvider {
@@ -146,8 +346,9 @@ export const getAIProvider = () => {
 
     const type = AI_CONFIG.defaultProvider;
 
-    if (AI_CONFIG.global.mockInDevelopment && !process.env.GEMINI_API_KEY) {
-        console.log('Using Mock AI Provider');
+    // Use mock provider in test/development if no API key
+    if (AI_CONFIG.global.mockInDevelopment && type === 'gemini' && !process.env.GEMINI_API_KEY) {
+        console.log('Using Mock AI Provider (no Gemini API key found)');
         instance = new MockProvider({});
         return instance;
     }
@@ -155,10 +356,23 @@ export const getAIProvider = () => {
     switch (type) {
         case 'gemini':
             instance = new GeminiProvider();
+            console.log('✓ Using Gemini AI Provider');
             break;
-        // Future: case 'openai': instance = new OpenAIProvider(); break;
+        case 'ollama':
+            instance = new OllamaProvider();
+            console.log('✓ Using Ollama Local LLM Provider');
+            break;
+        case 'lmstudio':
+            instance = new LMStudioProvider();
+            console.log('✓ Using LM Studio Local LLM Provider');
+            break;
+        case 'openai':
+            // Future: instance = new OpenAIProvider();
+            console.warn('OpenAI provider not yet implemented, falling back to Gemini');
+            instance = new GeminiProvider();
+            break;
         default:
-            console.warn(`Unknown provider ${type}, falling back to Gemini`);
+            console.warn(`Unknown provider "${type}", falling back to Gemini`);
             instance = new GeminiProvider();
     }
     return instance;

@@ -203,14 +203,12 @@ import workflowEngine from "./services/workflowEngine.js"; // Bootstrap event ho
 import healthRoutes from "./routes/health.js";
 import performanceRoutes from "./routes/performance.js";
 import tenantRoutes from "./routes/tenants.js";
-import auditRoutes from "./routes/audit.js";
 import servicesRoutes from "./routes/services.js";
 import dbRouterRoutes from "./routes/dbRouter.js";
 import authorizationRoutes from "./routes/authorization.js";
 import outboxRoutes from "./routes/outbox.js";
 import softDeleteRoutes from "./routes/softDelete.js";
 import milestoneRoutes from "./routes/milestones.js";
-import forecastRoutes from "./routes/forecasts.js";
 import goalSharingRoutes from "./routes/goalSharing.js";
 import goalContributionSmoothingRoutes from "./routes/goalContributionSmoothing.js";
 import budgetGuardrailRoutes from "./routes/budgetGuardrails.js";
@@ -224,7 +222,6 @@ import goalConflictResolverRoutes from "./routes/goalConflictResolver.js";
 import expenseAnomalyGoalImpactRoutes from "./routes/expenseAnomalyGoalImpact.js";
 import goalLiquidityStressRoutes from "./routes/goalLiquidityStress.js";
 import incomeVolatilityPlannerRoutes from "./routes/incomeVolatilityPlanner.js";
-import rebalancingRoutes from "./routes/rebalancing.js";
 
 // Import DB Router
 import { initializeDBRouter } from "./services/dbRouterService.js";
@@ -477,216 +474,10 @@ const startServer = async () => {
       } else {
         next();
       }
-    },
-      credentials: true,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-Requested-With",
-      "Accept",
-      "Origin",
-      "Access-Control-Request-Method",
-      "Access-Control-Request-Headers",
-    ],
-      exposedHeaders: ["Content-Range", "X-Content-Range", "Authorization"],
-      preflightContinue: false,
-      optionsSuccessStatus: 204,
-  }),
-);
-app.use(morgan("combined"));
-app.use(compression());
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Security: Sanitize user input to prevent XSS and NoSQL injection
-app.use(sanitizeMongo);
-app.use(sanitizeInput);
-
-// Response wrapper and pagination middleware
-app.use(responseWrapper);
-app.use(paginationMiddleware());
-
-// Database routing middleware (read/write split)
-app.use(attachDBConnection({
-  enableSessionTracking: true,
-  preferReplicas: process.env.PREFER_REPLICAS !== 'false'
-}));
-
-// Logng and monitrng midlware
-app.use(requestIdMiddleware);
-app.use(auditRequestIdMiddleware); // Add audit request correlation
-app.use(requestLogger);
-app.use(performanceMiddleware);
-app.use(analyticsMiddleware);
-app.use(auditLogger);
-
-// Additional CORS headers middleware
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", req.headers.origin);
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization",
-  );
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-  );
-
-  // Handle preflight requests
-  if (req.method === "OPTIONS") {
-    res.sendStatus(204);
-  } else {
-    next();
-  }
-});
-
-// Import database configuration
-// Database configuration is handled via Drizzle in individual modules
-console.log("📦 Database initialized via Drizzle");
-
-// Apply general rate limiting to all API routes
-app.use("/api", generalLimiter);
-
-// Autopilot trigger interceptor — fires workflow events post-response
-app.use("/api", triggerInterceptor);
-
-// Swagger API Documentation
-app.use(
-  "/api-docs",
-  swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec, {
-    customCss: ".swagger-ui .topbar { display: none }",
-    customSiteTitle: "Wealth Vault API Docs",
-  }),
-);
-
-// Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/users", userLimiter, userRoutes);
-app.use("/api/expenses", userLimiter, securityGuard, expenseRoutes);
-app.use("/api/goals", userLimiter, goalRoutes);
-app.use("/api/lifestyle-inflation", userLimiter, lifestyleInflationRoutes);
-app.use("/api/retirement-monte-carlo", userLimiter, retirementMonteCarloRoutes);
-app.use("/api/goal-early-warning", userLimiter, goalEarlyWarningRoutes);
-app.use("/api/deadline-reforecast", userLimiter, deadlineReforecastRoutes);
-app.use("/api/savings-velocity", userLimiter, savingsVelocityRoutes);
-app.use("/api/goal-conflicts", userLimiter, goalConflictResolverRoutes);
-app.use("/api/expense-anomaly-impact", userLimiter, expenseAnomalyGoalImpactRoutes);
-app.use("/api/goal-liquidity-stress", userLimiter, goalLiquidityStressRoutes);
-app.use("/api/income-volatility-planner", userLimiter, incomeVolatilityPlannerRoutes);
-app.use("/api/categories", userLimiter, categoryRoutes);
-app.use("/api/smart-categorization", userLimiter, smartCategorizationRoutes);
-app.use("/api/analytics", userLimiter, analyticsRoutes);
-app.use("/api/interlock", userLimiter, interlockRoutes);
-// Apply presence tracker to all protected routes
-app.use("/api", presenceTracker);
-app.use("/api/vaults", userLimiter, vaultRoutes);
-app.use("/api/budgets", userLimiter, budgetRoutes);
-app.use("/api/smart-alerts", userLimiter, smartAlerts);
-app.use("/api/expense-shares", userLimiter, expenseSharesRoutes);
-app.use("/api/reimbursements", userLimiter, reimbursementsRoutes);
-app.use("/api/interlock", userLimiter, interlockRoutes);
-app.use("/api/reports", userLimiter, reportRoutes);
-app.use("/api/private-debt", userLimiter, privateDebtRoutes);
-app.use("/api/debts", userLimiter, debtRoutes);
-app.use("/api/wallets", userLimiter, walletRoutes);
-app.use("/api/fx", userLimiter, fxRoutes);
-app.use("/api/forecasts", userLimiter, forecastRoutes);
-app.use("/api/cash-flow", userLimiter, cashFlowRoutes);
-app.use("/api/monte-carlo", userLimiter, monteCarloRoutes);
-app.use("/api/gemini", aiLimiter, geminiRouter);
-app.use("/api/currencies", userLimiter, currenciesRoutes);
-app.use("/api/audit", userLimiter, auditRoutes);
-app.use("/api/log-redaction", userLimiter, logRedactionRoutes);
-app.use("/api/security", userLimiter, securityRoutes);
-app.use("/api/subscriptions", userLimiter, subscriptionRoutes);
-app.use("/api/assets", userLimiter, assetRoutes);
-app.use("/api/advisor", userLimiter, allocationAdvisorRoutes);
-app.use("/api/governance", userLimiter, governanceRoutes);
-app.use("/api/tax", userLimiter, taxRoutes);
-app.use("/api/tax/optimization", userLimiter, taxOptimizationRoutes);
-app.use("/api/tax-advisor", userLimiter, taxDeductionAdvisorRoutes);
-app.use("/api/simulations", userLimiter, simulationRoutes);
-app.use("/api/business", userLimiter, businessRoutes);
-app.use("/api/payroll", userLimiter, payrollRoutes);
-app.use("/api/vault-consolidation", userLimiter, vaultConsolidationRoutes);
-app.use("/api/inventory", userLimiter, inventoryRoutes);
-app.use("/api/margin", userLimiter, marginRoutes);
-app.use("/api/clearing", userLimiter, clearingRoutes);
-app.use("/api/recurring-payments", userLimiter, recurringPaymentsRoutes);
-app.use("/api/categorization", userLimiter, categorizationRoutes);
-app.use("/api/currency-portfolio", userLimiter, currencyPortfolioRoutes);
-app.use("/api/rebalancing", userLimiter, rebalancingRoutes);
-app.use("/api/recommendations", userLimiter, recommendationsRoutes);
-app.use("/api/replay", userLimiter, replayRoutes);
-app.use("/api/succession", userLimiter, successionRoutes);
-app.use("/api/entities", userLimiter, securityGuard, entityRoutes);
-app.use("/api/liquidity", userLimiter, liquidityOptimizerRoutes);
-app.use("/api/forensic", userLimiter, forensicRoutes);
-app.use("/api/yields", userLimiter, yieldsRoutes);
-app.use("/api/arbitrage", userLimiter, arbitrageRoutes);
-app.use("/api/autopilot", userLimiter, autopilotRoutes);
-app.use("/api/escrow", userLimiter, escrowRoutes);
-app.use("/api/risk-lab", userLimiter, riskLabRoutes);
-app.use("/api/corporate", userLimiter, corporateRoutes);
-app.use("/api/succession-plan", userLimiter, successionApiRoutes);
-app.use("/api/compliance", complianceRoutes);
-app.use("/api/liquidity/graph", userLimiter, liquidityGraphRoutes);
-app.use("/api/dynasty-trusts", userLimiter, dynastyTrustsRoutes);
-app.use("/api/spv", userLimiter, spvOwnershipRoutes);
-app.use("/api/derivatives", userLimiter, derivativesRoutes);
-app.use("/api/passion-assets", userLimiter, passionAssetsRoutes);
-app.use("/api/philanthropy", userLimiter, philanthropyRoutes);
-
-
-app.use("/api/health", healthRoutes);
-app.use("/api/performance", userLimiter, performanceRoutes);
-app.use("/api/tenants", userLimiter, tenantRoutes);
-app.use("/api/audit", userLimiter, auditRoutes);
-app.use("/api/db-router", userLimiter, dbRouterRoutes);
-
-
-// Family Financial Planning routes
-app.use("/api/family", userLimiter, familyRoutes);
-
-// Secure file server for uploaded files
-app.use("/uploads", createFileServerRoute());
-
-// Health check endpoint
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "OK",
-    message: "Wealth Vault API is running",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// 404 handler for undefined routes (must be before error handler)
-app.use(notFound);
-
-// Add error logging middleware
-app.use(errorLogger);
-
-// DB routing error handler (must be before general error handler)
-app.use(dbRoutingErrorHandler());
-
-// Centralized error handling middleware (must be last)
-app.use(globalErrorHandler);
-
-const PORT = process.env.PORT || 5000;
-
-if (process.env.NODE_ENV !== 'test') {
-  cascadeMonitorJob.start();
-  topologyGarbageCollector.start();
-  wealthSimulationJob.start();
-  app.listen(PORT, () => {
-    logInfo('Server started successfully', {
-      port: PORT,
-      environment: process.env.NODE_ENV || 'development',
-      frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000"
     });
+
+    // Serve uploaded files securely
+    app.use("/uploads", createFileServerRoute());
 
     // Import database configuration
     // Database configuration is handled via Drizzle in individual modules
@@ -708,7 +499,7 @@ if (process.env.NODE_ENV !== 'test') {
       }),
     );
 
-    // --- API Routes Registration ---
+    // Routes
     app.use("/api/auth", authRoutes);
     app.use("/api/users", userLimiter, userRoutes);
     app.use("/api/expenses", userLimiter, securityGuard, expenseRoutes);
