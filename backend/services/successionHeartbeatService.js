@@ -1,7 +1,8 @@
-import { db } from '../db/index.js';
+import { db } from '../config/db.js';
 import { successionPlans, successionHeartbeats } from '../db/schema.js';
 import { eq, and, lt, sql } from 'drizzle-orm';
 import { consensusTransitionEngine } from './consensusTransitionEngine.js';
+import { publicRecordOracle } from './publicRecordOracle.js';
 
 export const successionHeartbeatService = {
     async recordHeartbeat(userId, source, ipAddress) {
@@ -38,15 +39,37 @@ export const successionHeartbeatService = {
             );
 
         for (const plan of expiredPlans) {
-            console.log(`Plan ${plan.id} for user ${plan.userId} entered GRACE PERIOD.`);
-            await db.update(successionPlans)
-                .set({
-                    status: 'grace_period',
-                    updatedAt: new Date()
-                })
-                .where(eq(successionPlans.id, plan.id));
+            console.log(`Plan ${plan.id} for user ${plan.userId} passed inactivity threshold. Checking Oracle...`);
 
-            // TODO: Send alert to user via Email/App saying they have X days to check in
+            // NEW: Oracle Proof-of-Life Check (#783)
+            const oracleResult = await publicRecordOracle.checkPublicRecords(plan.userId);
+
+            if (oracleResult.found) {
+                console.log(`[Oracle Verification] Match confirmed for user ${plan.userId}. Bypassing grace period.`);
+
+                await db.update(successionPlans)
+                    .set({
+                        status: 'triggered',
+                        oracleVerifiedDeath: true,
+                        oracleLastCheckAt: new Date(),
+                        triggeredAt: new Date(),
+                        updatedAt: new Date()
+                    })
+                    .where(eq(successionPlans.id, plan.id));
+
+                await consensusTransitionEngine.triggerSuccession(plan.id);
+            } else {
+                console.log(`Plan ${plan.id} for user ${plan.userId} entered GRACE PERIOD.`);
+                await db.update(successionPlans)
+                    .set({
+                        status: 'grace_period',
+                        oracleLastCheckAt: new Date(),
+                        updatedAt: new Date()
+                    })
+                    .where(eq(successionPlans.id, plan.id));
+
+                // TODO: Send alert to user via Email/App saying they have X days to check in
+            }
         }
 
         // 2. Identify users whose grace period has expired

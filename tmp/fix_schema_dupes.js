@@ -1,3 +1,9 @@
+const fs = require('fs');
+const content = fs.readFileSync('backend/db/schema.js', 'utf8');
+const lines = content.split('\n');
+
+function findExportBlocks(lines) {
+    const blocks = [];
 /**
  * fix_schema_dupes.js
  *  
@@ -35,6 +41,9 @@ function findExportBlocks(lines) {
         if (m) {
             const name = m[1];
             const start = i;
+            let end = i;
+            let j = i + 1;
+            let depth = 0;
             // Find end of this block: next line that starts a new top-level export/import/comment section
             let end = i;
             let j = i + 1;
@@ -53,6 +62,8 @@ function findExportBlocks(lines) {
                 if (depth <= 0) break;
                 j++;
             }
+            if (end + 1 < lines.length && lines[end + 1].trim() === ';') end++;
+            while (end + 1 < lines.length && lines[end + 1].trim() === '') end++;
             // Include trailing semicolon line if next line is blank or ;
             if (end + 1 < lines.length && lines[end + 1].trim() === ';') {
                 end++;
@@ -79,6 +90,27 @@ for (const block of blocks) {
     byName[block.name].push(block);
 }
 
+const linesToRemove = new Set();
+for (const [name, blockList] of Object.entries(byName)) {
+    if (blockList.length > 1) {
+        console.log(`Duplicate: ${name} (${blockList.length} occurrences)`);
+        // Special case for auditLogs: keep first (line 122) as it was the one with more fields in previous analysis
+        // For others, keep last
+        if (name === 'auditLogs') {
+            blockList.slice(1).forEach(b => {
+                for (let k = b.start; k <= b.end; k++) linesToRemove.add(k);
+            });
+        } else {
+            blockList.slice(0, -1).forEach(b => {
+                for (let k = b.start; k <= b.end; k++) linesToRemove.add(k);
+            });
+        }
+    }
+}
+
+const newLines = lines.filter((_, i) => !linesToRemove.has(i));
+fs.writeFileSync('backend/db/schema.js', newLines.join('\n'));
+console.log(`Cleaned schema.js. Original: ${lines.length}, New: ${newLines.length}`);
 // Find duplicates
 const dupes = Object.entries(byName).filter(([k, v]) => v.length > 1);
 console.log('Duplicate exports found:');

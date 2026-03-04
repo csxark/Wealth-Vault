@@ -56,6 +56,7 @@
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0",
     "xss": "^1.0.15",
+    "zod": "^4.3.6",
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
