@@ -274,6 +274,26 @@ class AlertNotificationService {
     }
 
     /**
+     * Generate ESG compliance alert
+     * @param {String} userId - User ID
+     * @param {Number} complianceScore - ESG compliance score
+     * @param {Boolean} flagged - Whether assets are flagged
+     * @returns {Object} ESG compliance alert
+     */
+    static generateESGAlert(userId, complianceScore, flagged) {
+        return {
+            userId,
+            alertType: 'esg_compliance',
+            severity: complianceScore < 60 ? 'high' : complianceScore < 80 ? 'medium' : 'low',
+            message: complianceScore < 80 ? `ESG compliance low: ${complianceScore}%. Review flagged assets.` : 'Portfolio is ESG compliant.',
+            flagged,
+            createdAt: new Date(),
+            isRead: false,
+            isResolved: false
+        };
+    }
+
+    /**
      * Filter alerts based on criteria
      * @param {Array} alerts - Alerts to filter
      * @param {Object} criteria - Filter criteria
