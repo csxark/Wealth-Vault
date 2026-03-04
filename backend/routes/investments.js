@@ -529,3 +529,20 @@ router.put('/portfolios/:id/rebalancing/settings', [
 });
 
 export default router;
+/**
+ * @route   POST /api/investments/fee/optimize
+ * @desc    Analyze investment account fees and generate optimization alerts
+ * @access  Private
+ */
+import InvestmentFeeOptimizationEngineService from "../services/investmentFeeOptimizationEngineService.js";
+import InvestmentAccount from "../models/investmentAccount.js";
+router.post("/fee/optimize", async (req, res) => {
+  const { userId, feeThreshold, simulationYears } = req.body;
+  const service = new InvestmentFeeOptimizationEngineService(InvestmentAccount);
+  try {
+    const result = await service.analyzeFees(userId, { feeThreshold, simulationYears });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
