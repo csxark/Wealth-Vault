@@ -692,6 +692,34 @@ export const expensesAPI = {
       });
     },
   },
+
+  // Voice Expense API - AI-Powered Voice Assistant
+  voiceExpense: {
+    // Create expense from voice input (text transcript or audio)
+    create: async (data: { transcript?: string; audioFile?: string }) => {
+      return apiRequest<{
+        success: boolean;
+        data: Expense;
+        voiceData: {
+          transcript: string;
+          extractedData: {
+            amount: number;
+            description: string;
+            category: string;
+            paymentMethod: string;
+            date: string;
+            location: string | null;
+            tags: string[];
+          };
+        };
+        roundUp: unknown;
+        message: string;
+      }>('/expenses/voice', {
+        method: 'POST',
+        data,
+      });
+    },
+  },
 };
 
 // Categories API
