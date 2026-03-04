@@ -210,3 +210,20 @@ router.get('/nexus/exposure', protect, asyncHandler(async (req, res) => {
 }));
 
 export default router;
+/**
+ * @route   POST /api/tax/deadline/alert
+ * @desc    Analyze tax filing deadlines and generate alerts
+ * @access  Private
+ */
+import TaxFilingDeadlineAlertService from "../services/taxFilingDeadlineAlertService.js";
+import TaxFiling from "../models/taxFiling.js";
+router.post("/deadline/alert", async (req, res) => {
+  const { userId, riskThreshold, lookbackYears } = req.body;
+  const service = new TaxFilingDeadlineAlertService(TaxFiling);
+  try {
+    const result = await service.analyzeDeadlines(userId, { riskThreshold, lookbackYears });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
