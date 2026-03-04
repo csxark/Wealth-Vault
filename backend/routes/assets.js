@@ -8,6 +8,7 @@ import projectionEngine from '../services/projectionEngine.js';
 import marketData from '../services/marketData.js';
 import riskEngine from '../services/riskEngine.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
+import AssetLiquidityForecasterService from '../services/assetLiquidityForecasterService.js';
 
 const router = express.Router();
 
@@ -111,7 +112,6 @@ router.get('/market/indices', protect, asyncHandler(async (req, res) => {
     new ApiResponse(200, indices, 'Market indices fetched successfully').send(res);
 }));
 
-
 /**
  * @route   GET /api/assets/risk-summary
  * @desc    Get quick risk overview for the asset dashboard
@@ -128,5 +128,26 @@ router.get('/risk-summary', protect, asyncHandler(async (req, res) => {
         riskLevel: beta > 1.2 ? 'high' : beta > 0.8 ? 'moderate' : 'low'
     }, 'Risk summary fetched successfully').send(res);
 }));
+
+/**
+ * Asset Liquidity Forecaster API Route
+ * POST /api/assets/liquidity/forecast
+ * Author: Ayaanshaikh12243
+ * Date: 2026-03-04
+ */
+router.post('/liquidity/forecast', async (req, res) => {
+    try {
+        const { assetData, marketData, userNeeds, options } = req.body;
+        if (!Array.isArray(assetData) || assetData.length === 0) {
+            return res.status(400).json({ error: 'assetData is required and must be a non-empty array.' });
+        }
+        const forecaster = new AssetLiquidityForecasterService(assetData, marketData, userNeeds, options);
+        const result = forecaster.runAnalysis();
+        res.json(result);
+    } catch (err) {
+        console.error('Liquidity forecast error:', err);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
 
 export default router;
