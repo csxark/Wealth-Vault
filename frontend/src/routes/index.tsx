@@ -256,6 +256,14 @@ export const routes = [
     )
   },
   {
+    path: '/challenges',
+    element: (
+      <ProtectedRoute>
+        <Challenges />
+      </ProtectedRoute>
+    )
+  },
+  {
     path: '/investments',
     element: (
       <ProtectedRoute>
