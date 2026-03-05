@@ -17,6 +17,7 @@ import  Home  from '../components/Home/Home';
 import TaxCenter from '../pages/TaxCenter';
 import SubscriptionTracker from '../pages/SubscriptionTracker';
 import GamificationDashboard from '../components/Gamification/GamificationDashboard';
+import Challenges from '../pages/Challenges';
 import PortfolioDashboard from '../components/Investments/PortfolioDashboard';
 import InvestmentRecommendations from '../components/Investments/InvestmentRecommendations';
 import RiskProfileAnalyzer from '../components/Investments/RiskProfileAnalyzer';
@@ -190,6 +191,14 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <GamificationDashboard />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/challenges',
+    element: (
+      <ProtectedRoute>
+        <Challenges />
       </ProtectedRoute>
     )
   },

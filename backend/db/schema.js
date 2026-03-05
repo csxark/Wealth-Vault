@@ -1677,6 +1677,148 @@ export const challengeParticipantsRelations = relations(challengeParticipants, (
     }),
 }));
 
+// ============================================
+// SOCIAL CHALLENGE TABLES
+// ============================================
+
+// Challenge Comments Table
+export const challengeComments = pgTable('challenge_comments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    challengeId: uuid('challenge_id').references(() => challenges.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    content: text('content').notNull(),
+    parentCommentId: uuid('parent_comment_id').references(() => challengeComments.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Challenge Likes/Hearts Table
+export const challengeLikes = pgTable('challenge_likes', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    challengeId: uuid('challenge_id').references(() => challenges.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Challenge Activity Feed Table
+export const challengeActivity = pgTable('challenge_activity', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    challengeId: uuid('challenge_id').references(() => challenges.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    activityType: text('activity_type').notNull(), // 'joined', 'completed', 'milestone', 'comment', 'like', 'created'
+    metadata: jsonb('metadata').default({}),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Challenge Templates Table (predefined challenges)
+export const challengeTemplates = pgTable('challenge_templates', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    title: text('title').notNull(),
+    description: text('description'),
+    targetType: text('target_type').notNull(), // 'save_amount', 'reduce_expense', 'increase_income'
+    targetAmount: numeric('target_amount', { precision: 12, scale: 2 }).notNull(),
+    defaultDurationDays: integer('default_duration_days').notNull().default(30),
+    difficulty: text('difficulty').default('medium'), // 'easy', 'medium', 'hard'
+    category: text('category').notNull(), // 'savings', 'budgeting', 'debt_payoff', 'emergency_fund', 'investment'
+    icon: text('icon'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+// User Challenge Stats Table
+export const userChallengeStats = pgTable('user_challenge_stats', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    totalChallengesJoined: integer('total_challenges_joined').default(0),
+    totalChallengesCompleted: integer('total_challenges_completed').default(0),
+    totalChallengesCreated: integer('total_challenges_created').default(0),
+    totalWins: integer('total_wins').default(0), // Number of times finished #1
+    bestStreak: integer('best_streak').default(0), // Longest consecutive challenge completions
+    currentStreak: integer('current_streak').default(0),
+    totalPointsEarned: integer('total_points_earned').default(0),
+    averageFinishPosition: numeric('average_finish_position', { precision: 5, scale: 2 }).default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Challenge Invitations Table
+export const challengeInvitations = pgTable('challenge_invitations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    challengeId: uuid('challenge_id').references(() => challenges.id, { onDelete: 'cascade' }).notNull(),
+    inviterId: uuid('inviter_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    inviteeId: uuid('invitee_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    status: text('status').default('pending'), // 'pending', 'accepted', 'declined', 'expired'
+    createdAt: timestamp('created_at').defaultNow(),
+    respondedAt: timestamp('responded_at'),
+});
+
+// Relations for Social Challenge Tables
+export const challengeCommentsRelations = relations(challengeComments, ({ one }) => ({
+    challenge: one(challenges, {
+        fields: [challengeComments.challengeId],
+        references: [challenges.id],
+    }),
+    user: one(users, {
+        fields: [challengeComments.userId],
+        references: [users.id],
+    }),
+    parentComment: one(challengeComments, {
+        fields: [challengeComments.parentCommentId],
+        references: [challengeComments.id],
+        relationName: 'parent_comment'
+    }),
+}));
+
+export const challengeLikesRelations = relations(challengeLikes, ({ one }) => ({
+    challenge: one(challenges, {
+        fields: [challengeLikes.challengeId],
+        references: [challenges.id],
+    }),
+    user: one(users, {
+        fields: [challengeLikes.userId],
+        references: [users.id],
+    }),
+}));
+
+export const challengeActivityRelations = relations(challengeActivity, ({ one }) => ({
+    challenge: one(challenges, {
+        fields: [challengeActivity.challengeId],
+        references: [challenges.id],
+    }),
+    user: one(users, {
+        fields: [challengeActivity.userId],
+        references: [users.id],
+    }),
+}));
+
+export const challengeTemplatesRelations = relations(challengeTemplates, ({ many }) => ({
+    // No relations needed for templates
+}));
+
+export const userChallengeStatsRelations = relations(userChallengeStats, ({ one }) => ({
+    user: one(users, {
+        fields: [userChallengeStats.userId],
+        references: [users.id],
+    }),
+}));
+
+export const challengeInvitationsRelations = relations(challengeInvitations, ({ one }) => ({
+    challenge: one(challenges, {
+        fields: [challengeInvitations.challengeId],
+        references: [challenges.id],
+    }),
+    inviter: one(users, {
+        fields: [challengeInvitations.inviterId],
+        references: [users.id],
+        relationName: 'challenge_inviter'
+    }),
+    invitee: one(users, {
+        fields: [challengeInvitations.inviteeId],
+        references: [users.id],
+        relationName: 'challenge_invitee'
+    }),
+}));
+
 // Emergency Fund Goals Table
 export const emergencyFundGoals = pgTable('emergency_fund_goals', {
     id: uuid('id').defaultRandom().primaryKey(),

@@ -1,6 +1,20 @@
 import { eq, and, desc, gte, lte, or, sql } from 'drizzle-orm';
 import db from '../config/db.js';
-import { challenges, challengeParticipants, users, expenses, categories } from '../db/schema.js';
+import { 
+  challenges, 
+  challengeParticipants, 
+  users, 
+  expenses, 
+  categories,
+  challengeComments,
+  challengeLikes,
+  challengeActivity,
+  challengeTemplates,
+  userChallengeStats,
+  challengeInvitations,
+  userPoints,
+  goals
+} from '../db/schema.js';
 import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
 import notificationService from './notificationService.js';
 
@@ -523,6 +537,583 @@ const calculateExpenseReductionProgress = async (userId, categoryId, startDate, 
   }
 };
 
+/**
+ * Get global leaderboard across all users
+ * @param {Object} filters - Filter options
+ * @returns {Promise<Array>} - Global leaderboard
+ */
+export const getGlobalLeaderboard = async (filters = {}) => {
+  try {
+    const { limit = 50, timeframe = 'all' } = filters;
+    
+    let dateFilter = new Date(0); // Default to all time
+    if (timeframe === 'weekly') {
+      dateFilter = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    } else if (timeframe === 'monthly') {
+      dateFilter = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    }
+
+    // Get user stats with their gamification points
+    const leaderboard = await db
+      .select({
+        userId: userPoints.userId,
+        totalPoints: userPoints.totalPoints,
+        currentLevel: userPoints.currentLevel,
+        totalChallengesCompleted: userChallengeStats.totalChallengesCompleted,
+        totalWins: userChallengeStats.totalWins,
+        currentStreak: userChallengeStats.currentStreak,
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profilePicture: users.profilePicture
+        }
+      })
+      .from(userPoints)
+      .leftJoin(userChallengeStats, eq(userPoints.userId, userChallengeStats.userId))
+      .innerJoin(users, eq(userPoints.userId, users.id))
+      .orderBy(desc(userPoints.totalPoints))
+      .limit(limit);
+
+    return leaderboard.map((entry, index) => ({
+      ...entry,
+      rank: index + 1
+    }));
+  } catch (error) {
+    console.error('Error fetching global leaderboard:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get challenge categories
+ * @returns {Promise<Array>} - List of challenge categories
+ */
+export const getChallengeCategories = async () => {
+  try {
+    return [
+      { id: 'savings', name: 'Savings', icon: '💰', description: 'Save money for goals' },
+      { id: 'budgeting', name: 'Budgeting', icon: '📊', description: 'Manage your budget' },
+      { id: 'debt_payoff', name: 'Debt Payoff', icon: '💳', description: 'Pay off debt faster' },
+      { id: 'emergency_fund', name: 'Emergency Fund', icon: '🛡️', description: 'Build emergency savings' },
+      { id: 'investment', name: 'Investment', icon: '📈', description: 'Grow your investments' },
+      { id: 'spending', name: 'Spending', icon: '🛒', description: 'Reduce unnecessary spending' }
+    ];
+  } catch (error) {
+    console.error('Error fetching challenge categories:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get challenge templates
+ * @param {Object} filters - Filter options
+ * @returns {Promise<Array>} - List of challenge templates
+ */
+export const getChallengeTemplates = async (filters = {}) => {
+  try {
+    const { category, difficulty } = filters;
+    
+    let whereConditions = [eq(challengeTemplates.isActive, true)];
+    
+    if (category) {
+      whereConditions.push(eq(challengeTemplates.category, category));
+    }
+    if (difficulty) {
+      whereConditions.push(eq(challengeTemplates.difficulty, difficulty));
+    }
+
+    const templates = await db
+      .select()
+      .from(challengeTemplates)
+      .where(and(...whereConditions))
+      .orderBy(challengeTemplates.category);
+
+    return templates;
+  } catch (error) {
+    console.error('Error fetching challenge templates:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get user's challenge statistics
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - User's challenge stats
+ */
+export const getUserChallengeStats = async (userId) => {
+  try {
+    // Get or create user stats
+    let [stats] = await db
+      .select()
+      .from(userChallengeStats)
+      .where(eq(userChallengeStats.userId, userId));
+
+    if (!stats) {
+      [stats] = await db
+        .insert(userChallengeStats)
+        .values({ userId })
+        .returning();
+    }
+
+    // Get gamification points
+    const [points] = await db
+      .select()
+      .from(userPoints)
+      .where(eq(userPoints.userId, userId));
+
+    return {
+      ...stats,
+      totalPoints: points?.totalPoints || 0,
+      level: points?.currentLevel || 1
+    };
+  } catch (error) {
+    console.error('Error fetching user challenge stats:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get challenge comments
+ * @param {string} challengeId - Challenge ID
+ * @returns {Promise<Array>} - List of comments
+ */
+export const getChallengeComments = async (challengeId) => {
+  try {
+    const comments = await db
+      .select({
+        id: challengeComments.id,
+        content: challengeComments.content,
+        createdAt: challengeComments.createdAt,
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profilePicture: users.profilePicture
+        }
+      })
+      .from(challengeComments)
+      .innerJoin(users, eq(challengeComments.userId, users.id))
+      .where(eq(challengeComments.challengeId, challengeId))
+      .orderBy(desc(challengeComments.createdAt));
+
+    return comments;
+  } catch (error) {
+    console.error('Error fetching challenge comments:', error);
+    throw error;
+  }
+};
+
+/**
+ * Add a comment to a challenge
+ * @param {string} challengeId - Challenge ID
+ * @param {string} userId - User ID
+ * @param {string} content - Comment content
+ * @returns {Promise<Object>} - Created comment
+ */
+export const addChallengeComment = async (challengeId, userId, content) => {
+  try {
+    const [comment] = await db
+      .insert(challengeComments)
+      .values({
+        challengeId,
+        userId,
+        content
+      })
+      .returning();
+
+    // Log activity
+    await db
+      .insert(challengeActivity)
+      .values({
+        challengeId,
+        userId,
+        activityType: 'comment',
+        metadata: { commentId: comment.id }
+      });
+
+    return comment;
+  } catch (error) {
+    console.error('Error adding challenge comment:', error);
+    throw error;
+  }
+};
+
+/**
+ * Like a challenge
+ * @param {string} challengeId - Challenge ID
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Created like
+ */
+export const likeChallenge = async (challengeId, userId) => {
+  try {
+    const [like] = await db
+      .insert(challengeLikes)
+      .values({
+        challengeId,
+        userId
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    if (!like) {
+      throw new Error('Already liked');
+    }
+
+    // Log activity
+    await db
+      .insert(challengeActivity)
+      .values({
+        challengeId,
+        userId,
+        activityType: 'like'
+      });
+
+    return like;
+  } catch (error) {
+    if (error.message === 'Already liked') {
+      throw error;
+    }
+    console.error('Error liking challenge:', error);
+    throw error;
+  }
+};
+
+/**
+ * Unlike a challenge
+ * @param {string} challengeId - Challenge ID
+ * @param {string} userId - User ID
+ */
+export const unlikeChallenge = async (challengeId, userId) => {
+  try {
+    await db
+      .delete(challengeLikes)
+      .where(and(
+        eq(challengeLikes.challengeId, challengeId),
+        eq(challengeLikes.userId, userId)
+      ));
+  } catch (error) {
+    console.error('Error unliking challenge:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get challenge like count and check if user liked
+ * @param {string} challengeId - Challenge ID
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Like info
+ */
+export const getChallengeLikes = async (challengeId, userId) => {
+  try {
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(challengeLikes)
+      .where(eq(challengeLikes.challengeId, challengeId));
+
+    const [userLike] = await db
+      .select()
+      .from(challengeLikes)
+      .where(and(
+        eq(challengeLikes.challengeId, challengeId),
+        eq(challengeLikes.userId, userId)
+      ));
+
+    return {
+      likeCount: count || 0,
+      isLiked: !!userLike
+    };
+  } catch (error) {
+    console.error('Error fetching challenge likes:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get challenge activity feed
+ * @param {string} challengeId - Challenge ID
+ * @returns {Promise<Array>} - List of activities
+ */
+export const getChallengeActivity = async (challengeId) => {
+  try {
+    const activities = await db
+      .select({
+        id: challengeActivity.id,
+        activityType: challengeActivity.activityType,
+        metadata: challengeActivity.metadata,
+        createdAt: challengeActivity.createdAt,
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profilePicture: users.profilePicture
+        }
+      })
+      .from(challengeActivity)
+      .innerJoin(users, eq(challengeActivity.userId, users.id))
+      .where(eq(challengeActivity.challengeId, challengeId))
+      .orderBy(desc(challengeActivity.createdAt))
+      .limit(50);
+
+    return activities;
+  } catch (error) {
+    console.error('Error fetching challenge activity:', error);
+    throw error;
+  }
+};
+
+/**
+ * Invite a user to a challenge
+ * @param {string} challengeId - Challenge ID
+ * @param {string} inviterId - Inviter user ID
+ * @param {string} inviteeId - Invitee user ID
+ * @returns {Promise<Object>} - Created invitation
+ */
+export const inviteToChallenge = async (challengeId, inviterId, inviteeId) => {
+  try {
+    // Check if challenge exists
+    const [challenge] = await db
+      .select()
+      .from(challenges)
+      .where(eq(challenges.id, challengeId));
+
+    if (!challenge) {
+      throw new Error('Challenge not found');
+    }
+
+    // Check if already participating
+    const [existingParticipant] = await db
+      .select()
+      .from(challengeParticipants)
+      .where(and(
+        eq(challengeParticipants.challengeId, challengeId),
+        eq(challengeParticipants.userId, inviteeId)
+      ));
+
+    if (existingParticipant) {
+      throw new Error('User is already participating in this challenge');
+    }
+
+    // Create invitation
+    const [invitation] = await db
+      .insert(challengeInvitations)
+      .values({
+        challengeId,
+        inviterId,
+        inviteeId,
+        status: 'pending'
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    if (!invitation) {
+      throw new Error('Invitation already exists');
+    }
+
+    // Send notification
+    const [invitee] = await db
+      .select({ firstName: users.firstName })
+      .from(users)
+      .where(eq(users.id, inviteeId));
+
+    await notificationService.sendNotification(inviteeId, {
+      title: 'Challenge Invitation!',
+      message: `You've been invited to join the challenge: ${challenge.title}`,
+      type: 'info'
+    });
+
+    return invitation;
+  } catch (error) {
+    console.error('Error inviting to challenge:', error);
+    throw error;
+  }
+};
+
+/**
+ * Respond to a challenge invitation
+ * @param {string} invitationId - Invitation ID
+ * @param {string} userId - User ID
+ * @param {boolean} accept - Whether to accept the invitation
+ * @returns {Promise<Object>} - Updated invitation
+ */
+export const respondToInvitation = async (invitationId, userId, accept) => {
+  try {
+    const [invitation] = await db
+      .select()
+      .from(challengeInvitations)
+      .where(and(
+        eq(challengeInvitations.id, invitationId),
+        eq(challengeInvitations.inviteeId, userId),
+        eq(challengeInvitations.status, 'pending')
+      ));
+
+    if (!invitation) {
+      throw new Error('Invitation not found or already responded');
+    }
+
+    const [updatedInvitation] = await db
+      .update(challengeInvitations)
+      .set({
+        status: accept ? 'accepted' : 'declined',
+        respondedAt: new Date()
+      })
+      .where(eq(challengeInvitations.id, invitationId))
+      .returning();
+
+    if (accept) {
+      // Auto-join the challenge
+      const [challenge] = await db
+        .select()
+        .from(challenges)
+        .where(eq(challenges.id, invitation.challengeId));
+
+      await joinChallenge(invitation.challengeId, userId, parseFloat(challenge.targetAmount));
+    }
+
+    return updatedInvitation;
+  } catch (error) {
+    console.error('Error responding to invitation:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get user's challenge invitations
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} - List of invitations
+ */
+export const getUserInvitations = async (userId) => {
+  try {
+    const invitations = await db
+      .select({
+        id: challengeInvitations.id,
+        status: challengeInvitations.status,
+        createdAt: challengeInvitations.createdAt,
+        challenge: {
+          id: challenges.id,
+          title: challenges.title,
+          description: challenges.description,
+          targetType: challenges.targetType,
+          targetAmount: challenges.targetAmount,
+          endDate: challenges.endDate
+        },
+        inviter: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName
+        }
+      })
+      .from(challengeInvitations)
+      .innerJoin(challenges, eq(challengeInvitations.challengeId, challenges.id))
+      .innerJoin(users, eq(challengeInvitations.inviterId, users.id))
+      .where(and(
+        eq(challengeInvitations.inviteeId, userId),
+        eq(challengeInvitations.status, 'pending')
+      ))
+      .orderBy(desc(challengeInvitations.createdAt));
+
+    return invitations;
+  } catch (error) {
+    console.error('Error fetching user invitations:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a challenge from a template
+ * @param {string} templateId - Template ID
+ * @param {string} creatorId - Creator user ID
+ * @param {Object} overrides - Override values
+ * @returns {Promise<Object>} - Created challenge
+ */
+export const createChallengeFromTemplate = async (templateId, creatorId, overrides = {}) => {
+  try {
+    const [template] = await db
+      .select()
+      .from(challengeTemplates)
+      .where(and(
+        eq(challengeTemplates.id, templateId),
+        eq(challengeTemplates.isActive, true)
+      ));
+
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + template.defaultDurationDays);
+
+    const challengeData = {
+      creatorId,
+      title: overrides.title || template.title,
+      description: overrides.description || template.description,
+      targetType: template.targetType,
+      targetAmount: overrides.targetAmount || template.targetAmount,
+      startDate: new Date(),
+      endDate: overrides.endDate || endDate,
+      difficulty: overrides.difficulty || template.difficulty,
+      category: template.category,
+      isPublic: overrides.isPublic !== undefined ? overrides.isPublic : true,
+      maxParticipants: overrides.maxParticipants
+    };
+
+    return await createChallenge(challengeData);
+  } catch (error) {
+    console.error('Error creating challenge from template:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get recommended challenges for a user
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} - List of recommended challenges
+ */
+export const getRecommendedChallenges = async (userId) => {
+  try {
+    // Get user's active goals to recommend relevant challenges
+    const userGoals = await db
+      .select({
+        type: goals.type,
+        categoryId: goals.categoryId
+      })
+      .from(goals)
+      .where(and(
+        eq(goals.userId, userId),
+        eq(goals.status, 'active')
+      ));
+
+    // Get recommended public challenges based on user's goals
+    const recommended = await db
+      .select({
+        id: challenges.id,
+        title: challenges.title,
+        description: challenges.description,
+        targetType: challenges.targetType,
+        targetAmount: challenges.targetAmount,
+        currency: challenges.currency,
+        endDate: challenges.endDate,
+        metadata: challenges.metadata,
+        participantCount: sql<number>`count(${challengeParticipants.id})`
+      })
+      .from(challenges)
+      .leftJoin(challengeParticipants, eq(challenges.id, challengeParticipants.challengeId))
+      .where(and(
+        eq(challenges.isPublic, true),
+        eq(challenges.status, 'active'),
+        gte(challenges.endDate, new Date())
+      ))
+      .groupBy(challenges.id)
+      .orderBy(desc(challengeParticipants.id))
+      .limit(10);
+
+    return recommended;
+  } catch (error) {
+    console.error('Error fetching recommended challenges:', error);
+    throw error;
+  }
+};
+
 export default {
   createChallenge,
   getPublicChallenges,
@@ -530,5 +1121,21 @@ export default {
   joinChallenge,
   updateProgress,
   getChallengeLeaderboard,
-  calculateAutomaticProgress
+  calculateAutomaticProgress,
+  // New social features
+  getGlobalLeaderboard,
+  getChallengeCategories,
+  getChallengeTemplates,
+  getUserChallengeStats,
+  getChallengeComments,
+  addChallengeComment,
+  likeChallenge,
+  unlikeChallenge,
+  getChallengeLikes,
+  getChallengeActivity,
+  inviteToChallenge,
+  respondToInvitation,
+  getUserInvitations,
+  createChallengeFromTemplate,
+  getRecommendedChallenges
 };

@@ -445,4 +445,165 @@ router.post('/:id/calculate-progress', [
   }
 });
 
+// Global leaderboard endpoint
+router.get('/global-leaderboard', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const timeframe = req.query.timeframe as string || 'all';
+    const leaderboard = await challengeService.getGlobalLeaderboard({ limit, timeframe });
+    res.json({ success: true, data: leaderboard });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Challenge categories
+router.get('/categories', async (req, res) => {
+  try {
+    const categories = await challengeService.getChallengeCategories();
+    res.json({ success: true, data: categories });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Challenge templates
+router.get('/templates', async (req, res) => {
+  try {
+    const category = req.query.category as string | undefined;
+    const difficulty = req.query.difficulty as string | undefined;
+    const templates = await challengeService.getChallengeTemplates({ category, difficulty });
+    res.json({ success: true, data: templates });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Create from template
+router.post('/from-template/:templateId', async (req, res) => {
+  try {
+    const { templateId } = req.params;
+    const challenge = await challengeService.createChallengeFromTemplate(templateId, req.user.id, req.body);
+    res.status(201).json({ success: true, data: challenge });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// User stats
+router.get('/stats', async (req, res) => {
+  try {
+    const stats = await challengeService.getUserChallengeStats(req.user.id);
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Recommended challenges
+router.get('/recommended', async (req, res) => {
+  try {
+    const recommended = await challengeService.getRecommendedChallenges(req.user.id);
+    res.json({ success: true, data: recommended });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Comments
+router.get('/:id/comments', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comments = await challengeService.getChallengeComments(id);
+    res.json({ success: true, data: comments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/:id/comments', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+    const comment = await challengeService.addChallengeComment(id, req.user.id, content);
+    res.status(201).json({ success: true, data: comment });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Likes
+router.post('/:id/like', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await challengeService.likeChallenge(id, req.user.id);
+    res.json({ success: true, message: 'Liked' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.delete('/:id/like', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await challengeService.unlikeChallenge(id, req.user.id);
+    res.json({ success: true, message: 'Unliked' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/:id/likes', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const likes = await challengeService.getChallengeLikes(id, req.user.id);
+    res.json({ success: true, data: likes });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Activity
+router.get('/:id/activity', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const activity = await challengeService.getChallengeActivity(id);
+    res.json({ success: true, data: activity });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Invitations
+router.post('/:id/invite', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { inviteeId } = req.body;
+    await challengeService.inviteToChallenge(id, req.user.id, inviteeId);
+    res.json({ success: true, message: 'Invitation sent' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/invitations', async (req, res) => {
+  try {
+    const invitations = await challengeService.getUserInvitations(req.user.id);
+    res.json({ success: true, data: invitations });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/invitations/:id/respond', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { accept } = req.body;
+    await challengeService.respondToInvitation(id, req.user.id, accept);
+    res.json({ success: true, message: accept ? 'Accepted' : 'Declined' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;
