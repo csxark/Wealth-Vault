@@ -6,19 +6,25 @@ import { eq, and } from "drizzle-orm";
 import path from "path";
 import { fileURLToPath } from 'url';
 import db from "../config/db.js";
-import { users, categories, deviceSessions, securityEvents } from "../db/schema.js";
+import { users, categories, securityEvents, passwordResetTokens } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { uploadProfilePicture, saveUploadedFile } from "../middleware/fileUpload.js";
 import fileStorageService from "../services/fileStorageService.js";
 import { getDefaultCategories } from "../utils/defaults.js";
-import { authLimiter } from "../middleware/rateLimiter.js";
-import { validatePasswordStrength, isCommonPassword } from "../utils/passwordValidator.js";
-import { asyncHandler } from "../middleware/errorHandler.js";
-import { ValidationError, ConflictError, UnauthorizedError, NotFoundError } from "../utils/errors.js";
-import { 
-  createDeviceSession, 
-  refreshAccessToken, 
-  revokeDeviceSession, 
+import { authLimiter, passwordResetLimiter } from "../middleware/rateLimiter.js";
+import { validatePasswordStrength, isCommonPassword, validatePassword } from "../utils/passwordValidator.js";
+import { asyncHandler, ValidationError } from "../middleware/errorHandler.js";
+import { AppError } from "../utils/AppError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
+import successionService from "../services/successionService.js";
+import { hashPassword } from "../utils/auth.js";
+import { generatePasswordResetToken, verifyPasswordResetToken } from "../utils/passwordReset.js";
+import { sendPasswordResetEmail, sendPasswordResetSuccessEmail } from "../services/emailService.js";
+
+import {
+  createDeviceSession,
+  refreshAccessToken,
+  revokeDeviceSession,
   revokeAllUserSessions,
   getUserSessions,
   blacklistToken,
@@ -37,6 +43,7 @@ import {
 } from "../utils/mfa.js";
 import securityService from "../services/securityService.js";
 import { logAudit, AuditActions, ResourceTypes } from "../middleware/auditLogger.js";
+import { sendEmailVerification } from "../services/emailVerificationService.js";
 
 // Get __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -51,10 +58,10 @@ const router = express.Router();
 const getDeviceInfo = (req) => {
   const userAgent = req.get('User-Agent') || '';
   const deviceId = req.get('X-Device-ID') || req.get('Device-ID');
-  
+
   let deviceType = 'web';
   let deviceName = 'Unknown Device';
-  
+
   if (userAgent.includes('Mobile')) {
     deviceType = 'mobile';
     deviceName = 'Mobile Device';
@@ -68,7 +75,7 @@ const getDeviceInfo = (req) => {
   } else if (userAgent.includes('Safari')) {
     deviceName = 'Safari Browser';
   }
-  
+
   return {
     deviceId,
     deviceName,
@@ -134,15 +141,19 @@ router.post(
       .withMessage("Please provide a valid email")
       .normalizeEmail(),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Invalid email format", errors.array());
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format',
+        errors: errors.array()
+      });
     }
 
     const { email } = req.body;
     if (!email) {
-      throw new ValidationError("Email is required");
+      return next(new AppError(400, "Email is required"));
     }
 
     const [existingUser] = await db
@@ -150,7 +161,7 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
 
-    return res.success({ exists: !!existingUser }, 'Email check completed');
+    return new ApiResponse(200, { exists: !!existingUser }, 'Email check completed').send(res);
   })
 );
 
@@ -235,10 +246,14 @@ router.post(
       .isLength({ min: 1, max: 50 })
       .withMessage("Last name is required and must be less than 50 characters"),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Validation failed", errors.array());
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
     }
 
     const {
@@ -253,9 +268,9 @@ router.post(
 
     // Check for required fields
     if (!email || !password || !firstName || !lastName) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required fields: email, password, firstName, and lastName are required.' 
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: email, password, firstName, and lastName are required."
       });
     }
 
@@ -264,25 +279,35 @@ router.post(
       .from(users)
       .where(eq(users.email, email));
     if (existingUser) {
-      throw new ConflictError("User with this email already exists");
+      return res.status(409).json({
+        success: false,
+        message: "User with this email already exists"
+      });
     }
 
     // Check if password is common
     if (isCommonPassword(password)) {
-      throw new ValidationError("This password is too common. Please choose a more secure password.");
+      return res.status(400).json({
+        success: false,
+        message: "This password is too common. Please choose a more secure password."
+      });
     }
 
     // Validate password strength
     const passwordValidation = validatePasswordStrength(password, [email, firstName, lastName]);
     if (!passwordValidation.success) {
-      throw new ValidationError(passwordValidation.message, passwordValidation.feedback);
+      return res.status(400).json({
+        success: false,
+        message: passwordValidation.message,
+        errors: passwordValidation.feedback
+      });
     }
 
     // Hash password
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
+    // Create user (inactive until email verified)
     const [newUser] = await db
       .insert(users)
       .values({
@@ -293,6 +318,7 @@ router.post(
         currency: currency || "USD",
         monthlyIncome: monthlyIncome || "0",
         monthlyBudget: monthlyBudget || "0",
+        isActive: false, // User inactive until email verified
       })
       .returning();
 
@@ -312,10 +338,13 @@ router.post(
 
     await db.insert(categories).values(defaultCategoriesData);
 
-    // Create device session with enhanced tokens
-    const deviceInfo = getDeviceInfo(req);
-    const ipAddress = req.ip || req.connection.remoteAddress;
-    const tokens = await createDeviceSession(newUser.id, deviceInfo, ipAddress);
+    // Send email verification
+    try {
+      await sendEmailVerification(newUser.id);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      // Don't fail registration if email fails, but log it
+    }
 
     // Log successful registration
     logAudit(req, {
@@ -327,16 +356,16 @@ router.post(
       status: 'success',
     });
 
-    // Set refresh token as HttpOnly cookie
-    res.cookie('refreshToken', tokens.refreshToken, REFRESH_TOKEN_COOKIE_OPTIONS);
-
-    // Return response WITHOUT the refresh token in the body (it's in the cookie)
-    res.created({
-      user: getPublicProfile(newUser),
-      accessToken: tokens.accessToken,
-      sessionId: tokens.sessionId,
-      expiresIn: tokens.expiresIn,
-    }, "User registered successfully");
+    return new ApiResponse(201, {
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        emailVerified: false
+      },
+      requiresEmailVerification: true
+    }, "User registered successfully. Please check your email to verify your account.").send(res);
   })
 );
 
@@ -396,221 +425,370 @@ router.post(
     body("password").notEmpty().withMessage("Password is required"),
     body("mfaToken").optional().isString(),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Validation failed", errors.array());
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
 
     const { email, password, mfaToken } = req.body;
 
     // Check for required fields
     if (!email || !password) {
-      throw new ValidationError("Missing required fields: email and password are required.");
+      return next(new AppError(400, "Missing required fields: email and password are required."));
     }
 
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email));
-      if (!user) {
-        // Log failed login attempt
-        const ipAddress = req.ip || req.connection.remoteAddress;
-        const location = await securityService.getIPLocation(ipAddress);
-        await securityService.logSecurityEvent({
-          userId: user?.id,
-          eventType: 'login_failed',
-          ipAddress,
-          userAgent: req.get('User-Agent'),
-          location,
-          deviceInfo: getDeviceInfo(req),
-          status: 'warning',
-          details: { reason: 'invalid_credentials' },
-        });
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+    if (!user) {
+      // Log failed login attempt
+      const ipAddress = req.ip || req.connection.remoteAddress;
+      const location = await securityService.getIPLocation(ipAddress);
+      await securityService.logSecurityEvent({
+        userId: user?.id,
+        eventType: 'login_failed',
+        ipAddress,
+        userAgent: req.get('User-Agent'),
+        location,
+        deviceInfo: getDeviceInfo(req),
+        status: 'warning',
+        details: { reason: 'invalid_credentials' },
+      });
 
-        return res.status(401).json({
+      return next(new AppError(401, "Invalid credentials"));
+    }
+
+    if (!user.isActive) {
+      return next(new AppError(401, "Account is deactivated. Please contact support."));
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      // Log failed login attempt
+      const ipAddress = req.ip || req.connection.remoteAddress;
+      const location = await securityService.getIPLocation(ipAddress);
+      await securityService.logSecurityEvent({
+        userId: user.id,
+        eventType: 'login_failed',
+        ipAddress,
+        userAgent: req.get('User-Agent'),
+        location,
+        deviceInfo: getDeviceInfo(req),
+        status: 'warning',
+        details: { reason: 'invalid_password' },
+      });
+
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    // Check if email is verified
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Email not verified. Please check your email and verify your account before logging in.",
+        requiresEmailVerification: true,
+        email: user.email
+      });
+    }
+
+    // Check if MFA is enabled
+    if (user.mfaEnabled) {
+      if (!mfaToken) {
+        // MFA required but no token provided
+        return res.status(403).json({
           success: false,
-          message: "Invalid credentials",
+          message: "MFA token required",
+          mfaRequired: true,
         });
       }
 
-      if (!user.isActive) {
-        return res.status(401).json({
-          success: false,
-          message: "Account is deactivated. Please contact support.",
-        });
-      }
+      // Verify MFA token
+      const isValidToken = verifyTOTP(user.mfaSecret, mfaToken);
 
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        // Log failed login attempt
-        const ipAddress = req.ip || req.connection.remoteAddress;
-        const location = await securityService.getIPLocation(ipAddress);
-        await securityService.logSecurityEvent({
-          userId: user.id,
-          eventType: 'login_failed',
-          ipAddress,
-          userAgent: req.get('User-Agent'),
-          location,
-          deviceInfo: getDeviceInfo(req),
-          status: 'warning',
-          details: { reason: 'invalid_password' },
-        });
+      if (!isValidToken) {
+        // Try recovery code
+        const recoveryCodeIndex = verifyRecoveryCode(
+          mfaToken,
+          user.mfaRecoveryCodes || []
+        );
 
-        return res.status(401).json({
-          success: false,
-          message: "Invalid credentials",
-        });
-      }
+        if (recoveryCodeIndex === -1) {
+          // Log failed MFA attempt
+          const ipAddress = req.ip || req.connection.remoteAddress;
+          const location = await securityService.getIPLocation(ipAddress);
+          await securityService.logSecurityEvent({
+            userId: user.id,
+            eventType: 'login_failed',
+            ipAddress,
+            userAgent: req.get('User-Agent'),
+            location,
+            deviceInfo: getDeviceInfo(req),
+            status: 'warning',
+            details: { reason: 'invalid_mfa_token' },
+          });
 
-      // Check if MFA is enabled
-      if (user.mfaEnabled) {
-        if (!mfaToken) {
-          // MFA required but no token provided
-          return res.status(403).json({
+          return res.status(401).json({
             success: false,
-            message: "MFA token required",
-            mfaRequired: true,
+            message: "Invalid MFA token or recovery code",
           });
         }
 
-        // Verify MFA token
-        const isValidToken = verifyTOTP(user.mfaSecret, mfaToken);
-        
-        if (!isValidToken) {
-          // Try recovery code
-          const recoveryCodeIndex = verifyRecoveryCode(
-            mfaToken,
-            user.mfaRecoveryCodes || []
-          );
-
-          if (recoveryCodeIndex === -1) {
-            // Log failed MFA attempt
-            const ipAddress = req.ip || req.connection.remoteAddress;
-            const location = await securityService.getIPLocation(ipAddress);
-            await securityService.logSecurityEvent({
-              userId: user.id,
-              eventType: 'login_failed',
-              ipAddress,
-              userAgent: req.get('User-Agent'),
-              location,
-              deviceInfo: getDeviceInfo(req),
-              status: 'warning',
-              details: { reason: 'invalid_mfa_token' },
-            });
-
-            return res.status(401).json({
-              success: false,
-              message: "Invalid MFA token or recovery code",
-            });
-          }
-
-          // Mark recovery code as used
-          const updatedCodes = markRecoveryCodeAsUsed(user.mfaRecoveryCodes, recoveryCodeIndex);
-          await db
-            .update(users)
-            .set({ mfaRecoveryCodes: updatedCodes })
-            .where(eq(users.id, user.id));
-        }
+        // Mark recovery code as used
+        const updatedCodes = markRecoveryCodeAsUsed(user.mfaRecoveryCodes, recoveryCodeIndex);
+        await db
+          .update(users)
+          .set({ mfaRecoveryCodes: updatedCodes })
+          .where(eq(users.id, user.id));
       }
+    }
 
-      // Update last login
-      await db
-        .update(users)
-        .set({ lastLogin: new Date() })
-        .where(eq(users.id, user.id));
+    // Update last login
+    await db
+      .update(users)
+      .set({ lastLogin: new Date() })
+      .where(eq(users.id, user.id));
 
-      // Get IP and location
-      const ipAddress = req.ip || req.connection.remoteAddress;
-      const location = await securityService.getIPLocation(ipAddress);
-      const deviceInfo = getDeviceInfo(req);
+    // Update activity for Dead Man's Switch
+    await successionService.trackActivity(user.id, 'login');
 
-      // Check if this is a new/suspicious login
-      const isNewLogin = await securityService.isNewOrSuspiciousLogin(user.id, ipAddress);
-      
-      // Log successful login
-      const securityEvent = await securityService.logSecurityEvent({
+    // Get IP and location
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const location = await securityService.getIPLocation(ipAddress);
+    const deviceInfo = getDeviceInfo(req);
+
+    // Check if this is a new/suspicious login
+    const isNewLogin = await securityService.isNewOrSuspiciousLogin(user.id, ipAddress);
+
+    // Log successful login
+    const securityEvent = await securityService.logSecurityEvent({
+      userId: user.id,
+      eventType: 'login_success',
+      ipAddress,
+      userAgent: req.get('User-Agent'),
+      location,
+      deviceInfo,
+      status: isNewLogin ? 'warning' : 'info',
+      details: { mfaUsed: user.mfaEnabled },
+    });
+
+    // Send notification for new/suspicious logins
+    if (isNewLogin) {
+      await securityService.sendSecurityNotification(user, securityEvent);
+    }
+
+    // Detect suspicious activity
+    const suspicion = await securityService.detectSuspiciousActivity(user.id, ipAddress, location);
+    if (suspicion.isSuspicious) {
+      const suspiciousEvent = await securityService.logSecurityEvent({
         userId: user.id,
-        eventType: 'login_success',
+        eventType: 'suspicious_activity',
         ipAddress,
         userAgent: req.get('User-Agent'),
         location,
         deviceInfo,
-        status: isNewLogin ? 'warning' : 'info',
-        details: { mfaUsed: user.mfaEnabled },
+        status: 'critical',
+        details: { reasons: suspicion.reasons, riskLevel: suspicion.riskLevel },
       });
+      await securityService.sendSecurityNotification(user, suspiciousEvent);
+    }
 
-      // Send notification for new/suspicious logins
-      if (isNewLogin) {
-        await securityService.sendSecurityNotification(user, securityEvent);
-      }
+    // Create device session with enhanced tokens
+    const tokens = await createDeviceSession(user.id, deviceInfo, ipAddress);
 
-      // Detect suspicious activity
-      const suspicion = await securityService.detectSuspiciousActivity(user.id, ipAddress, location);
-      if (suspicion.isSuspicious) {
-        const suspiciousEvent = await securityService.logSecurityEvent({
-          userId: user.id,
-          eventType: 'suspicious_activity',
-          ipAddress,
-          userAgent: req.get('User-Agent'),
-          location,
-          deviceInfo,
-          status: 'critical',
-          details: { reasons: suspicion.reasons, riskLevel: suspicion.riskLevel },
-        });
-        await securityService.sendSecurityNotification(user, suspiciousEvent);
-      }
+    // Log successful login
+    logAudit(req, {
+      userId: user.id,
+      action: AuditActions.AUTH_LOGIN,
+      resourceType: ResourceTypes.USER,
+      resourceId: user.id,
+      metadata: { email: user.email },
+      status: 'success',
+    });
 
-      // Create device session with enhanced tokens
-      const tokens = await createDeviceSession(user.id, deviceInfo, ipAddress);
+    return new ApiResponse(200, {
+      user: getPublicProfile(user),
+      ...tokens,
+    }, "Login successful").send(res);
 
-      // Log successful login
-      logAudit(req, {
-        userId: user.id,
-        action: AuditActions.AUTH_LOGIN,
-        resourceType: ResourceTypes.USER,
-        resourceId: user.id,
-        metadata: { email: user.email },
-        status: 'success',
-      });
+  })
+);
 
-      // Set refresh token as HttpOnly cookie
-      res.cookie('refreshToken', tokens.refreshToken, REFRESH_TOKEN_COOKIE_OPTIONS);
+/**
+ * @swagger
+ * /auth/verify-email:
+ *   post:
+ *     summary: Verify user email with token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Email verification token
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post(
+  "/verify-email",
+  [
+    body("token")
+      .notEmpty()
+      .withMessage("Verification token is required"),
+  ],
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new AppError(400, "Validation failed", errors.array()));
+    }
 
-      // Return response WITHOUT the refresh token in the body (it's in the cookie)
-      res.json({
-        success: true,
-        message: "Login successful",
-        data: {
-          user: getPublicProfile(user),
-          accessToken: tokens.accessToken,
-          sessionId: tokens.sessionId,
-          expiresIn: tokens.expiresIn,
-        },
-      });
+    const { token } = req.body;
+
+    const { verifyEmail } = await import("../services/emailVerificationService.js");
+    const result = await verifyEmail(token);
+
+    if (!result.success) {
+      return next(new AppError(400, result.message));
+    }
+
+    // Activate the user account now that email is verified
+    await db
+      .update(users)
+      .set({ isActive: true, updatedAt: new Date() })
+      .where(eq(users.id, result.user.id));
+
+    // Log email verification
+    logAudit(req, {
+      userId: result.user.id,
+      action: AuditActions.AUTH_VERIFY_EMAIL,
+      resourceType: ResourceTypes.USER,
+      resourceId: result.user.id,
+      metadata: { email: result.user.email },
+      status: 'success',
+    });
+
+    return new ApiResponse(200, {
+      user: result.user,
+      emailVerified: true
+    }, "Email verified successfully. Your account is now active.").send(res);
+  })
+);
+
+/**
+ * @swagger
+ * /auth/resend-verification:
+ *   post:
+ *     summary: Resend email verification
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: User's email address
+ *     responses:
+ *       200:
+ *         description: Verification email sent
+ *       400:
+ *         description: Email already verified or user not found
+ *       429:
+ *         $ref: '#/components/responses/RateLimitError'
+ */
+router.post(
+  "/resend-verification",
+  process.env.NODE_ENV === 'test' ? [] : authLimiter,
+  [
+    body("email")
+      .isEmail()
+      .withMessage("Please provide a valid email")
+      .normalizeEmail(),
+  ],
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new AppError(400, "Validation failed", errors.array()));
+    }
+
+    const { email } = req.body;
+
+    // Find user by email
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+
+    if (!user) {
+      // Don't reveal if email exists or not for security
+      return new ApiResponse(200, {}, "If the email exists in our system, a verification email has been sent.").send(res);
+    }
+
+    if (user.emailVerified) {
+      return next(new AppError(400, "Email is already verified"));
+    }
+
+    // Send verification email (as reminder)
+    const { sendEmailVerification } = await import("../services/emailVerificationService.js");
+    try {
+      await sendEmailVerification(user.id, true); // true for reminder
+    } catch (emailError) {
+      console.error('Failed to send verification reminder:', emailError);
+      return next(new AppError(500, "Failed to send verification email"));
+    }
+
+    // Log resend verification
+    logAudit(req, {
+      userId: user.id,
+      action: AuditActions.AUTH_RESEND_VERIFICATION,
+      resourceType: ResourceTypes.USER,
+      resourceId: user.id,
+      metadata: { email: user.email },
+      status: 'success',
+    });
+
+    return new ApiResponse(200, {}, "Verification email sent successfully.").send(res);
   })
 );
 
 // @route   GET /api/auth/me
 // @desc    Get current user profile
 // @access  Private
-router.get("/me", protect, asyncHandler(async (req, res) => {
+router.get("/me", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
 
-  // Fetch user with categories using relational query if possible, or separate queries
-  // Drizzle relations allows db.query.users.findFirst
+  // Fetch user with categories using relational query if possible
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
     with: {
       categories: true,
+      shadowEntities: true,
     },
   });
 
   if (!user) {
-    throw new NotFoundError('User');
+    return next(new AppError(404, "User not found"));
   }
 
-  return res.success({ user: getPublicProfile(user) }, 'Profile retrieved successfully');
+  return new ApiResponse(200, { user: getPublicProfile(user) }, 'Profile retrieved successfully').send(res);
 }));
 
 // @route   PUT /api/auth/profile
@@ -629,10 +807,10 @@ router.put(
     body("monthlyBudget").optional().isFloat({ min: 0 }),
     body("emergencyFund").optional().isFloat({ min: 0 }),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Validation failed", errors.array());
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
 
     const updateFields = {};
@@ -673,7 +851,7 @@ router.put(
       status: 'success',
     });
 
-    return res.success({ user: getPublicProfile(updatedUser) }, "Profile updated successfully");
+    return new ApiResponse(200, { user: getPublicProfile(updatedUser) }, "Profile updated successfully").send(res);
   })
 );
 
@@ -687,10 +865,10 @@ router.put(
     body("currentPassword").notEmpty(),
     body("newPassword").isLength({ min: 6 }),
   ],
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      throw new ValidationError("Validation failed", errors.array());
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
 
     const { currentPassword, newPassword } = req.body;
@@ -701,23 +879,23 @@ router.put(
 
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
-      throw new ValidationError("Current password is incorrect");
+      return next(new AppError(400, "Current password is incorrect"));
     }
 
     // Check if new password is the same as current password
     if (currentPassword === newPassword) {
-      throw new ValidationError("New password must be different from current password");
+      return next(new AppError(400, "New password must be different from current password"));
     }
 
     // Check if password is common
     if (isCommonPassword(newPassword)) {
-      throw new ValidationError("This password is too common. Please choose a more secure password.");
+      return next(new AppError(400, "This password is too common. Please choose a more secure password."));
     }
 
     // Validate new password strength
     const passwordValidation = validatePasswordStrength(newPassword, [user.email, user.firstName, user.lastName]);
     if (!passwordValidation.success) {
-      throw new ValidationError(passwordValidation.message, passwordValidation.feedback);
+      return next(new AppError(400, passwordValidation.message, passwordValidation.feedback));
     }
 
     const salt = await bcrypt.genSalt(12);
@@ -731,7 +909,7 @@ router.put(
     // Revoke all other sessions for security
     const currentSessionId = req.sessionId;
     const allSessions = await getUserSessions(user.id);
-    
+
     for (const session of allSessions) {
       if (session.id !== currentSessionId) {
         await revokeDeviceSession(session.id, user.id, 'password_change');
@@ -748,54 +926,45 @@ router.put(
       status: 'success',
     });
 
-    return res.success(null, "Password changed successfully. Other sessions have been logged out for security.");
+    return new ApiResponse(200, null, "Password changed successfully. Other sessions have been logged out for security.").send(res);
   })
 );
 
 // @route   POST /api/auth/refresh
 // @desc    Refresh access token using refresh token (reads from HttpOnly cookie)
 // @access  Public
-router.post("/refresh", 
-  asyncHandler(async (req, res) => {
-    // Read refresh token from HttpOnly cookie (not from request body)
-    const refreshToken = req.cookies?.refreshToken;
-    
-    if (!refreshToken) {
-      throw new ValidationError("Refresh token not found. Please login again.");
+router.post("/refresh",
+  [
+    body("refreshToken").notEmpty().withMessage("Refresh token is required"),
+  ],
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new AppError(400, "Validation failed", errors.array()));
     }
 
+    const { refreshToken } = req.body;
+
     const ipAddress = req.ip || req.connection.remoteAddress;
-    
-    // This will perform token rotation and return new tokens
+
     const tokens = await refreshAccessToken(refreshToken, ipAddress);
-    
-    // Set new refresh token as HttpOnly cookie
-    res.cookie('refreshToken', tokens.refreshToken, REFRESH_TOKEN_COOKIE_OPTIONS);
-    
-    // Return response WITHOUT the refresh token in the body (it's in the cookie)
-    res.json({
-      success: true,
-      message: "Token refreshed successfully",
-      data: {
-        accessToken: tokens.accessToken,
-        expiresIn: tokens.expiresIn,
-        sessionId: tokens.sessionId,
-      },
-    });
+
+    return new ApiResponse(200, tokens, "Token refreshed successfully").send(res);
+
   })
 );
 
 // @route   POST /api/auth/logout
 // @desc    Logout user from current device and clear refresh token cookie
 // @access  Private
-router.post("/logout", protect, asyncHandler(async (req, res) => {
+router.post("/logout", protect, asyncHandler(async (req, res, next) => {
   const sessionId = req.sessionId;
   const userId = req.user.id;
-  
+
   if (sessionId) {
     await revokeDeviceSession(sessionId, userId, 'logout');
   }
-  
+
   // Log logout
   logAudit(req, {
     userId,
@@ -804,28 +973,18 @@ router.post("/logout", protect, asyncHandler(async (req, res) => {
     resourceId: sessionId,
     status: 'success',
   });
-  
-  // Clear the refresh token cookie
-  res.clearCookie('refreshToken', {
-    path: '/',
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-  });
-  
-  res.json({ 
-    success: true, 
-    message: "Logged out successfully" 
-  });
+
+  return new ApiResponse(200, null, "Logged out successfully").send(res);
+
 }));
 
 // @route   POST /api/auth/logout-all
 // @desc    Logout user from all devices
 // @access  Private
-router.post("/logout-all", protect, asyncHandler(async (req, res) => {
+router.post("/logout-all", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const revokedCount = await revokeAllUserSessions(userId, 'logout_all');
-  
+
   // Log logout from all devices
   logAudit(req, {
     userId,
@@ -834,35 +993,31 @@ router.post("/logout-all", protect, asyncHandler(async (req, res) => {
     metadata: { devicesLoggedOut: revokedCount },
     status: 'success',
   });
-  
-  res.json({ 
-    success: true, 
-    message: `Logged out from ${revokedCount} devices successfully` 
-  });
+
+  return new ApiResponse(200, null, `Logged out from ${revokedCount} devices successfully`).send(res);
+
 }));
 
 // @route   GET /api/auth/sessions
 // @desc    Get user's active sessions
 // @access  Private
-router.get("/sessions", protect, asyncHandler(async (req, res) => {
+router.get("/sessions", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const sessions = await getUserSessions(userId);
-  
-  res.json({
-    success: true,
-    data: { sessions },
-  });
+
+  return new ApiResponse(200, { sessions }, "User's active sessions retrieved successfully").send(res);
+
 }));
 
 // @route   DELETE /api/auth/sessions/:sessionId
 // @desc    Revoke specific session
 // @access  Private
-router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => {
+router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res, next) => {
   const { sessionId } = req.params;
   const userId = req.user.id;
-  
+
   await revokeDeviceSession(sessionId, userId, 'manual_revoke');
-  
+
   // Log session revocation
   logAudit(req, {
     userId,
@@ -871,7 +1026,7 @@ router.delete("/sessions/:sessionId", protect, asyncHandler(async (req, res) => 
     resourceId: sessionId,
     status: 'success',
   });
-  
+
   res.json({
     success: true,
     message: "Session revoked successfully",
@@ -885,13 +1040,13 @@ router.post(
   "/upload-profile-picture",
   protect,
   uploadProfilePicture,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     if (!req.file) {
-      throw new ValidationError('No file uploaded');
+      return next(new ValidationError('No file uploaded'));
     }
 
     const userId = req.user.id;
-    
+
     // Sav fil using secur storag servic
     const savedFile = await fileStorageService.saveFile(
       req.file.buffer,
@@ -899,17 +1054,17 @@ router.post(
       userId,
       'profile'
     );
-    
+
     // Updat usr profil with new pictur URL
     const [updatedUser] = await db
       .update(users)
-      .set({ 
+      .set({
         profilePicture: savedFile.url,
-        updatedAt: new Date() 
+        updatedAt: new Date()
       })
       .where(eq(users.id, userId))
       .returning();
-    
+
     // Log profile picture upload
     logAudit(req, {
       userId,
@@ -919,14 +1074,15 @@ router.post(
       metadata: { filename: savedFile.filename, size: savedFile.size },
       status: 'success',
     });
-    
-    return res.success({
+
+    return new ApiResponse(200, {
+
       profilePicture: savedFile.url,
       fileInfo: {
         size: savedFile.size,
         filename: savedFile.filename
       }
-    }, 'Profile picture uploaded successfully');
+    }, 'Profile picture uploaded successfully').send(res);
   })
 );
 
@@ -936,28 +1092,28 @@ router.post(
 router.delete(
   "/delete-profile-picture",
   protect,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
     const [user] = await db.select().from(users).where(eq(users.id, userId));
-    
+
     if (user.profilePicture) {
       // Extrac fil path from URL
       const fileName = user.profilePicture.split('/').pop();
       const filePath = path.join('uploads', 'profiles', fileName);
-      
+
       // Delet fil from storag
       await fileStorageService.deleteFile(filePath, userId);
     }
-    
+
     // Updat usr profil to remov pictur URL
     await db
       .update(users)
-      .set({ 
+      .set({
         profilePicture: '',
-        updatedAt: new Date() 
+        updatedAt: new Date()
       })
       .where(eq(users.id, userId));
-    
+
     // Log profile picture deletion
     logAudit(req, {
       userId,
@@ -966,8 +1122,9 @@ router.delete(
       resourceId: userId,
       status: 'success',
     });
-    
-    return res.success(null, 'Profile picture deleted successfully');
+
+    return new ApiResponse(200, null, 'Profile picture deleted successfully').send(res);
+
   })
 );
 
@@ -977,11 +1134,12 @@ router.delete(
 router.get(
   "/storage-usage",
   protect,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
     const usage = await fileStorageService.getUserStorageUsage(userId);
-    
-    return res.success({
+
+    return new ApiResponse(200, {
+
       usage: {
         totalSize: usage.totalSize,
         fileCount: usage.fileCount,
@@ -989,7 +1147,7 @@ router.get(
         remainingSpace: USER_STORAGE_QUOTA - usage.totalSize,
         usagePercentage: Math.round((usage.totalSize / USER_STORAGE_QUOTA) * 100)
       }
-    }, 'Storage usage retrieved successfully');
+    }, 'Storage usage retrieved successfully').send(res);
   })
 );
 
@@ -1007,15 +1165,12 @@ router.get(
  *       200:
  *         description: MFA setup initiated
  */
-router.post("/mfa/setup", protect, asyncHandler(async (req, res) => {
+router.post("/mfa/setup", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
   if (user.mfaEnabled) {
-    return res.status(400).json({
-      success: false,
-      message: "MFA is already enabled for this account",
-    });
+    return next(new AppError(400, "MFA is already enabled for this account"));
   }
 
   // Generate MFA secret
@@ -1038,16 +1193,12 @@ router.post("/mfa/setup", protect, asyncHandler(async (req, res) => {
     })
     .where(eq(users.id, userId));
 
-  res.json({
-    success: true,
-    message: "MFA setup initiated. Scan QR code with authenticator app.",
-    data: {
-      secret,
-      qrCode,
-      recoveryCodes, // Show these only once
-      otpauth_url,
-    },
-  });
+  return new ApiResponse(200, {
+    secret,
+    qrCode,
+    recoveryCodes, // Show these only once
+    otpauth_url,
+  }, "MFA setup initiated. Scan QR code with authenticator app.").send(res);
 }));
 
 /**
@@ -1076,10 +1227,10 @@ router.post("/mfa/setup", protect, asyncHandler(async (req, res) => {
  */
 router.post("/mfa/verify", protect, [
   body("token").notEmpty().isLength({ min: 6, max: 6 }),
-], asyncHandler(async (req, res) => {
+], asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
+    return next(new AppError(400, "Validation failed", errors.array()));
   }
 
   const { token } = req.body;
@@ -1087,27 +1238,18 @@ router.post("/mfa/verify", protect, [
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
   if (user.mfaEnabled) {
-    return res.status(400).json({
-      success: false,
-      message: "MFA is already enabled",
-    });
+    return next(new AppError(400, "MFA is already enabled"));
   }
 
   if (!user.mfaSecret) {
-    return res.status(400).json({
-      success: false,
-      message: "MFA setup not initiated. Call /mfa/setup first.",
-    });
+    return next(new AppError(400, "MFA setup not initiated. Call /mfa/setup first."));
   }
 
   // Verify token
   const isValid = verifyTOTP(user.mfaSecret, token);
 
   if (!isValid) {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid MFA token",
-    });
+    return next(new AppError(401, "Invalid MFA token"));
   }
 
   // Enable MFA
@@ -1136,10 +1278,7 @@ router.post("/mfa/verify", protect, [
   // Send notification
   await securityService.sendSecurityNotification(user, securityEvent);
 
-  res.json({
-    success: true,
-    message: "MFA enabled successfully",
-  });
+  return new ApiResponse(200, null, "MFA enabled successfully").send(res);
 }));
 
 /**
@@ -1171,10 +1310,10 @@ router.post("/mfa/verify", protect, [
 router.post("/mfa/disable", protect, [
   body("password").notEmpty(),
   body("token").optional().isLength({ min: 6, max: 6 }),
-], asyncHandler(async (req, res) => {
+], asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
+    return next(new AppError(400, "Validation failed", errors.array()));
   }
 
   const { password, token } = req.body;
@@ -1204,10 +1343,7 @@ router.post("/mfa/disable", protect, [
       // Try recovery code
       const recoveryCodeIndex = verifyRecoveryCode(token, user.mfaRecoveryCodes || []);
       if (recoveryCodeIndex === -1) {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid MFA token or recovery code",
-        });
+        return next(new AppError(401, "Invalid MFA token or recovery code"));
       }
     }
   }
@@ -1240,10 +1376,7 @@ router.post("/mfa/disable", protect, [
   // Send notification
   await securityService.sendSecurityNotification(user, securityEvent);
 
-  res.json({
-    success: true,
-    message: "MFA disabled successfully",
-  });
+  return new ApiResponse(200, null, "MFA disabled successfully").send(res);
 }));
 
 /**
@@ -1255,23 +1388,17 @@ router.post("/mfa/disable", protect, [
  *     security:
  *       - bearerAuth: []
  */
-router.get("/mfa/recovery-codes", protect, asyncHandler(async (req, res) => {
+router.get("/mfa/recovery-codes", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
   if (!user.mfaEnabled) {
-    return res.status(400).json({
-      success: false,
-      message: "MFA is not enabled",
-    });
+    return next(new AppError(400, "MFA is not enabled"));
   }
 
   const status = getRecoveryCodeStatus(user.mfaRecoveryCodes || []);
 
-  res.json({
-    success: true,
-    data: status,
-  });
+  return new ApiResponse(200, status, "Recovery code status retrieved").send(res);
 }));
 
 /**
@@ -1296,10 +1423,10 @@ router.get("/mfa/recovery-codes", protect, asyncHandler(async (req, res) => {
  */
 router.post("/mfa/regenerate-recovery-codes", protect, [
   body("password").notEmpty(),
-], asyncHandler(async (req, res) => {
+], asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    throw new ValidationError("Validation failed", errors.array());
+    return next(new AppError(400, "Validation failed", errors.array()));
   }
 
   const { password } = req.body;
@@ -1335,13 +1462,9 @@ router.post("/mfa/regenerate-recovery-codes", protect, [
     })
     .where(eq(users.id, userId));
 
-  res.json({
-    success: true,
-    message: "Recovery codes regenerated. Save these in a safe place.",
-    data: {
-      recoveryCodes,
-    },
-  });
+  return new ApiResponse(200, {
+    recoveryCodes,
+  }, "Recovery codes regenerated. Save these in a safe place.").send(res);
 }));
 
 /**
@@ -1359,19 +1482,16 @@ router.post("/mfa/regenerate-recovery-codes", protect, [
  *           type: integer
  *           default: 50
  */
-router.get("/security/events", protect, asyncHandler(async (req, res) => {
+router.get("/security/events", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const limit = parseInt(req.query.limit) || 50;
 
   const events = await securityService.getUserSecurityEvents(userId, limit);
 
-  res.json({
-    success: true,
-    data: {
-      events,
-      count: events.length,
-    },
-  });
+  return new ApiResponse(200, {
+    events,
+    count: events.length,
+  }, "Security events retrieved successfully").send(res);
 }));
 
 /**
@@ -1383,21 +1503,153 @@ router.get("/security/events", protect, asyncHandler(async (req, res) => {
  *     security:
  *       - bearerAuth: []
  */
-router.get("/mfa/status", protect, asyncHandler(async (req, res) => {
+router.get("/mfa/status", protect, asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
-  const recoveryCodeStatus = user.mfaEnabled ? 
-    getRecoveryCodeStatus(user.mfaRecoveryCodes || []) : 
+  const recoveryCodeStatus = user.mfaEnabled ?
+    getRecoveryCodeStatus(user.mfaRecoveryCodes || []) :
     null;
 
-  res.json({
-    success: true,
-    data: {
-      mfaEnabled: user.mfaEnabled,
-      recoveryCodesStatus: recoveryCodeStatus,
-    },
+  return new ApiResponse(200, {
+    mfaEnabled: user.mfaEnabled,
+    recoveryCodesStatus: recoveryCodeStatus,
+  }, "MFA status retrieved").send(res);
+}));
+
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Request password reset
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: User's email address
+ *     responses:
+ *       200:
+ *         description: Password reset email sent
+ *       400:
+ *         description: Invalid email or rate limited
+ *       404:
+ *         description: User not found
+ */
+router.post("/forgot-password", passwordResetLimiter, asyncHandler(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email || !email.includes("@")) {
+    return new ApiResponse(400, null, "Valid email is required").send(res);
+  }
+
+  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
+
+  if (!user) {
+    // Don't reveal if user exists or not for security
+    return new ApiResponse(200, null, "If an account with that email exists, a password reset link has been sent.").send(res);
+  }
+
+  // Generate password reset token
+  const { token, hashedToken } = await generatePasswordResetToken();
+
+  // Save token to database
+  await db.insert(passwordResetTokens).values({
+    userId: user.id,
+    token: hashedToken,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
   });
+
+  // Send password reset email
+  try {
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
+    await sendPasswordResetEmail({ email: user.email, userName: user.name, resetToken: token, resetUrl });
+  } catch (error) {
+    console.error("Failed to send password reset email:", error);
+    // Don't fail the request, just log the error
+  }
+
+  return new ApiResponse(200, null, "If an account with that email exists, a password reset link has been sent.").send(res);
+}));
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset password using token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Password reset token from email
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *                 description: New password
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid token or password
+ *       404:
+ *         description: Token not found or expired
+ */
+router.post("/reset-password", passwordResetLimiter, asyncHandler(async (req, res, next) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    return new ApiResponse(400, null, "Token and password are required").send(res);
+  }
+
+  // Validate password strength
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.isValid) {
+    return new ApiResponse(400, null, passwordValidation.message).send(res);
+  }
+
+  // Verify token
+  const tokenData = await verifyPasswordResetToken(token);
+  if (!tokenData) {
+    return new ApiResponse(400, null, "Invalid or expired token").send(res);
+  }
+
+  // Hash new password
+  const hashedPassword = await hashPassword(password);
+
+  // Update user password
+  await db.update(users)
+    .set({ password: hashedPassword })
+    .where(eq(users.id, tokenData.userId));
+
+  // Delete used token
+  await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, tokenData.id));
+
+  // Send success email
+  try {
+    const [user] = await db.select().from(users).where(eq(users.id, tokenData.userId));
+    await sendPasswordResetSuccessEmail({ email: user.email, userName: user.name, timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.error("Failed to send password reset success email:", error);
+  }
+
+  return new ApiResponse(200, null, "Password reset successfully").send(res);
 }));
 
 export default router;

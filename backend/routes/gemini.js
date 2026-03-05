@@ -1,6 +1,6 @@
 // routes/gemini.js
 import express from "express";
-import { getGeminiResponse } from "../services/geminiService.js";
+import { getAIProvider } from "../services/aiProvider.js";
 import { protect } from "../middleware/auth.js";
 import { calculateUserFinancialHealth } from "../services/predictionService.js";
 import db from "../config/db.js";
@@ -32,7 +32,8 @@ router.post("/chat", async (req, res) => {
   const { message } = req.body;
   if (!message) return res.status(400).json({ text: "Message is required" });
 
-  const text = await getGeminiResponse(message);
+  const provider = getAIProvider();
+  const text = await provider.generateText(message);
   res.json({ text });
 });
 
@@ -129,7 +130,8 @@ ${healthData.recommendation}
     prompt += "\n\nProvide specific, actionable advice in a clear, encouraging tone. Include 3-5 concrete steps they can take.";
 
     // Get AI response
-    const advice = await getGeminiResponse(prompt);
+    const provider = getAIProvider();
+    const advice = await provider.generateText(prompt);
 
     res.json({
       success: true,
@@ -197,7 +199,8 @@ ${category ? `Focus on: ${category}` : 'Analyze all categories'}
 
 Provide 3-4 specific observations and actionable recommendations to optimize spending patterns.`;
 
-    const analysis = await getGeminiResponse(prompt);
+    const provider = getAIProvider();
+    const analysis = await provider.generateText(prompt);
 
     res.json({
       success: true,
@@ -261,7 +264,8 @@ Create a detailed budget optimization plan with:
 4. Timeline for implementation
 5. Expected outcomes`;
 
-    const optimization = await getGeminiResponse(prompt);
+    const provider = getAIProvider();
+    const optimization = await provider.generateText(prompt);
 
     res.json({
       success: true,
