@@ -632,8 +632,42 @@ async function sendProgressNotification(userId, progressPercent, monthsToGoal) {
   };
 }
 
+// Alert Notification Service
+// Sends alerts to users based on risk analysis from the forecaster
+
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'your-email@gmail.com',
+        pass: 'your-email-password'
+    }
+});
+
+function sendRiskAlert(userId, message) {
+    // In a real system, fetch user email from DB
+    const userEmail = getUserEmail(userId);
+    const mailOptions = {
+        from: 'your-email@gmail.com',
+        to: userEmail,
+        subject: 'Emergency Fund Risk Alert',
+        text: message
+    };
+    transporter.sendMail(mailOptions, function(error, info){
+        if (error) {
+            console.log('Error sending alert:', error);
+        } else {
+            console.log('Alert sent:', info.response);
+        }
+    });
+}
+
+function getUserEmail(userId) {
+    // Placeholder: Replace with DB lookup
+    return 'user' + userId + '@example.com';
+}
+
 module.exports = {
-  AlertNotificationService,
-  sendRiskAlert,
-  sendProgressNotification
+    sendRiskAlert
 };
