@@ -574,4 +574,66 @@ class AlertNotificationService {
     }
 }
 
-module.exports = AlertNotificationService;
+/**
+ * Send multi-level risk alert for emergency fund
+ * @param {string} userId
+ * @param {number} currentBalance
+ * @param {number} recommendedFund
+ * @param {Object} riskDetails
+ */
+async function sendRiskAlert(userId, currentBalance, recommendedFund, riskDetails = {}) {
+  let level = 'info';
+  let message = '';
+  const gap = recommendedFund - currentBalance;
+  if (gap > 0 && gap < recommendedFund * 0.25) {
+    level = 'warning';
+    message = `Your emergency fund is slightly below the recommended target of $${recommendedFund}. Consider saving more.`;
+  } else if (gap >= recommendedFund * 0.25 && gap < recommendedFund * 0.5) {
+    level = 'critical';
+    message = `Your emergency fund is significantly below the recommended target of $${recommendedFund}. Immediate action is advised.`;
+  } else if (gap >= recommendedFund * 0.5) {
+    level = 'danger';
+    message = `Your emergency fund is dangerously low compared to the recommended target of $${recommendedFund}. High risk detected.`;
+  } else {
+    message = `Your emergency fund is healthy.`;
+  }
+  // Send notification (stub)
+  return {
+    userId,
+    level,
+    message,
+    riskDetails,
+    timestamp: new Date()
+  };
+}
+
+/**
+ * Send progress notification for savings goal
+ * @param {string} userId
+ * @param {number} progressPercent
+ * @param {number} monthsToGoal
+ */
+async function sendProgressNotification(userId, progressPercent, monthsToGoal) {
+  let message = '';
+  if (progressPercent >= 100) {
+    message = 'Congratulations! You have reached your emergency fund goal.';
+  } else if (monthsToGoal > 0) {
+    message = `You are ${progressPercent}% toward your goal. Estimated time to reach: ${monthsToGoal} months.`;
+  } else {
+    message = 'Progress tracking unavailable.';
+  }
+  // Send notification (stub)
+  return {
+    userId,
+    message,
+    progressPercent,
+    monthsToGoal,
+    timestamp: new Date()
+  };
+}
+
+module.exports = {
+  AlertNotificationService,
+  sendRiskAlert,
+  sendProgressNotification
+};
