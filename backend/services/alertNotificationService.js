@@ -574,4 +574,100 @@ class AlertNotificationService {
     }
 }
 
-module.exports = AlertNotificationService;
+/**
+ * Send multi-level risk alert for emergency fund
+ * @param {string} userId
+ * @param {number} currentBalance
+ * @param {number} recommendedFund
+ * @param {Object} riskDetails
+ */
+async function sendRiskAlert(userId, currentBalance, recommendedFund, riskDetails = {}) {
+  let level = 'info';
+  let message = '';
+  const gap = recommendedFund - currentBalance;
+  if (gap > 0 && gap < recommendedFund * 0.25) {
+    level = 'warning';
+    message = `Your emergency fund is slightly below the recommended target of $${recommendedFund}. Consider saving more.`;
+  } else if (gap >= recommendedFund * 0.25 && gap < recommendedFund * 0.5) {
+    level = 'critical';
+    message = `Your emergency fund is significantly below the recommended target of $${recommendedFund}. Immediate action is advised.`;
+  } else if (gap >= recommendedFund * 0.5) {
+    level = 'danger';
+    message = `Your emergency fund is dangerously low compared to the recommended target of $${recommendedFund}. High risk detected.`;
+  } else {
+    message = `Your emergency fund is healthy.`;
+  }
+  // Send notification (stub)
+  return {
+    userId,
+    level,
+    message,
+    riskDetails,
+    timestamp: new Date()
+  };
+}
+
+/**
+ * Send progress notification for savings goal
+ * @param {string} userId
+ * @param {number} progressPercent
+ * @param {number} monthsToGoal
+ */
+async function sendProgressNotification(userId, progressPercent, monthsToGoal) {
+  let message = '';
+  if (progressPercent >= 100) {
+    message = 'Congratulations! You have reached your emergency fund goal.';
+  } else if (monthsToGoal > 0) {
+    message = `You are ${progressPercent}% toward your goal. Estimated time to reach: ${monthsToGoal} months.`;
+  } else {
+    message = 'Progress tracking unavailable.';
+  }
+  // Send notification (stub)
+  return {
+    userId,
+    message,
+    progressPercent,
+    monthsToGoal,
+    timestamp: new Date()
+  };
+}
+
+// Alert Notification Service
+// Sends alerts to users based on risk analysis from the forecaster
+
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'your-email@gmail.com',
+        pass: 'your-email-password'
+    }
+});
+
+function sendRiskAlert(userId, message) {
+    // In a real system, fetch user email from DB
+    const userEmail = getUserEmail(userId);
+    const mailOptions = {
+        from: 'your-email@gmail.com',
+        to: userEmail,
+        subject: 'Emergency Fund Risk Alert',
+        text: message
+    };
+    transporter.sendMail(mailOptions, function(error, info){
+        if (error) {
+            console.log('Error sending alert:', error);
+        } else {
+            console.log('Alert sent:', info.response);
+        }
+    });
+}
+
+function getUserEmail(userId) {
+    // Placeholder: Replace with DB lookup
+    return 'user' + userId + '@example.com';
+}
+
+module.exports = {
+    sendRiskAlert
+};

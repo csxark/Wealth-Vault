@@ -11,21 +11,56 @@
  * @param {number} confidenceLevel - e.g., 0.95 or 0.99
  * @param {number} timeHorizonDays - e.g., 1 day or 30 days
  */
+
+/**
+ * Calculate Value-at-Risk (VaR)
+ * Estimates the maximum potential loss over a given time horizon at a specific confidence level.
+ */
 export const calculateVaR = (portfolioValue, volatility, confidenceLevel = 0.95, timeHorizonDays = 1) => {
-    // Z-score for common confidence levels
-    const zScores = {
-        0.90: 1.28,
-        0.95: 1.645,
-        0.99: 2.33
-    };
+        // Z-score for common confidence levels
+        const zScores = {
+                0.90: 1.28,
+                0.95: 1.645,
+                0.99: 2.33
+        };
 
-    const z = zScores[confidenceLevel] || 1.645;
-    const dailyVolatility = volatility / Math.sqrt(252);
-    const horizonVolatility = dailyVolatility * Math.sqrt(timeHorizonDays);
+        const z = zScores[confidenceLevel] || 1.645;
+        const dailyVolatility = volatility / Math.sqrt(252);
+        const horizonVolatility = dailyVolatility * Math.sqrt(timeHorizonDays);
 
-    const varAmount = portfolioValue * z * horizonVolatility;
-    return parseFloat(varAmount.toFixed(2));
+        const varAmount = portfolioValue * z * horizonVolatility;
+        return parseFloat(varAmount.toFixed(2));
 };
+
+/**
+ * Emergency Fund Risk Score
+ * Scores risk based on fund gap, volatility, and event uncertainty
+ */
+export function emergencyFundRiskScore(currentBalance, recommendedFund, incomeVolatility, eventUncertainty) {
+    const gap = recommendedFund - currentBalance;
+    let score = 0;
+    if (gap <= 0) return 0;
+    score += gap / recommendedFund * 50;
+    score += Math.min(30, incomeVolatility * 2);
+    score += Math.min(20, eventUncertainty * 20);
+    return Math.round(score);
+}
+
+/**
+ * Detect risk trend from balance history
+ * @param {Array} balanceHistory
+ * @param {Array} recommendedHistory
+ * @returns {string} - 'improving', 'declining', 'stable'
+ */
+export function detectRiskTrend(balanceHistory, recommendedHistory) {
+    if (!balanceHistory.length || !recommendedHistory.length) return 'stable';
+    const last = balanceHistory[balanceHistory.length - 1];
+    const prev = balanceHistory[0];
+    const lastRec = recommendedHistory[recommendedHistory.length - 1];
+    if (last > lastRec && last > prev) return 'improving';
+    if (last < lastRec && last < prev) return 'declining';
+    return 'stable';
+}
 
 /**
  * Calculate Expected Shortfall (Conditional VaR)
