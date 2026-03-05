@@ -7,7 +7,8 @@ import { ExpenseList } from './ExpenseList';
 import { ExpenseForm } from './ExpenseForm';
 import { ExpenseFilters } from './ExpenseFilters';
 import { VoiceAssistant } from './VoiceAssistant';
-import { Plus, Download, Filter, Mic } from 'lucide-react';
+import { ReceiptScanner } from './ReceiptScanner';
+import { Plus, Download, Filter, Mic, ScanLine } from 'lucide-react';
 
 interface Filters {
   startDate?: string;
@@ -29,6 +30,8 @@ export const Expenses: React.FC = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [showVoiceAssistant, setShowVoiceAssistant] = useState(false);
+  const [showReceiptScanner, setShowReceiptScanner] = useState(false);
+  const [ocrExpenseData, setOcrExpenseData] = useState<any>(null);
   const [filters, setFilters] = useState<Filters>({
     sortBy: 'date',
     sortOrder: 'desc'
@@ -228,6 +231,16 @@ export const Expenses: React.FC = () => {
             Voice
           </button>
           
+          {/* Receipt Scanner Button */}
+          <button
+            onClick={() => setShowReceiptScanner(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300 dark:hover:bg-green-900/50 transition-colors"
+            title="Scan receipt"
+          >
+            <ScanLine className="h-4 w-4" />
+            Scan
+          </button>
+          
           <button
             onClick={handleAddNewClick}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -279,6 +292,18 @@ export const Expenses: React.FC = () => {
         isOpen={showVoiceAssistant}
         onClose={() => setShowVoiceAssistant(false)}
         onSuccess={fetchExpenses}
+      />
+      
+      {/* Receipt Scanner Modal */}
+      <ReceiptScanner
+        isOpen={showReceiptScanner}
+        onClose={() => setShowReceiptScanner(false)}
+        onSuccess={(data) => {
+          setShowReceiptScanner(false);
+          // Pre-fill form with OCR data
+          setOcrExpenseData(data);
+          setIsFormOpen(true);
+        }}
       />
     </div>
   );

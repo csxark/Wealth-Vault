@@ -654,6 +654,94 @@ router.post('/upload-receipt', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/expenses/process-receipt-base64
+ * Process receipt image from base64 (client-side OCR support)
+ * Allows client-side Tesseract.js OCR processing with server-side parsing
+ */
+router.post('/process-receipt-base64', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { imageBase64, ocrText, tesseractData } = req.body;
+
+    // Validate input
+    if (!imageBase64 && !ocrText) {
+      return res.status(400).json({
+        error: 'Either imageBase64 or ocrText is required'
+      });
+    }
+
+    let processedData;
+
+    if (ocrText) {
+      // Client already extracted text using Tesseract.js
+      // Process the text and optionally validate the image
+      if (imageBase64) {
+        // Validate the image as well
+        const validation = receiptService.validateBase64Image(imageBase64);
+        if (!validation.isValid) {
+          return res.status(400).json({
+            error: validation.error
+          });
+        }
+      }
+
+      // Process the OCR text
+      processedData = await receiptService.processClientSideOCR(ocrText, tesseractData);
+    } else if (imageBase64) {
+      // Process the image on the server (using Google Cloud Vision)
+      const validation = receiptService.validateBase64Image(imageBase64);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          error: validation.error
+        });
+      }
+
+      processedData = await receiptService.processReceipt(validation.buffer, userId);
+    }
+
+    // Log audit event
+    await logAuditEventAsync({
+      userId,
+      action: 'RECEIPT_PROCESS',
+      resourceType: 'RECEIPT',
+      resourceId: null,
+      metadata: {
+        source: ocrText ? 'client_tesseract' : 'server_vision',
+        extractedAmount: processedData.amount,
+        extractedMerchant: processedData.merchant,
+        suggestedCategory: processedData.suggestedCategory
+      },
+      status: 'success',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      data: processedData,
+      message: 'Receipt processed successfully'
+    });
+  } catch (error) {
+    console.error('Error processing receipt base64:', error);
+
+    // Log failed audit event
+    await logAuditEventAsync({
+      userId: req.user.id,
+      action: 'RECEIPT_PROCESS',
+      resourceType: 'RECEIPT',
+      resourceId: null,
+      metadata: {
+        error: error.message
+      },
+      status: 'failure',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.status(500).json({ error: 'Failed to process receipt' });
+  }
+});
+
 export default router;
 / * * 
    *   P O S T   / a p i / e x p e n s e s / v o i c e 
@@ -848,5 +936,6 @@ export default router;
      } 
  } ) ; 
  
- e x p o r t   d e f a u l t   r o u t e r ;  
+ e x p o r t   d e f a u l t   r o u t e r ; 
+ 
  
