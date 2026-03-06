@@ -1881,25 +1881,9 @@ export const taxReportsRelations = relations(taxReports, ({ one }) => ({
     }),
 }));
 
-// Credit Scores Relations
-export const creditScoresRelations = relations(creditScores, ({ one }) => ({
-    user: one(users, {
-        fields: [creditScores.userId],
-        references: [users.id],
-    }),
-}));
-
-// Credit Score Alerts Relations
-export const creditScoreAlertsRelations = relations(creditScoreAlerts, ({ one }) => ({
-    user: one(users, {
-        fields: [creditScoreAlerts.userId],
-        references: [users.id],
-    }),
-    creditScore: one(creditScores, {
-        fields: [creditScoreAlerts.creditScoreId],
-        references: [creditScores.id],
-    }),
-}));
+// ============================================
+// CREDIT SCORES TABLES (moved before relations)
+// ============================================
 
 // Credit Scores Table
 export const creditScores = pgTable('credit_scores', {
@@ -1945,6 +1929,26 @@ export const creditScoreAlerts = pgTable('credit_score_alerts', {
     }),
     createdAt: timestamp('created_at').defaultNow(),
 });
+
+// Credit Scores Relations (now properly placed after table definition)
+export const creditScoresRelations = relations(creditScores, ({ one }) => ({
+    user: one(users, {
+        fields: [creditScores.userId],
+        references: [users.id],
+    }),
+}));
+
+// Credit Score Alerts Relations (now properly placed after table definition)
+export const creditScoreAlertsRelations = relations(creditScoreAlerts, ({ one }) => ({
+    user: one(users, {
+        fields: [creditScoreAlerts.userId],
+        references: [users.id],
+    }),
+    creditScore: one(creditScores, {
+        fields: [creditScoreAlerts.creditScoreId],
+        references: [creditScores.id],
+    }),
+}));
 
 // Retirement Planning Table
 export const retirementPlanning = pgTable('retirement_planning', {
