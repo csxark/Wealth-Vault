@@ -1,5 +1,5 @@
 import express from "express";
-import { getGeminiResponse } from "../services/geminiservice.js";
+import { getAIProvider } from "../services/aiProvider.js";
 import aiInsightsService from "../services/aiInsightsService.js";
 import { authenticateToken } from "../middleware/auth.js";
 
@@ -39,10 +39,9 @@ Provide a helpful, personalized response. Keep it concise and actionable.
 If the user asks about specific financial actions, provide clear recommendations.
 `;
 
-    const aiResponse = await getGeminiResponse([{
-      role: 'user',
-      contents: [{ text: prompt }]
-    }]);
+    // Get AI provider and generate response
+    const provider = getAIProvider();
+    const aiResponse = await provider.generateText(prompt);
 
     return res.json({
       reply: aiResponse,

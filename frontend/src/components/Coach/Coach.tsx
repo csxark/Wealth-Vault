@@ -3,6 +3,7 @@ import { Send, Bot, User, Zap, DollarSign, TrendingDown } from 'lucide-react';
 import type { ChatMessage } from '../../types';
 import { useLoading } from '../../context/LoadingContext';
 import { analyticsAPI, goalsAPI, api } from '../../services/api';
+import { fetchGeminiResponse } from '../../services/gemini';
 
 const quickReplies = [
   { text: "Help me reduce impulsive spending", icon: TrendingDown },
@@ -99,10 +100,10 @@ export const Coach: React.FC = () => {
     setIsTyping(true);
 
     try {
-      const geminiReply = await generateGeminiResponse(content);
+      const aiReply = await fetchGeminiResponse(content);
       const botResponse: ChatMessage = {
         _id: (Date.now() + 1).toString(),
-        content: geminiReply,
+        content: aiReply,
         isUser: false,
         timestamp: new Date().toISOString()
       };
@@ -115,7 +116,7 @@ export const Coach: React.FC = () => {
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorResponse]);
-      console.error('Error fetching Gemini response:', error);
+      console.error('Error fetching AI response:', error);
     } finally {
       setIsTyping(false);
     }

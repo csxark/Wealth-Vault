@@ -1,677 +1,641 @@
-import { eq, and, desc, sql, gt, lt } from 'drizzle-orm';
+/**
+ * Portfolio Rebalancing Service
+ * 
+ * Issue #613: Multi-Currency Portfolio Rebalancing with Tax-Loss Harvesting
+ * 
+ * Core functionality:
+ * - Multi-currency portfolio analysis
+ * - Allocation drift detection
+ * - Rebalancing optimization
+ * - Tax-loss harvesting identification
+ * - Transaction cost minimization
+ */
+
 import db from '../config/db.js';
-import { 
-  portfolios, 
-  investments, 
-  portfolioRebalancing,
-  investmentRiskProfiles 
+import {
+  portfolioHoldings,
+  allocationTargets,
+  rebalancingRecommendations,
+  rebalancingTransactions,
+  taxLots,
+  rebalancingMetrics,
 } from '../db/schema.js';
-import { logAuditEventAsync, AuditActions, ResourceTypes } from './auditService.js';
-import portfolioService from './portfolioService.js';
-import riskProfileService from './riskProfileService.js';
+import { eq, and, or, sql, desc, gte, lte } from 'drizzle-orm';
+import cacheService from './cacheService.js';
+import outboxService from './outboxService.js';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Portfolio Rebalancing Service
- * Handles automated portfolio monitoring, threshold-based alerts, and intelligent rebalancing recommendations
+ * Handles multi-currency rebalancing with tax optimization
  */
-
-// Default threshold for rebalancing (5% drift)
-const DEFAULT_REBALANCING_THRESHOLD = 5;
-// Maximum recommended drift before triggering high-priority alert
-const HIGH_PRIORITY_THRESHOLD = 10;
-
-/**
- * Check if portfolio allocation has drifted beyond threshold
- * @param {string} portfolioId - Portfolio ID
- * @param {string} userId - User ID
- * @param {number} threshold - Drift threshold percentage
- * @returns {Promise<Object>} - Drift analysis result
- */
-export const checkPortfolioDrift = async (portfolioId, userId, threshold = DEFAULT_REBALANCING_THRESHOLD) => {
-  try {
-    const portfolio = await portfolioService.getPortfolioById(portfolioId, userId);
-    if (!portfolio) {
-      throw new Error('Portfolio not found or access denied');
-    }
-
-    // Get current allocation
-    const allocation = await portfolioService.getPortfolioAllocation(portfolioId, userId);
-    
-    // Get target allocation from portfolio or risk profile
-    let targetAllocation = portfolio.targetAllocation || {};
-    
-    // If no target allocation set, use risk profile recommendations
-    if (Object.keys(targetAllocation).length === 0) {
-      const riskProfile = await riskProfileService.getRiskProfile(userId);
-      if (riskProfile?.metadata?.recommendation?.allocation) {
-        targetAllocation = riskProfile.metadata.recommendation.allocation;
-      } else {
-        // Default target allocation
-        targetAllocation = {
-          stocks: 60,
-          bonds: 30,
-          cash: 10,
-          alternatives: 0
-        };
-      }
-    }
-
-    // Calculate drift for each asset class
-    const driftAnalysis = [];
-    const assetClasses = ['stocks', 'bonds', 'cash', 'alternatives', 'equity', 'fixed_income', 'alternative'];
-    
-    for (const assetClass of assetClasses) {
-      const currentPct = allocation.byAssetClass[assetClass]?.percentage || 0;
-      const targetPct = targetAllocation[assetClass] || 0;
-      const drift = currentPct - targetPct;
-      
-      if (Math.abs(drift) > 0.5) { // Only include if there's meaningful difference
-        driftAnalysis.push({
-          assetClass: mapAssetClass(assetClass),
-          currentPercentage: currentPct,
-          targetPercentage: targetPct,
-          drift: drift,
-          isOverThreshold: Math.abs(drift) >= threshold,
-          isHighPriority: Math.abs(drift) >= HIGH_PRIORITY_THRESHOLD,
-          currentValue: allocation.byAssetClass[assetClass]?.value || 0,
-          targetValue: (targetPct / 100) * allocation.totalValue,
-          adjustmentNeeded: ((drift / 100) * allocation.totalValue)
-        });
-      }
-    }
-
-    // Sort by absolute drift (highest first)
-    driftAnalysis.sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift));
-
-    // Determine overall portfolio status
-    const overThreshold = driftAnalysis.filter(d => d.isOverThreshold);
-    const needsRebalancing = overThreshold.length > 0;
-    const highPriorityDrift = driftAnalysis.filter(d => d.isHighPriority);
-
-    return {
-      portfolioId,
-      portfolioName: portfolio.name,
-      totalValue: allocation.totalValue,
-      threshold,
-      needsRebalancing,
-      priority: highPriorityDrift.length > 0 ? 'high' : (overThreshold.length > 0 ? 'medium' : 'low'),
-      driftAnalysis,
-      targetAllocation,
-      currentAllocation: Object.fromEntries(
-        Object.entries(allocation.byAssetClass).map(([k, v]) => [k, v.percentage])
-      ),
-      lastChecked: new Date().toISOString()
-    };
-  } catch (error) {
-    console.error('Error checking portfolio drift:', error);
-    throw error;
-  }
-};
-
-/**
- * Map various asset class names to standardized names
- */
-const mapAssetClass = (assetClass) => {
-  const mapping = {
-    'equity': 'stocks',
-    'fixed_income': 'bonds',
-    'alternative': 'alternatives',
-    'Stock': 'stocks',
-    'Bond': 'bonds',
-    'ETF': 'stocks',
-    'Mutual Fund': 'stocks',
-    'Crypto': 'alternatives'
-  };
-  return mapping[assetClass] || assetClass;
-};
-
-/**
- * Get rebalancing alerts for a portfolio
- * @param {string} portfolioId - Portfolio ID
- * @param {string} userId - User ID
- * @param {Object} options - Query options
- * @returns {Promise<Array>} - Array of rebalancing alerts
- */
-export const getRebalancingAlerts = async (portfolioId, userId, options = {}) => {
-  try {
-    const { threshold = DEFAULT_REBALANCING_THRESHOLD, includeResolved = false } = options;
-    
-    // Check current drift
-    const driftResult = await checkPortfolioDrift(portfolioId, userId, threshold);
-    
-    // Convert drift analysis to alerts
-    const alerts = driftResult.driftAnalysis
-      .filter(d => d.isOverThreshold)
-      .map(drift => ({
-        id: `alert-${drift.assetClass}-${Date.now()}`,
-        portfolioId,
-        portfolioName: driftResult.portfolioName,
-        assetClass: drift.assetClass,
-        type: 'drift',
-        priority: drift.isHighPriority ? 'high' : 'medium',
-        status: 'active',
-        currentAllocation: drift.currentPercentage,
-        targetAllocation: drift.targetPercentage,
-        drift: drift.drift,
-        amount: drift.adjustmentNeeded,
-        message: drift.drift > 0 
-          ? `${drift.assetClass} is ${Math.abs(drift.drift).toFixed(1)}% over target. Consider selling $${Math.abs(drift.adjustmentNeeded).toFixed(2)} to rebalance.`
-          : `${drift.assetClass} is ${Math.abs(drift.drift).toFixed(1)}% under target. Consider buying $${Math.abs(drift.adjustmentNeeded).toFixed(2)} to rebalance.`,
-        createdAt: new Date().toISOString(),
-        metadata: {
-          threshold,
-          totalValue: driftResult.totalValue,
-          currentValue: drift.currentValue,
-          targetValue: drift.targetValue
-        }
-      }));
-
-    // Sort by priority (high first) then by drift amount
-    alerts.sort((a, b) => {
-      if (a.priority === 'high' && b.priority !== 'high') return -1;
-      if (b.priority === 'high' && a.priority !== 'high') return 1;
-      return Math.abs(b.drift) - Math.abs(a.drift);
-    });
-
-    return {
-      alerts,
-      summary: {
-        total: alerts.length,
-        highPriority: alerts.filter(a => a.priority === 'high').length,
-        mediumPriority: alerts.filter(a => a.priority === 'medium').length,
-        needsRebalancing: driftResult.needsRebalancing,
-        overallPriority: driftResult.priority
-      }
-    };
-  } catch (error) {
-    console.error('Error getting rebalancing alerts:', error);
-    throw error;
-  }
-};
-
-/**
- * Generate intelligent rebalancing recommendations
- * @param {string} portfolioId - Portfolio ID
- * @param {string} userId - User ID
- * @param {Object} options - Recommendation options
- * @returns {Promise<Object>} - Rebalancing recommendations
- */
-export const getRebalancingRecommendations = async (portfolioId, userId, options = {}) => {
-  try {
-    const { 
-      threshold = DEFAULT_REBALANCING_THRESHOLD,
-      optimizationEnabled = true,
-      taxEfficient = false
-    } = options;
-
-    // Get portfolio summary
-    const summary = await portfolioService.getPortfolioSummary(portfolioId, userId);
-    if (!summary) {
-      throw new Error('Portfolio not found or access denied');
-    }
-
-    // Get current drift analysis
-    const driftResult = await checkPortfolioDrift(portfolioId, userId, threshold);
-    
-    // Get risk profile for additional context
-    const riskProfile = await riskProfileService.getRiskProfileWithAnalysis(userId);
-
-    // Generate recommendations based on drift analysis
-    const recommendations = [];
-    
-    // Process each asset class that needs rebalancing
-    for (const drift of driftResult.driftAnalysis.filter(d => d.isOverThreshold)) {
-      const recommendation = {
-        id: `rec-${drift.assetClass}-${Date.now()}`,
-        type: drift.drift > 0 ? 'sell' : 'buy',
-        assetClass: drift.assetClass,
-        priority: drift.isHighPriority ? 'high' : 'medium',
-        currentAllocation: drift.currentPercentage,
-        targetAllocation: drift.targetPercentage,
-        drift: drift.drift,
-        amount: Math.abs(drift.adjustmentNeeded),
-        
-        // Find specific investments to trade
-        trades: [],
-        
-        // Reasoning
-        reasoning: generateRebalancingReasoning(drift, riskProfile, summary),
-        
-        // Risk assessment
-        riskAssessment: assessRebalancingRisk(drift, riskProfile),
-        
-        // Estimated impact
-        estimatedImpact: {
-          portfolioValue: driftResult.totalValue,
-          rebalancingAmount: Math.abs(drift.adjustmentNeeded),
-          percentageOfPortfolio: (Math.abs(drift.adjustmentNeeded) / driftResult.totalValue) * 100
-        },
-        
-        createdAt: new Date().toISOString()
-      };
-
-      // Find specific investments to trade for this asset class
-      const assetClassInvestments = summary.investments.filter(inv => {
-        const invAssetClass = mapAssetClass(inv.assetClass || inv.type);
-        return invAssetClass === drift.assetClass;
-      });
-
-      if (recommendation.type === 'sell' && assetClassInvestments.length > 0) {
-        // Recommend selling from overweight asset class
-        const totalValue = assetClassInvestments.reduce((sum, inv) => sum + parseFloat(inv.marketValue || 0), 0);
-        
-        for (const investment of assetClassInvestments) {
-          const invValue = parseFloat(investment.marketValue || 0);
-          const proportion = totalValue > 0 ? invValue / totalValue : 0;
-          const sellAmount = Math.abs(drift.adjustmentNeeded) * proportion;
-          
-          if (sellAmount > 0 && invValue > 0) {
-            recommendation.trades.push({
-              investmentId: investment.id,
-              symbol: investment.symbol,
-              name: investment.name,
-              action: 'sell',
-              quantity: sellAmount / parseFloat(investment.currentPrice || investment.averageCost),
-              amount: sellAmount,
-              currentAllocation: (invValue / driftResult.totalValue) * 100
-            });
-          }
-        }
-      } else if (recommendation.type === 'buy' && summary.investments.length > 0) {
-        // Recommend buying - suggest adding to existing positions or new positions
-        recommendation.trades.push({
-          action: 'buy',
-          assetClass: drift.assetClass,
-          amount: Math.abs(drift.adjustmentNeeded),
-          suggestion: getBuyingSuggestion(drift.assetClass, riskProfile)
-        });
-      }
-
-      recommendations.push(recommendation);
-    }
-
-    // Sort by priority and amount
-    recommendations.sort((a, b) => {
-      if (a.priority === 'high' && b.priority !== 'high') return -1;
-      if (b.priority === 'high' && a.priority !== 'high') return 1;
-      return b.amount - a.amount;
-    });
-
-    // Add general recommendations if portfolio doesn't need rebalancing
-    if (recommendations.length === 0) {
-      recommendations.push({
-        id: `rec-maintain-${Date.now()}`,
-        type: 'maintain',
-        priority: 'low',
-        message: 'Your portfolio is well-balanced. Continue monitoring to maintain your target allocation.',
-        reasoning: 'All asset classes are within the acceptable threshold range.',
-        createdAt: new Date().toISOString()
-      });
-    }
-
-    return {
-      portfolioId,
-      portfolioName: summary.name,
-      totalValue: summary.totalValue,
-      needsRebalancing: driftResult.needsRebalancing,
-      recommendations,
-      riskProfile: riskProfile.hasProfile ? {
-        riskTolerance: riskProfile.profile.riskTolerance,
-        investmentHorizon: riskProfile.profile.investmentHorizon,
-        score: riskProfile.profile.riskScore
-      } : null,
-      settings: {
-        threshold,
-        optimizationEnabled,
-        taxEfficient
-      },
-      generatedAt: new Date().toISOString()
-    };
-  } catch (error) {
-    console.error('Error generating rebalancing recommendations:', error);
-    throw error;
-  }
-};
-
-/**
- * Generate reasoning for rebalancing recommendation
- */
-const generateRebalancingReasoning = (drift, riskProfile, summary) => {
-  const reasons = [];
-  
-  if (drift.drift > 0) {
-    reasons.push(`Your ${drift.assetClass} allocation is ${Math.abs(drift.drift).toFixed(1)}% above your target.`);
-    
-    if (riskProfile.hasProfile) {
-      if (riskProfile.profile.riskTolerance === 'conservative' && drift.assetClass === 'stocks') {
-        reasons.push('This exceeds the conservative allocation recommended for your risk profile.');
-      } else if (riskProfile.profile.riskTolerance === 'aggressive' && drift.assetClass === 'cash') {
-        reasons.push('Holding too much cash may limit your growth potential based on your aggressive risk tolerance.');
-      }
-    }
-    
-    reasons.push(`Consider reducing your ${drift.assetClass} exposure to rebalance your portfolio.`);
-  } else {
-    reasons.push(`Your ${drift.assetClass} allocation is ${Math.abs(drift.drift).toFixed(1)}% below your target.`);
-    
-    if (riskProfile.hasProfile && drift.assetClass === 'stocks') {
-      reasons.push('Increasing stock allocation can help achieve long-term growth targets.');
-    }
-    
-    reasons.push(`Consider increasing your ${drift.assetClass} exposure to achieve your target allocation.`);
-  }
-  
-  return reasons.join(' ');
-};
-
-/**
- * Assess risk of rebalancing action
- */
-const assessRebalancingRisk = (drift, riskProfile) => {
-  const riskFactors = [];
-  let riskLevel = 'low';
-  
-  // Check drift magnitude
-  if (Math.abs(drift.drift) > 15) {
-    riskFactors.push('Large drift requires significant trades');
-    riskLevel = 'medium';
-  }
-  
-  // Check if it's a sell recommendation (generally higher risk)
-  if (drift.drift > 0) {
-    riskFactors.push('Selling may trigger capital gains taxes');
-    if (riskLevel === 'low') riskLevel = 'medium';
-  }
-  
-  // Check risk profile alignment
-  if (riskProfile.hasProfile) {
-    if (riskProfile.profile.riskTolerance === 'conservative' && drift.assetClass === 'stocks') {
-      riskFactors.push('Reducing stocks aligns with conservative profile');
-    } else if (riskProfile.profile.riskTolerance === 'aggressive' && drift.assetClass === 'cash') {
-      riskFactors.push('Adding to stocks aligns with aggressive profile');
-    }
-  }
-  
-  return {
-    level: riskLevel,
-    factors: riskFactors
-  };
-};
-
-/**
- * Get buying suggestion based on asset class and risk profile
- */
-const getBuyingSuggestion = (assetClass, riskProfile) => {
-  const suggestions = {
-    stocks: {
-      lowCost: ['Index ETFs (SPY, VTI)', 'Total Market Funds'],
-      specific: riskProfile?.profile?.riskTolerance === 'aggressive' 
-        ? 'Growth ETFs, Sector ETFs'
-        : 'Dividend ETFs, Blue Chip Stocks'
-    },
-    bonds: {
-      lowCost: ['Bond ETFs (BND, AGG)', 'Treasury Bonds'],
-      specific: 'Investment Grade Corporate Bonds, Municipal Bonds'
-    },
-    cash: {
-      lowCost: ['High-Yield Savings', 'Money Market Funds'],
-      specific: 'Short-Term CDs, Treasury Bills'
-    },
-    alternatives: {
-      lowCost: ['Real Estate ETFs', 'Commodity ETFs'],
-      specific: 'Gold ETFs, International Real Estate'
-    }
-  };
-  
-  return suggestions[assetClass] || { lowCost: ['Diversified Fund'], specific: 'Consult financial advisor' };
-};
-
-/**
- * Record rebalancing action in history
- * @param {string} portfolioId - Portfolio ID
- * @param {string} userId - User ID
- * @param {Object} rebalanceData - Rebalancing data
- * @returns {Promise<Object>} - Created rebalancing record
- */
-export const recordRebalancing = async (portfolioId, userId, rebalanceData) => {
-  try {
-    const portfolio = await portfolioService.getPortfolioById(portfolioId, userId);
-    if (!portfolio) {
-      throw new Error('Portfolio not found or access denied');
-    }
-
-    // Get current allocation before rebalancing
-    const beforeAllocation = await portfolioService.getPortfolioAllocation(portfolioId, userId);
-    
-    // Create rebalancing record
-    const [record] = await db
-      .insert(portfolioRebalancing)
-      .values({
-        userId,
-        portfolioId,
-        rebalanceType: rebalanceData.type || 'manual',
-        triggerReason: rebalanceData.triggerReason || 'user_initiated',
-        beforeAllocation: {
-          totalValue: beforeAllocation.totalValue,
-          byAssetClass: Object.fromEntries(
-            Object.entries(beforeAllocation.byAssetClass).map(([k, v]) => [k, v.percentage])
+class PortfolioRebalancingService {
+  /**
+   * Analyze portfolio and generate rebalancing recommendations
+   * Main entry point for rebalancing analysis
+   */
+  async analyzePortfolioAndRecommend(userId, tenantId, allocationTargetId) {
+    try {
+      // Get allocation target
+      const [target] = await db
+        .select()
+        .from(allocationTargets)
+        .where(
+          and(
+            eq(allocationTargets.id, allocationTargetId),
+            eq(allocationTargets.userId, userId)
           )
+        );
+
+      if (!target) {
+        throw new Error('Allocation target not found');
+      }
+
+      // Get current portfolio
+      const holdings = await this.getPortfolioHoldings(userId, tenantId);
+      const portfolioValue = this.calculatePortfolioValue(holdings);
+      
+      if (portfolioValue === 0) {
+        return null; // No portfolio to rebalance
+      }
+
+      // Calculate current allocations
+      const currentAllocations = this.calculateAllocations(holdings, portfolioValue);
+      
+      // Get target allocations from strategy
+      const targetAllocations = this.parseTargetAllocations(target.allocations, portfolioValue);
+      
+      // Calculate deviations
+      const deviations = this.calculateDeviations(currentAllocations, targetAllocations);
+      
+      // Check if rebalancing is needed
+      const maxDrift = Math.max(...Object.values(deviations).map(d => Math.abs(d.deviation)));
+      
+      if (maxDrift < target.rebalancingThreshold) {
+        return null; // Below threshold, no rebalancing needed
+      }
+
+      // Calculate rebalancing moves
+      const moves = await this.calculateRebalancingMoves(
+        userId,
+        tenantId,
+        currentAllocations,
+        targetAllocations,
+        target
+      );
+
+      // Calculate transaction costs
+      const costAnalysis = await this.estimateTransactionCosts(
+        moves,
+        target.preferredExchanges,
+        target.maxSlippage
+      );
+
+      // Identify tax-loss harvesting opportunities
+      const taxHarvestingMoves = await this.identifyTaxHarvestingOpportunities(
+        userId,
+        tenantId,
+        target.preferTaxLoss ? moves : []
+      );
+
+      // Calculate tax impact
+      const taxImpact = await this.calculateTaxImpact(
+        userId,
+        tenantId,
+        moves,
+        taxHarvestingMoves
+      );
+
+      // Determine priority based on drift
+      const priority = maxDrift > 0.20 ? 'urgent' : maxDrift > 0.10 ? 'high' : 'medium';
+
+      // Create recommendation record
+      const recommendation = await db
+        .insert(rebalancingRecommendations)
+        .values({
+          id: uuidv4(),
+          tenantId,
+          userId,
+          allocationTargetId,
+          
+          portfolioValue,
+          currentAllocations,
+          targetAllocations,
+          deviations,
+          
+          moves,
+          estimatedCost: costAnalysis.totalCost,
+          estimatedSlippage: costAnalysis.totalSlippage,
+          taxImpact,
+          
+          taxHarvestingMoves,
+          harvestableLosses: this.calculateHarvestableLosses(taxHarvestingMoves),
+          
+          status: 'pending',
+          priority,
+          
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hour validity
+        })
+        .returning();
+
+      // Cache the recommendation
+      await cacheService.set(
+        `rebalancing:${userId}:${allocationTargetId}`,
+        recommendation[0],
+        3600 // 1 hour TTL
+      );
+
+      // Publish outbox event for notifications
+      await outboxService.publishEvent({
+        tenantId,
+        userId,
+        eventType: 'portfolio.rebalancing_recommended',
+        payload: {
+          recommendationId: recommendation[0].id,
+          priority,
+          estimatedCost: costAnalysis.totalCost,
+          maxDrift,
         },
-        beforeValue: beforeAllocation.totalValue.toString(),
-        afterAllocation: rebalanceData.afterAllocation,
-        afterValue: rebalanceData.afterValue,
-        actions: rebalanceData.actions || [],
-        status: 'completed',
-        completedAt: new Date(),
-        expectedImprovement: rebalanceData.expectedImprovement,
-        notes: rebalanceData.notes,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      })
-      .returning();
+      });
 
-    // Log audit event
-    await logAuditEventAsync({
-      userId,
-      action: AuditActions.REBALANCE,
-      resourceType: ResourceTypes.PORTFOLIO,
-      resourceId: portfolioId,
-      metadata: {
-        portfolioName: portfolio.name,
-        type: rebalanceData.type,
-        actions: rebalanceData.actions?.length || 0
-      },
-      status: 'success'
-    });
-
-    return record;
-  } catch (error) {
-    console.error('Error recording rebalancing:', error);
-    throw error;
+      return recommendation[0];
+    } catch (err) {
+      console.error('Portfolio analysis error:', err);
+      throw err;
+    }
   }
-};
 
-/**
- * Get rebalancing history for a portfolio
- * @param {string} portfolioId - Portfolio ID
- * @param {string} userId - User ID
- * @param {Object} options - Query options
- * @returns {Promise<Array>} - Rebalancing history
- */
-export const getRebalancingHistory = async (portfolioId, userId, options = {}) => {
-  try {
-    const { limit = 10, offset = 0 } = options;
-
-    const history = await db
+  /**
+   * Get portfolio holdings with current valuations
+   */
+  async getPortfolioHoldings(userId, tenantId) {
+    const holdings = await db
       .select()
-      .from(portfolioRebalancing)
+      .from(portfolioHoldings)
       .where(
         and(
-          eq(portfolioRebalancing.portfolioId, portfolioId),
-          eq(portfolioRebalancing.userId, userId)
+          eq(portfolioHoldings.userId, userId),
+          eq(portfolioHoldings.tenantId, tenantId)
         )
-      )
-      .orderBy(desc(portfolioRebalancing.completedAt))
-      .limit(limit)
-      .offset(offset);
+      );
 
-    return history;
-  } catch (error) {
-    console.error('Error getting rebalancing history:', error);
-    throw error;
+    return holdings;
   }
-};
 
-/**
- * Get rebalancing settings for a portfolio
- * @param {string} portfolioId - Portfolio ID
- * @param {string} userId - User ID
- * @returns {Promise<Object>} - Rebalancing settings
- */
-export const getRebalancingSettings = async (portfolioId, userId) => {
-  try {
-    const portfolio = await portfolioService.getPortfolioById(portfolioId, userId);
-    if (!portfolio) {
-      throw new Error('Portfolio not found or access denied');
-    }
-
-    // Get settings from portfolio metadata or use defaults
-    const settings = portfolio.metadata?.rebalancingSettings || {
-      threshold: DEFAULT_REBALANCING_THRESHOLD,
-      autoRebalance: false,
-      rebalanceFrequency: 'monthly',
-      notifyOnDrift: true,
-      highPriorityThreshold: HIGH_PRIORITY_THRESHOLD
-    };
-
-    return {
-      portfolioId,
-      portfolioName: portfolio.name,
-      settings
-    };
-  } catch (error) {
-    console.error('Error getting rebalancing settings:', error);
-    throw error;
+  /**
+   * Calculate total portfolio value
+   */
+  calculatePortfolioValue(holdings) {
+    return holdings.reduce((sum, h) => sum + parseFloat(h.currentValue || 0), 0);
   }
-};
 
-/**
- * Update rebalancing settings for a portfolio
- * @param {string} portfolioId - Portfolio ID
- * @param {string} userId - User ID
- * @param {Object} settings - New settings
- * @returns {Promise<Object>} - Updated portfolio
- */
-export const updateRebalancingSettings = async (portfolioId, userId, settings) => {
-  try {
-    const portfolio = await portfolioService.getPortfolioById(portfolioId, userId);
-    if (!portfolio) {
-      throw new Error('Portfolio not found or access denied');
-    }
+  /**
+   * Calculate current allocation percentages
+   */
+  calculateAllocations(holdings, totalValue) {
+    const allocations = {};
 
-    // Validate settings
-    if (settings.threshold !== undefined) {
-      if (settings.threshold < 1 || settings.threshold > 20) {
-        throw new Error('Threshold must be between 1 and 20 percent');
-      }
-    }
-
-    // Merge with existing metadata
-    const currentMetadata = portfolio.metadata || {};
-    const updatedMetadata = {
-      ...currentMetadata,
-      rebalancingSettings: {
-        ...(currentMetadata.rebalancingSettings || {}),
-        ...settings,
-        lastUpdated: new Date().toISOString()
-      }
-    };
-
-    // Update portfolio
-    const [updated] = await db
-      .update(portfolios)
-      .set({
-        metadata: updatedMetadata,
-        updatedAt: new Date()
-      })
-      .where(
-        and(
-          eq(portfolios.id, portfolioId),
-          eq(portfolios.userId, userId)
-        )
-      )
-      .returning();
-
-    // Log audit event
-    await logAuditEventAsync({
-      userId,
-      action: AuditActions.UPDATE,
-      resourceType: ResourceTypes.PORTFOLIO,
-      resourceId: portfolioId,
-      metadata: {
-        updatedFields: Object.keys(settings),
-        rebalancingSettings: true
-      },
-      status: 'success'
+    holdings.forEach(h => {
+      const percent = totalValue > 0 ? (parseFloat(h.currentValue) / totalValue) * 100 : 0;
+      allocations[h.assetSymbol] = {
+        value: parseFloat(h.currentValue),
+        quantity: parseFloat(h.quantity),
+        percent: Math.round(percent * 100) / 100,
+      };
     });
 
-    return {
-      portfolioId,
-      portfolioName: updated.name,
-      settings: updatedMetadata.rebalancingSettings
-    };
-  } catch (error) {
-    console.error('Error updating rebalancing settings:', error);
-    throw error;
+    return allocations;
   }
-};
 
-/**
- * Check all user portfolios for drift (for scheduled jobs)
- * @param {string} userId - User ID
- * @returns {Promise<Array>} - Array of portfolios needing attention
- */
-export const checkAllPortfoliosDrift = async (userId) => {
-  try {
-    const userPortfolios = await portfolioService.getPortfolios(userId);
-    
-    const results = [];
-    
-    for (const portfolio of userPortfolios) {
-      try {
-        const driftResult = await checkPortfolioDrift(portfolio.id, userId);
-        if (driftResult.needsRebalancing) {
-          results.push({
-            portfolioId: portfolio.id,
-            portfolioName: portfolio.name,
-            ...driftResult
+  /**
+   * Parse target allocations from strategy
+   */
+  parseTargetAllocations(allocations, portfolioValue) {
+    const targets = {};
+
+    Object.entries(allocations).forEach(([asset, config]) => {
+      const targetPercent = config.target * 100;
+      const targetValue = portfolioValue * config.target;
+      
+      targets[asset] = {
+        target: config.target * 100,
+        minBound: config.minBound ? config.minBound * 100 : targetPercent - 5,
+        maxBound: config.maxBound ? config.maxBound * 100 : targetPercent + 5,
+        value: targetValue,
+      };
+    });
+
+    return targets;
+  }
+
+  /**
+   * Calculate allocation deviations
+   */
+  calculateDeviations(current, target) {
+    const deviations = {};
+
+    Object.entries(target).forEach(([asset, targetConfig]) => {
+      const currentPercent = current[asset]?.percent ?? 0;
+      const targetPercent = targetConfig.target;
+      const deviation = (currentPercent - targetPercent) / 100; // Decimal form
+
+      deviations[asset] = {
+        current: currentPercent,
+        target: targetPercent,
+        deviation,
+        direction: deviation > 0 ? 'overweight' : 'underweight',
+        withinBounds: 
+          currentPercent >= targetConfig.minBound && 
+          currentPercent <= targetConfig.maxBound,
+      };
+    });
+
+    return deviations;
+  }
+
+  /**
+   * Calculate rebalancing moves needed
+   * Uses greedy algorithm: sell overweight assets to buy underweight
+   */
+  async calculateRebalancingMoves(userId, tenantId, current, target, strategy) {
+    const moves = [];
+
+    // Identify overweight and underweight positions
+    const overweight = [];
+    const underweight = [];
+
+    Object.entries(target).forEach(([asset, config]) => {
+      const currentAlloc = current[asset]?.percent ?? 0;
+      const deviation = currentAlloc - config.target;
+
+      if (Math.abs(deviation) > 0.5) { // Only if deviation > 0.5%
+        if (deviation > 0) {
+          overweight.push({
+            asset,
+            currentPercent: currentAlloc,
+            targetPercent: config.target,
+            excessPercent: deviation,
+            value: current[asset]?.value,
+          });
+        } else {
+          underweight.push({
+            asset,
+            currentPercent: currentAlloc,
+            targetPercent: config.target,
+            deficitPercent: Math.abs(deviation),
+            value: current[asset]?.value,
           });
         }
-      } catch (error) {
-        console.error(`Error checking drift for portfolio ${portfolio.id}:`, error);
+      }
+    });
+
+    // Match overweight with underweight
+    while (overweight.length > 0 && underweight.length > 0) {
+      const from = overweight[0];
+      const to = underweight[0];
+
+      const moveAmount = Math.min(from.value, to.value, from.value * 0.9); // Max 90% of position
+
+      moves.push({
+        from: from.asset,
+        to: to.asset,
+        amount: Math.round(moveAmount * 100) / 100,
+        reason: 'rebalance',
+      });
+
+      from.value -= moveAmount;
+      to.value -= moveAmount;
+
+      if (from.value < 10) overweight.shift();
+      if (to.value < 10) underweight.shift();
+    }
+
+    return moves;
+  }
+
+  /**
+   * Estimate transaction costs for rebalancing
+   */
+  async estimateTransactionCosts(moves, preferredExchanges, maxSlippage) {
+    let totalCost = 0;
+    let totalSlippage = 0;
+
+    for (const move of moves) {
+      // Estimate fees (simplified - in production, would query exchange APIs)
+      const feePercent = 0.001; // 0.1% average fee
+      const fee = move.amount * feePercent;
+
+      // Estimate slippage (depends on trade size)
+      const slippagePercent = Math.min(move.amount / 100000, maxSlippage || 0.005);
+      const slippage = move.amount * slippagePercent;
+
+      totalCost += fee;
+      totalSlippage += slippage;
+    }
+
+    return {
+      totalCost: Math.round(totalCost * 100) / 100,
+      totalSlippage: Math.round(totalSlippage * 100) / 100,
+      averageCostPerMove: Math.round((totalCost / moves.length) * 100) / 100,
+    };
+  }
+
+  /**
+   * Identify tax-loss harvesting opportunities
+   */
+  async identifyTaxHarvestingOpportunities(userId, tenantId, moves) {
+    try {
+      const taxLots_ = await db
+        .select()
+        .from(taxLots)
+        .where(
+          and(
+            eq(taxLots.userId, userId),
+            eq(taxLots.tenantId, tenantId),
+            eq(taxLots.canBeHarvested, true)
+          )
+        )
+        .orderBy(taxLots.harvestPriority, taxLots.unrealizedGain);
+
+      const harvestingMoves = [];
+
+      for (const lot of taxLots_) {
+        // Only harvest losses
+        if (parseFloat(lot.unrealizedGain) >= 0) continue;
+
+        // Check wash sale rule
+        if (lot.washSaleExcludeUntil && lot.washSaleExcludeUntil > new Date()) {
+          continue;
+        }
+
+        // Find similar asset to switch to (avoid wash sale)
+        const similarAsset = this.findSimilarAsset(lot.assetSymbol);
+
+        harvestingMoves.push({
+          sell: lot.assetSymbol,
+          buy: similarAsset,
+          loss: Math.abs(parseFloat(lot.unrealizedGain)),
+          lotId: lot.id,
+          purpose: 'harvest',
+        });
+      }
+
+      return harvestingMoves;
+    } catch (err) {
+      console.error('Tax harvesting identification error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Find similar asset for wash sale avoidance
+   */
+  findSimilarAsset(assetSymbol) {
+    const similarAssets = {
+      'BTC': 'ETH',
+      'ETH': 'BTC',
+      'AAPL': 'MSFT',
+      'MSFT': 'AAPL',
+      'SPY': 'VOO',
+      'VOO': 'VTI',
+      'EUR': 'GBP',
+      'GBP': 'EUR',
+    };
+
+    return similarAssets[assetSymbol] || assetSymbol;
+  }
+
+  /**
+   * Calculate tax impact of rebalancing moves
+   */
+  async calculateTaxImpact(userId, tenantId, moves, harvestingMoves) {
+    let realizedGains = 0;
+    let realizedLosses = 0;
+
+    // Get tax lots to calculate gains/losses
+    const lots = await db
+      .select()
+      .from(taxLots)
+      .where(
+        and(
+          eq(taxLots.userId, userId),
+          eq(taxLots.tenantId, tenantId),
+          eq(taxLots.status, 'open')
+        )
+      );
+
+    // Sum up realized gains from moves
+    for (const move of moves) {
+      const relatedLots = lots.filter(l => l.assetSymbol === move.from);
+      for (const lot of relatedLots) {
+        if (parseFloat(lot.unrealizedGain) > 0) {
+          realizedGains += Math.min(parseFloat(lot.unrealizedGain), move.amount);
+        }
       }
     }
-    
-    // Sort by priority
-    results.sort((a, b) => {
-      const priorityOrder = { high: 0, medium: 1, low: 2 };
-      return priorityOrder[a.priority] - priorityOrder[b.priority];
-    });
-    
-    return results;
-  } catch (error) {
-    console.error('Error checking all portfolios drift:', error);
-    throw error;
-  }
-};
 
-export default {
-  checkPortfolioDrift,
-  getRebalancingAlerts,
-  getRebalancingRecommendations,
-  recordRebalancing,
-  getRebalancingHistory,
-  getRebalancingSettings,
-  updateRebalancingSettings,
-  checkAllPortfoliosDrift
-};
+    // Sum up harvestable losses
+    for (const move of harvestingMoves) {
+      realizedLosses += move.loss;
+    }
+
+    // Estimate tax cost (simplified: 35% combined fed + state rate)
+    const netGains = realizedGains - realizedLosses;
+    const estimatedTaxRate = 0.35;
+    const netTaxCost = netGains > 0 ? netGains * estimatedTaxRate : -realizedLosses * estimatedTaxRate;
+
+    return {
+      realizedGains: Math.round(realizedGains * 100) / 100,
+      realizedLosses: Math.round(realizedLosses * 100) / 100,
+      netGains: Math.round(netGains * 100) / 100,
+      estimatedTaxCost: Math.round(netTaxCost * 100) / 100,
+    };
+  }
+
+  /**
+   * Calculate total harvestable losses
+   */
+  calculateHarvestableLosses(moves) {
+    return moves.reduce((sum, m) => sum + m.loss, 0);
+  }
+
+  /**
+   * Execute rebalancing recommendation
+   */
+  async executeRebalancing(recommendationId, userId, tenantId, approvalNotes = null) {
+    try {
+      // Get recommendation
+      const [recommendation] = await db
+        .select()
+        .from(rebalancingRecommendations)
+        .where(
+          and(
+            eq(rebalancingRecommendations.id, recommendationId),
+            eq(rebalancingRecommendations.userId, userId)
+          )
+        );
+
+      if (!recommendation) {
+        throw new Error('Recommendation not found');
+      }
+
+      // Update status to approved
+      await db
+        .update(rebalancingRecommendations)
+        .set({
+          status: 'approved',
+          actionedAt: new Date(),
+        })
+        .where(eq(rebalancingRecommendations.id, recommendationId));
+
+      // Create transactions for each move
+      const txns = [];
+      for (const move of recommendation.moves) {
+        const txn = await db
+          .insert(rebalancingTransactions)
+          .values({
+            id: uuidv4(),
+            tenantId,
+            userId,
+            recommendationId,
+            
+            transactionType: 'swap',
+            fromAsset: move.from,
+            toAsset: move.to,
+            fromQuantity: 0, // Would be calculated from current price
+            toQuantity: 0,
+            executionPrice: 1, // Would be actual market price
+            
+            baseCurrency: 'USD',
+            transactionFee: recommendation.estimatedCost / recommendation.moves.length,
+            slippage: recommendation.estimatedSlippage / recommendation.moves.length,
+            
+            status: 'pending',
+          })
+          .returning();
+        
+        txns.push(txn[0]);
+      }
+
+      // Publish execution event
+      await outboxService.publishEvent({
+        tenantId,
+        userId,
+        eventType: 'portfolio.rebalancing_executed',
+        payload: {
+          recommendationId,
+          transactionCount: txns.length,
+          totalCost: recommendation.estimatedCost,
+        },
+      });
+
+      return {
+        recommendation: recommendation[0],
+        transactions: txns,
+      };
+    } catch (err) {
+      console.error('Rebalancing execution error:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Get rebalancing history
+   */
+  async getRebalancingHistory(userId, tenantId, limit = 20) {
+    const transactions = await db
+      .select()
+      .from(rebalancingTransactions)
+      .where(
+        and(
+          eq(rebalancingTransactions.userId, userId),
+          eq(rebalancingTransactions.tenantId, tenantId)
+        )
+      )
+      .orderBy(desc(rebalancingTransactions.executedAt))
+      .limit(limit);
+
+    return transactions;
+  }
+
+  /**
+   * Get portfolio analytics
+   */
+  async getPortfolioAnalytics(userId, tenantId, allocationTargetId, periodType = 'monthly') {
+    const metrics = await db
+      .select()
+      .from(rebalancingMetrics)
+      .where(
+        and(
+          eq(rebalancingMetrics.userId, userId),
+          eq(rebalancingMetrics.allocationTargetId, allocationTargetId),
+          eq(rebalancingMetrics.periodType, periodType)
+        )
+      )
+      .orderBy(desc(rebalancingMetrics.periodStart))
+      .limit(12); // Last 12 periods
+
+    return metrics;
+  }
+
+  /**
+   * Get tax optimization summary
+   */
+  async getTaxOptimizationSummary(userId, tenantId) {
+    try {
+      const lots = await db
+        .select()
+        .from(taxLots)
+        .where(
+          and(
+            eq(taxLots.userId, userId),
+            eq(taxLots.tenantId, tenantId)
+          )
+        );
+
+      const summary = {
+        totalHoldings: lots.length,
+        unrealizedGains: 0,
+        unrealizedLosses: 0,
+        harvestablelosses: 0,
+        longTermGains: 0,
+        shortTermGains: 0,
+        daysUntilLongTerm: 0,
+      };
+
+      for (const lot of lots) {
+        const gain = parseFloat(lot.unrealizedGain);
+
+        if (gain > 0) {
+          summary.unrealizedGains += gain;
+          if (lot.isLongTerm) {
+            summary.longTermGains += gain;
+          } else {
+            summary.shortTermGains += gain;
+          }
+        } else {
+          summary.unrealizedLosses += Math.abs(gain);
+          if (lot.canBeHarvested) {
+            summary.harvestablelosses += Math.abs(gain);
+          }
+        }
+
+        // Calculate days until long-term
+        if (!lot.isLongTerm) {
+          const daysToLongTerm = 365 - lot.daysHeld;
+          if (summary.daysUntilLongTerm === 0 || daysToLongTerm < summary.daysUntilLongTerm) {
+            summary.daysUntilLongTerm = daysToLongTerm;
+          }
+        }
+      }
+
+      return summary;
+    } catch (err) {
+      console.error('Tax summary error:', err);
+      throw err;
+    }
+  }
+}
+
+export default new PortfolioRebalancingService();

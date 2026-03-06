@@ -120,16 +120,19 @@ export const useAuth = () => {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, mfaToken?: string) => {
     setLoading(true);
     try {
-      const result = await authAPI.login({ email, password });
+      const result = await authAPI.login({ email, password, mfaToken });
       
-      if (result.success && result.data.user) {
+      if (result.success && result.data?.user) {
         setUser(result.data.user);
         localStorage.setItem('authToken', result.data.token);
         showToast('Welcome back! Successfully logged in.', 'success');
         return { success: true, user: result.data.user };
+      } else if (result.mfaRequired) {
+        // MFA is required
+        return { success: false, mfaRequired: true, message: result.message || 'MFA token required' };
       } else {
         showToast('Login failed. Please check your credentials.', 'error');
         return { success: false, error: 'Login failed' };

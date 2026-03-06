@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle, XCircle, Clock, DollarSign } from 'lucide-react';
+import api from '../../services/api';
 
 interface ApprovalRequest {
   id: string;
@@ -51,13 +52,10 @@ export const ExpenseApprovalModal: React.FC<ExpenseApprovalModalProps> = ({
 
   const fetchApprovalDetails = async () => {
     try {
-      const response = await fetch(`/api/vaults/${vaultId}/expense-approvals`);
-      if (response.ok) {
-        const approvals = await response.json();
-        const currentApproval = approvals.data.find((a: ApprovalRequest) => a.id === approvalId);
-        if (currentApproval) {
-          setApproval(currentApproval);
-        }
+      const response = await api.vaults.expenseApprovals.getPending(vaultId);
+      const currentApproval = response.data.find((a: ApprovalRequest) => a.id === approvalId);
+      if (currentApproval) {
+        setApproval(currentApproval);
       }
     } catch (error) {
       console.error('Failed to fetch approval details:', error);
@@ -69,21 +67,14 @@ export const ExpenseApprovalModal: React.FC<ExpenseApprovalModalProps> = ({
 
     setIsLoading(true);
     try {
-      const endpoint = approved ? 'approve' : 'reject';
-      const response = await fetch(`/api/vaults/${vaultId}/expense-approvals/${approval.id}/${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ notes }),
-      });
-
-      if (response.ok) {
-        alert(`Expense ${approved ? 'approved' : 'rejected'} successfully!`);
-        onSuccess?.();
+      if (approved) {
+        await api.vaults.expenseApprovals.approve(vaultId, approval.id, notes);
       } else {
-        alert(`Failed to ${approved ? 'approve' : 'reject'} expense`);
+        await api.vaults.expenseApprovals.reject(vaultId, approval.id, notes);
       }
+
+      alert(`Expense ${approved ? 'approved' : 'rejected'} successfully!`);
+      onSuccess?.();
     } catch (error) {
       alert(`Failed to ${approved ? 'approve' : 'reject'} expense`);
     } finally {

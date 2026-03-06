@@ -12,15 +12,15 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1770112014747,
-      "tag": "0001_mean_mordo",
+      "when": 1772323200000,
+      "tag": "0001_advanced_rbac",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1770890376716,
-      "tag": "0002_parallel_mystique",
+      "when": 1772326800000,
+      "tag": "0002_comprehensive_audit_logging",
       "breakpoints": true
     }
   ]
