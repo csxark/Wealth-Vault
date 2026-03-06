@@ -976,7 +976,7 @@ export const expenseApprovalsRelations = relations(expenseApprovals, ({ one }) =
     }),
 }));
 
-// Update vaults relations to include family tables
+// Update vaults relations to include family tables and children
 export const vaultsRelations = relations(vaults, ({ one, many }) => ({
     owner: one(users, {
         fields: [vaults.ownerId],
@@ -992,6 +992,7 @@ export const vaultsRelations = relations(vaults, ({ one, many }) => ({
     familySettings: one(familySettings),
     sharedBudgets: many(sharedBudgets),
     expenseApprovals: many(expenseApprovals),
+    children: many(children),
 }));
 
 // ============================================
@@ -1325,25 +1326,6 @@ export const childSavingsGoalsRelations = relations(childSavingsGoals, ({ one })
         fields: [childSavingsGoals.childId],
         references: [children.id],
     }),
-}));
-
-// Update vaults relations to include children
-export const vaultsRelations = relations(vaults, ({ one, many }) => ({
-    owner: one(users, {
-        fields: [vaults.ownerId],
-        references: [users.id],
-    }),
-    members: many(vaultMembers),
-    expenses: many(expenses),
-    goals: many(goals),
-    invites: many(vaultInvites),
-    reports: many(reports),
-    expenseShares: many(expenseShares),
-    reimbursements: many(reimbursements),
-    familySettings: one(familySettings),
-    sharedBudgets: many(sharedBudgets),
-    expenseApprovals: many(expenseApprovals),
-    children: many(children),
 }));
 
 // Bank Accounts Table (for Plaid integration)
