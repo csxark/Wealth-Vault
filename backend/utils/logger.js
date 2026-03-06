@@ -115,7 +115,12 @@ export const logInfo = (message, meta = {}) => logger.info(message, meta);
 export const logError = (message, error = null, meta = {}) => {
   const logData = { ...meta };
   if (error) {
-    logData.error = { message: error.message, stack: error.stack, name: error.name };
+    logData.error = {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code || error.errorCode, // Capture error codes if available
+    };
   }
   logger.error(message, logData);
 };

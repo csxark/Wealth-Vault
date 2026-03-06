@@ -442,10 +442,529 @@ export async function sendPasswordChangedNotification({ email, userName, timesta
   });
 }
 
+/**
+ * Send anomaly detection alert email
+ */
+export async function sendAnomalyDetectionAlert({ email, userName, expense, anomalyDetails, severity }) {
+  const severityColors = {
+    low: '#FCD34D',
+    medium: '#FB923C',
+    high: '#F87171',
+    critical: '#DC2626'
+  };
+
+  const severityEmojis = {
+    low: '⚠️',
+    medium: '🚨',
+    high: '⛔',
+    critical: '🚫'
+  };
+
+  const color = severityColors[severity] || severityColors.medium;
+  const emoji = severityEmojis[severity] || '⚠️';
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: ${color}; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+        .alert-box { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid ${color}; }
+        .expense-details { background: #FEF3C7; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .button { display: inline-block; padding: 10px 20px; background: #3B82F6; color: white; text-decoration: none; border-radius: 5px; margin: 10px 5px; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>${emoji} Unusual Transaction Detected</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${userName},</p>
+          <p>We detected an unusual transaction on your account that requires your attention.</p>
+          
+          <div class="expense-details">
+            <strong>Transaction Details:</strong><br>
+            <strong>Amount:</strong> $${parseFloat(expense.amount).toFixed(2)}<br>
+            <strong>Description:</strong> ${expense.description}<br>
+            <strong>Date:</strong> ${new Date(expense.date).toLocaleString()}<br>
+            <strong>Payment Method:</strong> ${expense.paymentMethod || 'Not specified'}<br>
+            ${expense.location ? `<strong>Location:</strong> ${typeof expense.location === 'string' ? expense.location : JSON.stringify(expense.location)}<br>` : ''}
+          </div>
+
+          <div class="alert-box">
+            <strong>🔍 Why was this flagged?</strong><br>
+            ${anomalyDetails.reason}<br><br>
+            <strong>Severity Level:</strong> ${severity.toUpperCase()}<br>
+            <strong>Confidence:</strong> ${(anomalyDetails.confidence * 100).toFixed(0)}%
+          </div>
+
+          ${anomalyDetails.requiresMFA ? `
+          <div class="alert-box">
+            <strong>⚡ Action Required:</strong><br>
+            This transaction requires MFA verification before it can be cleared in your ledger.
+          </div>
+          ` : ''}
+
+          <p><strong>What should you do?</strong></p>
+          <ul>
+            <li>Review the transaction details above</li>
+            <li>If this was you, verify the transaction in your security dashboard</li>
+            <li>If this wasn't you, block the transaction immediately</li>
+            <li>Consider enabling additional security features</li>
+          </ul>
+
+          <p style="text-align: center;">
+            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/security/review" class="button">Review Transaction</a>
+            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/security/markers" class="button" style="background: #EF4444;">View All Alerts</a>
+          </p>
+
+          <p style="color: #666; font-size: 14px; margin-top: 20px;">
+            <strong>Security Tip:</strong> This alert is designed to protect your financial data. We recommend reviewing all flagged transactions promptly.
+          </p>
+        </div>
+        <div class="footer">
+          <p>This is an automated security alert from Wealth-Vault.<br>
+          Anomaly detection helps protect your account from unauthorized or suspicious activity.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    ${emoji} UNUSUAL TRANSACTION DETECTED
+    
+    Hi ${userName},
+    
+    We detected an unusual transaction on your account:
+    
+    Amount: $${parseFloat(expense.amount).toFixed(2)}
+    Description: ${expense.description}
+    Date: ${new Date(expense.date).toLocaleString()}
+    
+    Reason: ${anomalyDetails.reason}
+    Severity: ${severity.toUpperCase()}
+    ${anomalyDetails.requiresMFA ? '\n⚡ MFA Verification Required' : ''}
+    
+    Actions:
+    - Review transaction: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/security/review
+    - View all alerts: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/security/markers
+    
+    If this wasn't you, please block the transaction immediately.
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: `${emoji} Unusual Transaction Detected: $${parseFloat(expense.amount).toFixed(2)}`,
+    html,
+    text,
+  });
+}
+
+/**
+ * Send AI-detected scam alert email
+ */
+export async function sendScamDetectionAlert({ email, userName, expense, aiAnalysis }) {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #DC2626; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+        .danger-box { background: #FEE2E2; padding: 15px; margin: 15px 0; border-left: 4px solid #DC2626; }
+        .scam-indicators { background: white; padding: 15px; margin: 15px 0; }
+        .button { display: inline-block; padding: 10px 20px; background: #DC2626; color: white; text-decoration: none; border-radius: 5px; margin: 10px 5px; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🚫 POTENTIAL SCAM DETECTED</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${userName},</p>
+          <p><strong style="color: #DC2626;">URGENT:</strong> Our AI system has detected a potentially fraudulent transaction.</p>
+          
+          <div class="danger-box">
+            <strong>⚠️ HIGH-RISK TRANSACTION</strong><br>
+            <strong>Amount:</strong> $${parseFloat(expense.amount).toFixed(2)}<br>
+            <strong>Description:</strong> ${expense.description}<br>
+            <strong>Risk Score:</strong> ${aiAnalysis.riskScore}/100<br>
+            <strong>Fraud Type:</strong> ${aiAnalysis.fraudType || 'Suspicious pattern'}
+          </div>
+
+          <div class="scam-indicators">
+            <strong>🚩 Scam Indicators Detected:</strong>
+            <ul>
+              ${(aiAnalysis.scamIndicators || []).map(indicator => 
+                `<li>${indicator.replace(/_/g, ' ').toUpperCase()}</li>`
+              ).join('')}
+            </ul>
+          </div>
+
+          <div class="danger-box">
+            <strong>AI Analysis:</strong><br>
+            ${aiAnalysis.explanation}<br><br>
+            <strong>Recommendation:</strong> ${aiAnalysis.recommendation?.toUpperCase()}
+          </div>
+
+          <p><strong>⚡ IMMEDIATE ACTION REQUIRED:</strong></p>
+          <ul>
+            <li><strong>DO NOT</strong> proceed with this transaction if you're unsure</li>
+            <li>Verify the merchant/recipient independently</li>
+            <li>Check for signs of phishing or social engineering</li>
+            <li>Contact support if you need assistance</li>
+          </ul>
+
+          <p style="text-align: center;">
+            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/security/review" class="button">BLOCK TRANSACTION</a>
+          </p>
+
+          <p style="background: #FEF3C7; padding: 15px; border-left: 4px solid #F59E0B; margin: 20px 0;">
+            <strong>⚠️ Common Scam Warning Signs:</strong><br>
+            • Urgent requests for money<br>
+            • Requests for gift cards or cryptocurrency<br>
+            • Claims of account suspension or verification<br>
+            • "Too good to be true" offers<br>
+            • Pressure to act immediately
+          </p>
+        </div>
+        <div class="footer">
+          <p>This is a critical security alert from Wealth-Vault.<br>
+          Our AI-powered scam detection helps protect you from fraudulent transactions.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    🚫 POTENTIAL SCAM DETECTED
+    
+    Hi ${userName},
+    
+    URGENT: Our AI has detected a potentially fraudulent transaction.
+    
+    Amount: $${parseFloat(expense.amount).toFixed(2)}
+    Description: ${expense.description}
+    Risk Score: ${aiAnalysis.riskScore}/100
+    
+    Scam Indicators:
+    ${(aiAnalysis.scamIndicators || []).map(i => `- ${i}`).join('\n')}
+    
+    Recommendation: ${aiAnalysis.recommendation?.toUpperCase()}
+    
+    ${aiAnalysis.explanation}
+    
+    IMMEDIATE ACTION REQUIRED - Review this transaction:
+    ${process.env.FRONTEND_URL || 'http://localhost:3000'}/security/review
+    
+    If unsure, DO NOT proceed and contact support.
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: '🚫 URGENT: Potential Scam Detected - Action Required',
+    html,
+    text,
+  });
+}
+
+/**
+ * Send security summary report email
+ */
+export async function sendSecuritySummaryReport({ email, userName, stats, period = '30 days' }) {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #3B82F6; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
+        .stat-card { background: white; padding: 15px; border-radius: 5px; text-align: center; border: 1px solid #E5E7EB; }
+        .stat-number { font-size: 28px; font-weight: bold; color: #3B82F6; }
+        .stat-label { font-size: 12px; color: #666; }
+        .info-box { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #3B82F6; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🛡️ Security Summary Report</h1>
+          <p>Last ${period}</p>
+        </div>
+        <div class="content">
+          <p>Hi ${userName},</p>
+          <p>Here's your account security summary for the past ${period}:</p>
+          
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-number">${stats.total || 0}</div>
+              <div class="stat-label">Total Security Events</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" style="color: #F59E0B;">${stats.pending || 0}</div>
+              <div class="stat-label">Pending Review</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" style="color: #10B981;">${stats.cleared || 0}</div>
+              <div class="stat-label">Cleared</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" style="color: #EF4444;">${stats.critical || 0}</div>
+              <div class="stat-label">Critical Alerts</div>
+            </div>
+          </div>
+
+          ${stats.pending > 0 ? `
+          <div class="info-box" style="border-left-color: #F59E0B; background: #FEF3C7;">
+            <strong>⚠️ Action Required:</strong><br>
+            You have ${stats.pending} transaction${stats.pending > 1 ? 's' : ''} waiting for your review.
+          </div>
+          ` : `
+          <div class="info-box" style="border-left-color: #10B981; background: #D1FAE5;">
+            <strong>✅ All Clear:</strong><br>
+            No pending security items requiring your attention.
+          </div>
+          `}
+
+          <p><strong>Security Status:</strong> ${
+            stats.critical > 0 ? '🔴 High Risk - Immediate attention needed' :
+            stats.pending > 3 ? '🟡 Medium Risk - Review recommended' :
+            '🟢 Good - Keep monitoring'
+          }</p>
+
+          <p style="text-align: center; margin: 25px 0;">
+            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/security/dashboard" 
+               style="display: inline-block; padding: 12px 24px; background: #3B82F6; color: white; text-decoration: none; border-radius: 5px;">
+              View Security Dashboard
+            </a>
+          </p>
+
+          <p style="color: #666; font-size: 14px;">
+            <strong>Pro Tip:</strong> Regular security reviews help keep your financial data safe. 
+            We recommend checking your security dashboard at least once a week.
+          </p>
+        </div>
+        <div class="footer">
+          <p>This is an automated weekly security report from Wealth-Vault.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    🛡️ SECURITY SUMMARY REPORT
+    Last ${period}
+    
+    Hi ${userName},
+    
+    Security Summary:
+    - Total Events: ${stats.total || 0}
+    - Pending Review: ${stats.pending || 0}
+    - Cleared: ${stats.cleared || 0}
+    - Critical Alerts: ${stats.critical || 0}
+    
+    ${stats.pending > 0 ? `⚠️ ${stats.pending} transaction(s) need your review` : '✅ No pending items'}
+    
+    View your security dashboard:
+    ${process.env.FRONTEND_URL || 'http://localhost:3000'}/security/dashboard
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: `🛡️ Your Security Summary - ${period}`,
+    html,
+    text,
+  });
+}
+
+/**
+ * Send password reset email
+ */
+export async function sendPasswordResetEmail({ email, userName, resetToken, resetUrl }) {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #EF4444; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+        .warning-box { background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 15px; margin: 15px 0; }
+        .reset-button { display: inline-block; background: #EF4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+        .token-box { background: #f0f0f0; padding: 10px; border-radius: 3px; font-family: monospace; margin: 10px 0; word-break: break-all; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🔐 Password Reset Request</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${userName},</p>
+
+          <div class="warning-box">
+            <strong>⚠️ Password Reset Requested</strong><br>
+            We received a request to reset your Wealth-Vault account password.
+          </div>
+
+          <p>If you made this request, click the button below to reset your password:</p>
+
+          <div style="text-align: center;">
+            <a href="${resetUrl}" class="reset-button">Reset My Password</a>
+          </div>
+
+          <p><strong>This link will expire in 1 hour.</strong></p>
+
+          <p>If the button doesn't work, you can copy and paste this URL into your browser:</p>
+          <div class="token-box">${resetUrl}</div>
+
+          <p>If you didn't request a password reset, please ignore this email. Your password will remain unchanged.</p>
+
+          <p>For security reasons, this link can only be used once and will expire after 1 hour.</p>
+        </div>
+        <div class="footer">
+          <p>This email was sent by Wealth-Vault. If you have any questions, please contact support.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    Password Reset Request - Wealth-Vault
+
+    Hi ${userName},
+
+    We received a request to reset your Wealth-Vault account password.
+
+    If you made this request, use this link to reset your password:
+    ${resetUrl}
+
+    This link will expire in 1 hour and can only be used once.
+
+    If you didn't request a password reset, please ignore this email.
+
+    For security reasons, never share this link with anyone.
+
+    This email was sent by Wealth-Vault.
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: '🔐 Reset Your Wealth-Vault Password',
+    html,
+    text,
+  });
+}
+
+/**
+ * Send password reset success notification
+ */
+export async function sendPasswordResetSuccessEmail({ email, userName, timestamp }) {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #10B981; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+        .success-box { background: #D1FAE5; border-left: 4px solid #10B981; padding: 15px; margin: 15px 0; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>✅ Password Reset Successful</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${userName},</p>
+
+          <div class="success-box">
+            <strong>🎉 Password Reset Complete</strong><br>
+            Your Wealth-Vault account password has been successfully changed.
+          </div>
+
+          <p><strong>Time:</strong> ${new Date(timestamp).toLocaleString()}</p>
+
+          <p>If you made this change, no further action is required.</p>
+
+          <p>If you didn't change your password, please contact support immediately and consider changing your password again.</p>
+
+          <p>For your security, we recommend:</p>
+          <ul>
+            <li>Using a strong, unique password</li>
+            <li>Enabling two-factor authentication</li>
+            <li>Regularly monitoring your account activity</li>
+          </ul>
+        </div>
+        <div class="footer">
+          <p>This is an automated security notification from Wealth-Vault.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    Password Reset Successful - Wealth-Vault
+
+    Hi ${userName},
+
+    Your Wealth-Vault account password has been successfully changed.
+
+    Time: ${new Date(timestamp).toLocaleString()}
+
+    If you made this change, no further action is required.
+
+    If you didn't change your password, please contact support immediately.
+
+    For your security, we recommend:
+    - Using a strong, unique password
+    - Enabling two-factor authentication
+    - Regularly monitoring your account activity
+
+    This is an automated security notification from Wealth-Vault.
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: '✅ Password Reset Successful - Wealth-Vault',
+    html,
+    text,
+  });
+}
+
 export default {
+  sendEmail,
   sendLoginNotification,
   sendMFAEnabledNotification,
   sendMFADisabledNotification,
   sendSuspiciousActivityAlert,
   sendPasswordChangedNotification,
+  sendAnomalyDetectionAlert,
+  sendScamDetectionAlert,
+  sendSecuritySummaryReport,
+  sendPasswordResetEmail,
+  sendPasswordResetSuccessEmail,
 };

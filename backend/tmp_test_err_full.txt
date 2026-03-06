@@ -1,0 +1,44 @@
+﻿node : file:///D:/Wealth-Vau
+lt/backend/services/probateA
+utomationService.js:2
+At line:1 char:1
++ node 
+scripts/test_zkp_oracle.js 
+2>&1 | Out-File -FilePath 
+tmp_test_er ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~
+    + CategoryInfo          
+    : NotSpecified: (file:  
+  ///D:/Weal...ionService   
+ .js:2:String) [], Remot    
+eException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 
+import { successionPlans, 
+investments, bankAccounts, 
+realEstate, passionAssets } 
+from '../db/schema.js';
+                            
+           ^^^^^^^^^^^^
+SyntaxError: The requested 
+module '../db/schema.js' 
+does not provide an export 
+named 'bankAccounts'
+    at 
+ModuleJob._instantiate (node
+:internal/modules/esm/module
+_job:220:21)
+    at async ModuleJob.run (
+node:internal/modules/esm/mo
+dule_job:321:5)
+    at async onImport.traceP
+romise.__proto__ (node:inter
+nal/modules/esm/loader:644:2
+6)
+    at async asyncRunEntryPo
+intWithESMLoader (node:inter
+nal/modules/run_main:117:5)
+
+Node.js v22.17.0

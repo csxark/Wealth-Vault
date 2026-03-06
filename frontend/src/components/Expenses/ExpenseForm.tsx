@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Expense, Category } from '../../types';
-import { X, Calendar, DollarSign, Tag, FileText, CreditCard, MapPin, Calculator, Receipt } from 'lucide-react';
+import { X, Calendar, DollarSign, Tag, FileText, CreditCard, MapPin, Calculator, Receipt, QrCode } from 'lucide-react';
 import { taxApi, TaxCategory } from '../../services/taxApi';
+import ExpenseQRScanner, { ExpenseQRData } from '../Payment/ExpenseQRScanner';
 
 
 interface ExpenseFormProps {
@@ -34,7 +35,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
   });
 
   const [taxCategories, setTaxCategories] = useState<TaxCategory[]>([]);
-
+  const [showQRScanner, setShowQRScanner] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -97,6 +98,25 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
+  const handleQRScan = (qrData: ExpenseQRData) => {
+    // Auto-fill form with scanned data
+    setFormData(prev => ({
+      ...prev,
+      description: qrData.description || prev.description,
+      amount: qrData.amount?.toString() || prev.amount,
+      currency: qrData.currency || prev.currency,
+      categoryId: qrData.category || prev.categoryId,
+      date: qrData.date ? new Date(qrData.date).toISOString().split('T')[0] : prev.date,
+      paymentMethod: qrData.paymentMethod || prev.paymentMethod,
+      location: qrData.location || prev.location,
+      tags: qrData.tags || prev.tags,
+      notes: prev.notes // Keep existing notes
+    }));
+
+    // Clear any existing errors
+    setErrors({});
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -154,9 +174,22 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-          {expense ? 'Edit Expense' : 'Add New Expense'}
-        </h2>
+        <div className="flex items-center space-x-3">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            {expense ? 'Edit Expense' : 'Add New Expense'}
+          </h2>
+          {!expense && (
+            <button
+              type="button"
+              onClick={() => setShowQRScanner(true)}
+              className="flex items-center space-x-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+              title="Scan QR code from receipt"
+            >
+              <QrCode className="h-4 w-4" />
+              <span>Scan QR</span>
+            </button>
+          )}
+        </div>
         <button
           onClick={onCancel}
           className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
@@ -441,6 +474,15 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
           </button>
         </div>
       </form>
+
+      {/* QR Scanner Modal */}
+      {showQRScanner && (
+        <ExpenseQRScanner
+          onScanSuccess={handleQRScan}
+          onScanError={(error) => console.error('QR Scan error:', error)}
+          onClose={() => setShowQRScanner(false)}
+        />
+      )}
     </div>
   );
 };

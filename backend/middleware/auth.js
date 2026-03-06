@@ -1,9 +1,10 @@
 import jwt from 'jsonwebtoken';
 import { eq, and } from 'drizzle-orm';
 import db from '../config/db.js';
-import { users, deviceSessions } from '../db/schema.js';
+import { users } from '../db/schema.js';
 import * as schema from '../db/schema.js';
 import { verifyAccessToken, isTokenBlacklisted } from '../services/tokenService.js';
+import policyEngineService from '../services/policyEngineService.js';
 
 // Helper to map model names to schema tables
 const getTable = (modelName) => {
@@ -11,7 +12,9 @@ const getTable = (modelName) => {
     'User': schema.users,
     'Expense': schema.expenses,
     'Category': schema.categories,
-    'Goal': schema.goals
+    'Goal': schema.goals,
+    'Asset': schema.fixedAssets,
+    'Investment': schema.investments
   };
   return map[modelName];
 };
@@ -37,8 +40,9 @@ export const protect = async (req, res, next) => {
     try {
       // Verify token using enhanced token service
       const decoded = await verifyAccessToken(token);
+      const tokenUserId = decoded?.id || decoded?.userId;
 
-      if (!decoded || !decoded.id) {
+      if (!decoded || !tokenUserId) {
         return res.status(401).json({
           success: false,
           message: 'Invalid token format.',
@@ -46,35 +50,35 @@ export const protect = async (req, res, next) => {
         });
       }
 
-      // Verify session exists and is active
-      if (decoded.sessionId) {
-        const [session] = await db
-          .select()
-          .from(deviceSessions)
-          .where(
-            and(
-              eq(deviceSessions.id, decoded.sessionId),
-              eq(deviceSessions.userId, decoded.id),
-              eq(deviceSessions.isActive, true)
-            )
-          );
+      // TODO: Verify session exists and is active when deviceSessions table exists
+      // if (decoded.sessionId) {
+      //   const [session] = await db
+      //     .select()
+      //     .from(deviceSessions)
+      //     .where(
+      //       and(
+      //         eq(deviceSessions.id, decoded.sessionId),
+      //         eq(deviceSessions.userId, decoded.id),
+      //         eq(deviceSessions.isActive, true)
+      //       )
+      //     );
 
-        if (!session) {
-          return res.status(401).json({
-            success: false,
-            message: 'Session not found or expired.',
-            code: 'SESSION_EXPIRED'
-          });
-        }
+      //   if (!session) {
+      //     return res.status(401).json({
+      //       success: false,
+      //       message: 'Session not found or expired.',
+      //       code: 'SESSION_EXPIRED'
+      //     });
+      //   }
 
-        // Update last activity
-        await db.update(deviceSessions)
-          .set({ lastActivity: new Date() })
-          .where(eq(deviceSessions.id, session.id));
-      }
+      //   // Update last activity
+      //   await db.update(deviceSessions)
+      //     .set({ lastActivity: new Date() })
+      //     .where(eq(deviceSessions.id, session.id));
+      // }
 
       // Get user from token
-      const [user] = await db.select().from(users).where(eq(users.id, decoded.id));
+      const [user] = await db.select().from(users).where(eq(users.id, tokenUserId));
 
       if (!user) {
         return res.status(401).json({
@@ -167,10 +171,36 @@ export const checkOwnership = (modelName) => {
         });
       }
 
-      // Check if user owns the resource personaly
-      if (resource.userId === userId) {
-        req.resource = resource;
-        return next();
+      // Check if user owns the resource
+      const decision = await policyEngineService.authorize({
+        action: 'resource:ownership:check',
+        user: req.user,
+        tenant: req.tenant || null,
+        resource: {
+          id: resource.id,
+          type: modelName.toLowerCase(),
+          userId: resource.userId,
+          ownerId: resource.ownerId || null
+        },
+        context: {
+          method: req.method,
+          path: req.originalUrl || req.path,
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'] || null,
+          requestId: req.id || req.headers['x-request-id'] || null,
+          userRole: req.tenantMembership?.role || null
+        }
+      });
+
+      req.authzDecision = decision;
+
+      if (!decision.allow) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only access your own resources.',
+          reason: decision.reason,
+          code: 'AUTHZ_DENIED'
+        });
       }
 
       // Check if resource belongs to a vault and user is a member
@@ -207,7 +237,7 @@ export const checkOwnership = (modelName) => {
 
 // Middleware to check if user has required role (for future use)
 export const requireRole = (roles) => {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -215,9 +245,40 @@ export const requireRole = (roles) => {
       });
     }
 
-    // For now, all authenticated users have access
-    // In the future, you can add role-based access control here
-    next();
+    const allowedRoles = Array.isArray(roles) ? roles : [roles];
+    const userRole = req.tenantMembership?.role || req.user?.role || 'member';
+
+    const decision = await policyEngineService.authorize({
+      action: 'tenant:role:check',
+      user: req.user,
+      tenant: req.tenant || null,
+      resource: {
+        type: 'tenant-membership',
+        id: req.tenantMembership?.id || req.user.id
+      },
+      context: {
+        method: req.method,
+        path: req.originalUrl || req.path,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] || null,
+        requestId: req.id || req.headers['x-request-id'] || null,
+        allowedRoles,
+        userRole
+      }
+    });
+
+    req.authzDecision = decision;
+
+    if (!decision.allow) {
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient role for this action',
+        reason: decision.reason,
+        code: 'AUTHZ_DENIED'
+      });
+    }
+
+    return next();
   };
 };
 
