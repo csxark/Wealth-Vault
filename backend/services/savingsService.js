@@ -63,14 +63,22 @@ export const processRoundUp = async (expense) => {
       })
       .returning();
 
-    // Update goal's current amount
-    await db
-      .update(goals)
-      .set({
-        currentAmount: goals.currentAmount + roundUpAmount,
-        updatedAt: new Date(),
-      })
+    // Fetch goal's current amount first
+    const [goal] = await db
+      .select({ currentAmount: goals.currentAmount })
+      .from(goals)
       .where(eq(goals.id, user.savingsGoalId));
+
+    if (goal) {
+      const newAmount = parseFloat(goal.currentAmount) + roundUpAmount;
+      await db
+        .update(goals)
+        .set({
+          currentAmount: newAmount.toString(),
+          updatedAt: new Date(),
+        })
+        .where(eq(goals.id, user.savingsGoalId));
+    }
 
     // Process the transfer (stub for Plaid integration)
     await processRoundUpTransfer(roundUpRecord);
