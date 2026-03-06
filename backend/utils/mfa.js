@@ -77,10 +77,10 @@ export function verifyTOTP(secret, token, window = 2) {
 export function generateRecoveryCodes(count = 10) {
   const codes = [];
   for (let i = 0; i < count; i++) {
-    // Generate 8-character alphanumeric code
-    const code = crypto.randomBytes(4).toString('hex').toUpperCase();
-    // Format as XXXX-XXXX for readability
-    const formattedCode = `${code.slice(0, 4)}-${code.slice(4)}`;
+    // Generate 16-character alphanumeric code (8 bytes = 16 hex chars)
+    const code = crypto.randomBytes(8).toString('hex').toUpperCase();
+    // Format as XXXX-XXXX-XXXX-XXXX for consistency with generateBackupCodes
+    const formattedCode = code.match(/.{1,4}/g).join('-');
     codes.push(formattedCode);
   }
   return codes;
