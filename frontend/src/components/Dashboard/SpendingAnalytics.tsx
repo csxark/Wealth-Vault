@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Pie, Bar, Line } from 'react-chartjs-2';
 import { TrendingUp, TrendingDown, DollarSign, Calendar } from 'lucide-react';
 import type { Expense } from '../../types';
+import { computeAnalytics, calculateMonthlyChange } from '../../utils/calculations';
 
 interface SpendingAnalyticsProps {
   expenses: Expense[];
@@ -9,69 +10,11 @@ interface SpendingAnalyticsProps {
 }
 
 const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatAmount }) => {
-  const analytics = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    // Current month expenses
-    const currentMonthExpenses = expenses.filter(exp => {
-      const expDate = new Date(exp.date);
-      return expDate.getMonth() === currentMonth && expDate.getFullYear() === currentYear;
-    });
-    
-    // Previous month expenses for comparison
-    const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-    const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-    const prevMonthExpenses = expenses.filter(exp => {
-      const expDate = new Date(exp.date);
-      return expDate.getMonth() === prevMonth && expDate.getFullYear() === prevYear;
-    });
-    
-    // Category-wise spending
-    const categorySpending = currentMonthExpenses.reduce((acc, exp) => {
-      const category = exp.category || 'Other';
-      acc[category] = (acc[category] || 0) + Math.abs(exp.amount);
-      return acc;
-    }, {} as Record<string, number>);
-    
-    // Previous month category spending for comparison
-    const prevCategorySpending = prevMonthExpenses.reduce((acc, exp) => {
-      const category = exp.category || 'Other';
-      acc[category] = (acc[category] || 0) + Math.abs(exp.amount);
-      return acc;
-    }, {} as Record<string, number>);
-    
-    // Top categories
-    const topCategories = Object.entries(categorySpending)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5);
-    
-    // Monthly trend (last 6 months)
-    const monthlyTrend = [];
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date(currentYear, currentMonth - i, 1);
-      const monthExpenses = expenses.filter(exp => {
-        const expDate = new Date(exp.date);
-        return expDate.getMonth() === date.getMonth() && expDate.getFullYear() === date.getFullYear();
-      });
-      const total = monthExpenses.reduce((sum, exp) => sum + Math.abs(exp.amount), 0);
-      monthlyTrend.push({
-        month: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-        amount: total
-      });
-    }
-    
-    return {
-      categorySpending,
-      prevCategorySpending,
-      topCategories,
-      monthlyTrend,
-      currentTotal: Object.values(categorySpending).reduce((sum, val) => sum + val, 0),
-      prevTotal: Object.values(prevCategorySpending).reduce((sum, val) => sum + val, 0)
-    };
-  }, [expenses]);
-  
+  // Use extracted calculation utilities for testability
+  const analytics = useMemo(() => computeAnalytics(expenses), [expenses]);
+
+  const monthlyChange = calculateMonthlyChange(analytics.currentTotal, analytics.prevTotal);
+
   // Chart data
   const pieChartData = {
     labels: analytics.topCategories.map(([category]) => category),
@@ -84,7 +27,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
       borderColor: '#ffffff'
     }]
   };
-  
+
   const barChartData = {
     labels: Object.keys(analytics.categorySpending),
     datasets: [{
@@ -94,7 +37,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
       borderRadius: 4
     }]
   };
-  
+
   const trendChartData = {
     labels: analytics.monthlyTrend.map(item => item.month),
     datasets: [{
@@ -106,11 +49,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
       tension: 0.4
     }]
   };
-  
-  const monthlyChange = analytics.prevTotal > 0 
-    ? ((analytics.currentTotal - analytics.prevTotal) / analytics.prevTotal) * 100 
-    : 0;
-  
+
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
@@ -126,7 +65,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
             <DollarSign className="h-8 w-8 text-cyan-600" />
           </div>
         </div>
-        
+
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-cyan-100 dark:border-cyan-900">
           <div className="flex items-center justify-between">
             <div>
@@ -135,15 +74,15 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
                 <p className={`text-2xl font-bold ${monthlyChange >= 0 ? 'text-red-600' : 'text-green-600'}`}>
                   {monthlyChange >= 0 ? '+' : ''}{monthlyChange.toFixed(1)}%
                 </p>
-                {monthlyChange >= 0 ? 
-                  <TrendingUp className="h-5 w-5 text-red-600" /> : 
+                {monthlyChange >= 0 ?
+                  <TrendingUp className="h-5 w-5 text-red-600" /> :
                   <TrendingDown className="h-5 w-5 text-green-600" />
                 }
               </div>
             </div>
           </div>
         </div>
-        
+
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-cyan-100 dark:border-cyan-900">
           <div className="flex items-center justify-between">
             <div>
@@ -156,7 +95,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
           </div>
         </div>
       </div>
-      
+
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Category Distribution Pie Chart */}
@@ -165,8 +104,8 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
             Category Distribution
           </h3>
           <div className="h-64 flex items-center justify-center">
-            <Pie 
-              data={pieChartData} 
+            <Pie
+              data={pieChartData}
               options={{
                 responsive: true,
                 maintainAspectRatio: false,
@@ -183,14 +122,14 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
             />
           </div>
         </div>
-        
+
         {/* Category Comparison Bar Chart */}
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-cyan-100 dark:border-cyan-900">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
             Category Breakdown
           </h3>
           <div className="h-64">
-            <Bar 
+            <Bar
               data={barChartData}
               options={{
                 responsive: true,
@@ -202,7 +141,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
                   y: {
                     beginAtZero: true,
                     ticks: {
-                      callback: function(value) {
+                      callback: function (value) {
                         return '₹' + value.toLocaleString();
                       }
                     }
@@ -213,14 +152,14 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
           </div>
         </div>
       </div>
-      
+
       {/* Monthly Trend */}
       <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-cyan-100 dark:border-cyan-900">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
           6-Month Spending Trend
         </h3>
         <div className="h-64">
-          <Line 
+          <Line
             data={trendChartData}
             options={{
               responsive: true,
@@ -232,7 +171,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
                 y: {
                   beginAtZero: true,
                   ticks: {
-                    callback: function(value) {
+                    callback: function (value) {
                       return '₹' + value.toLocaleString();
                     }
                   }
@@ -242,7 +181,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
           />
         </div>
       </div>
-      
+
       {/* Top Categories List */}
       <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-cyan-100 dark:border-cyan-900">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
@@ -253,7 +192,7 @@ const SpendingAnalytics: React.FC<SpendingAnalyticsProps> = ({ expenses, formatA
             const prevAmount = analytics.prevCategorySpending[category] || 0;
             const change = prevAmount > 0 ? ((amount - prevAmount) / prevAmount) * 100 : 0;
             const percentage = (amount / analytics.currentTotal) * 100;
-            
+
             return (
               <div key={category} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
                 <div className="flex items-center gap-3">

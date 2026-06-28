@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, Zap, DollarSign, TrendingDown } from 'lucide-react';
 import type { ChatMessage } from '../../types';
-import { fetchGeminiResponse } from '../../services/gemini';
 import { useLoading } from '../../context/LoadingContext';
-import { analyticsAPI, goalsAPI } from '../../services/api';
+import { analyticsAPI, goalsAPI, api } from '../../services/api';
+import { fetchGeminiResponse } from '../../services/gemini';
 
 const quickReplies = [
   { text: "Help me reduce impulsive spending", icon: TrendingDown },
@@ -74,40 +74,15 @@ export const Coach: React.FC = () => {
     fetchData();
   }, []);
 
-  // Async Gemini response
-  const generateGeminiResponse = async (userMessage: string): Promise<string> => {
-    let contextData = '';
-
-    if (analyticsData) {
-      const { summary, categoryBreakdown, monthlyTrend, comparison } = analyticsData;
-      const topCategories = analyticsData?.categoryBreakdown?.slice(0, 3) || [];
-      const recentTrends = analyticsData?.monthlyTrend?.slice(-3) || [];
-      contextData += `\nUser's Financial Data:
-- Current month spending: ₹${summary?.totalAmount || 0}
-- Average transaction: ₹${summary?.avgTransaction || 0}
-- Top spending categories: ${topCategories.map(cat => `${cat.categoryName} (₹${cat.total})`).join(', ')}
-- Spending trend: ${comparison?.changes?.totalAmount?.trend === 'up' ? 'increasing' : 'decreasing'} by ${Math.abs(comparison?.changes?.totalAmount?.value || 0)}% vs last period
-- Monthly spending trend: ${recentTrends.map(m => `${m.month}: ₹${m.total}`).join(', ')}`;
+  // Async chatbot response using backend AI service
+  const generateChatbotResponse = async (userMessage: string): Promise<string> => {
+    try {
+      const response = await api.post('/chatbot', { message: userMessage });
+      return response.data.reply;
+    } catch (error) {
+      console.error('Error calling chatbot API:', error);
+      throw new Error('Failed to get AI response');
     }
-
-    if (goalsData && goalsData.goals) {
-      const activeGoals = goalsData.goals.filter((goal: any) => goal.status === 'active');
-      if (activeGoals.length > 0) {
-        contextData += `\nActive Goals: ${activeGoals.map((goal: any) => `${goal.title} (₹${goal.currentAmount || 0}/₹${goal.targetAmount})`).join(', ')}`;
-      }
-    }
-
-    const prompt = `
-You are an AI Financial Coach with access to the user's financial data.
-Answer in a friendly, concise way.
-Provide personalized advice based on their spending patterns, trends, and goals.
-Use predictive analytics to give insights like budget warnings or goal achievement timelines.
-${contextData}
-
-User: ${userMessage}
-Coach:
-    `;
-    return await withLoading(fetchGeminiResponse(prompt), 'Getting AI response...');
   };
 
   const handleSendMessage = async (content: string) => {
@@ -125,10 +100,10 @@ Coach:
     setIsTyping(true);
 
     try {
-      const geminiReply = await generateGeminiResponse(content);
+      const aiReply = await fetchGeminiResponse(content);
       const botResponse: ChatMessage = {
         _id: (Date.now() + 1).toString(),
-        content: geminiReply,
+        content: aiReply,
         isUser: false,
         timestamp: new Date().toISOString()
       };
@@ -141,7 +116,7 @@ Coach:
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorResponse]);
-      console.error('Error fetching Gemini response:', error);
+      console.error('Error fetching AI response:', error);
     } finally {
       setIsTyping(false);
     }

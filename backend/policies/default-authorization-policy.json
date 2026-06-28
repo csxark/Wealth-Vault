@@ -1,0 +1,107 @@
+{
+  "version": "1.0.0",
+  "engine": "cedar-lite",
+  "description": "Centralized authorization policies for Wealth Vault",
+  "defaults": {
+    "effect": "deny",
+    "reason": "No matching authorization policy"
+  },
+  "rules": [
+    {
+      "id": "deny_inactive_user",
+      "priority": 10,
+      "effect": "deny",
+      "actions": ["*"],
+      "reason": "User account is inactive",
+      "condition": {
+        "all": [
+          { "path": "user.id", "op": "exists" },
+          { "path": "user.isActive", "op": "eq", "value": false }
+        ]
+      }
+    },
+    {
+      "id": "allow_authenticated_by_default",
+      "priority": 100,
+      "effect": "allow",
+      "actions": ["auth:authenticated"],
+      "reason": "Authenticated request allowed",
+      "condition": {
+        "path": "user.id",
+        "op": "exists"
+      }
+    },
+    {
+      "id": "allow_tenant_role_match",
+      "priority": 200,
+      "effect": "allow",
+      "actions": ["tenant:role:check"],
+      "reason": "Tenant role satisfies route requirement",
+      "condition": {
+        "all": [
+          { "path": "context.userRole", "op": "exists" },
+          { "path": "context.allowedRoles", "op": "includes", "valuePath": "context.userRole" }
+        ]
+      }
+    },
+    {
+      "id": "allow_tenant_permission_any",
+      "priority": 210,
+      "effect": "allow",
+      "actions": ["tenant:permission:check:any"],
+      "reason": "At least one required permission granted",
+      "condition": {
+        "path": "context.permissionChecks.any",
+        "op": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "allow_tenant_permission_all",
+      "priority": 211,
+      "effect": "allow",
+      "actions": ["tenant:permission:check:all"],
+      "reason": "All required permissions granted",
+      "condition": {
+        "path": "context.permissionChecks.all",
+        "op": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "allow_owner_or_admin_resource_access",
+      "priority": 220,
+      "effect": "allow",
+      "actions": ["resource:ownership:check"],
+      "reason": "Admin/owner bypass for resource ownership",
+      "condition": {
+        "path": "context.userRole",
+        "op": "in",
+        "value": ["owner", "admin"]
+      }
+    },
+    {
+      "id": "allow_resource_owner_access",
+      "priority": 221,
+      "effect": "allow",
+      "actions": ["resource:ownership:check"],
+      "reason": "User owns the requested resource",
+      "condition": {
+        "any": [
+          {
+            "all": [
+              { "path": "resource.userId", "op": "exists" },
+              { "path": "resource.userId", "op": "eqPath", "valuePath": "user.id" }
+            ]
+          },
+          {
+            "all": [
+              { "path": "resource.ownerId", "op": "exists" },
+              { "path": "resource.ownerId", "op": "eqPath", "valuePath": "user.id" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

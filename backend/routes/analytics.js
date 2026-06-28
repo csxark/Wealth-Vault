@@ -1,15 +1,24 @@
 import express from "express";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import db from "../config/db.js";
-import { expenses, categories, users, debts as debtsTable, debtPayments } from "../db/schema.js";
+import {
+  expenses, categories, users,
+  debts as debtsTable,
+  debtPayments,
+  payoffStrategies,
+  amortizationSchedules,
+  currencyWallets
+} from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
 import { convertAmount, getAllRates } from "../services/currencyService.js";
 import assetService from "../services/assetService.js";
+import portfolioAnalyticsService from "../services/portfolioAnalyticsService.js";
 import projectionEngine from "../services/projectionEngine.js";
 import marketData from "../services/marketData.js";
-import debtEngine from "../services/debtEngine.js";
-import payoffOptimizer from "../services/payoffOptimizer.js";
 import refinanceScout from "../services/refinanceScout.js";
+import corporateService from "../services/corporateService.js";
+import residencyEngine from "../services/residencyEngine.js";
+import { taxNexusMappings } from "../db/schema.js";
 
 const router = express.Router();
 
@@ -547,6 +556,44 @@ router.get("/insights", protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error while generating insights",
+    });
+  }
+});
+
+/**
+ * @route   GET /api/analytics/post-tax-wealth
+ * @desc    Get consolidated net-wealth analysis accounting for corporate tax liabilities
+ */
+router.get("/post-tax-wealth", protect, async (req, res) => {
+  try {
+    // 1. Get gross liquidity from personal vaults
+    const userVaults = await db.query.vaults.findMany({
+      where: and(eq(vaults.ownerId, req.user.id), eq(vaults.status, 'active'))
+    });
+    const grossPersonalLiquidity = userVaults.reduce((sum, v) => sum + parseFloat(v.balance), 0);
+
+    // 2. Get corporate tax drag
+    const taxLiabilitySummary = await corporateService.calculateConsolidatedTaxLiability(req.user.id);
+
+    // 3. Calculate post-tax wealth
+    const netWealthPostTax = grossPersonalLiquidity - taxLiabilitySummary.totalEstimatedTax;
+
+    res.json({
+      success: true,
+      data: {
+        grossPersonalLiquidity,
+        corporateTaxLiability: taxLiabilitySummary.totalEstimatedTax,
+        netWealthPostTax,
+        taxUnityDetails: taxLiabilitySummary,
+        lastUpdated: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("Post-tax wealth calculation error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while calculating post-tax wealth",
+      error: error.message
     });
   }
 });
@@ -1138,6 +1185,85 @@ router.get("/portfolio", protect, async (req, res) => {
 });
 
 /**
+ * @route   GET /analytics/portfolio/performance-attribution
+ * @desc    Portfolio performance attribution by holding/sector/asset class
+ */
+router.get("/portfolio/performance-attribution", protect, async (req, res) => {
+  try {
+    const { startDate, endDate, period } = req.query;
+
+    const data = await portfolioAnalyticsService.getPerformanceAttribution(req.user.id, {
+      startDate,
+      endDate,
+      period,
+    });
+
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Performance attribution error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to calculate performance attribution",
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/portfolio/risk-metrics
+ * @desc    Portfolio risk metrics and benchmark comparison stats
+ */
+router.get("/portfolio/risk-metrics", protect, async (req, res) => {
+  try {
+    const { startDate, endDate, period, benchmark = "^GSPC" } = req.query;
+
+    const data = await portfolioAnalyticsService.getRiskAndBenchmark(req.user.id, {
+      startDate,
+      endDate,
+      period,
+      benchmark,
+    });
+
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Risk metrics error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to calculate risk metrics",
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/portfolio/benchmarks
+ * @desc    Get available benchmark symbols for comparison
+ */
+router.get("/portfolio/benchmarks", protect, async (req, res) => {
+  try {
+    const benchmarks = await portfolioAnalyticsService.getBenchmarksCatalog();
+
+    return res.json({
+      success: true,
+      data: benchmarks,
+    });
+  } catch (error) {
+    console.error("Benchmark catalog error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load benchmarks",
+      error: error.message,
+    });
+  }
+});
+
+/**
  * @route   GET /analytics/net-worth-projection
  * @desc    Quick projection for dashboard widgets
  */
@@ -1212,10 +1338,10 @@ router.get("/debt-to-income", protect, async (req, res) => {
   try {
     // Get user's monthly income
     const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
-    const monthlyIncome = req.body.monthlyIncome 
-      ? parseFloat(req.body.monthlyIncome) 
-      : user?.monthlyIncome 
-        ? parseFloat(user.monthlyIncome) 
+    const monthlyIncome = req.body.monthlyIncome
+      ? parseFloat(req.body.monthlyIncome)
+      : user?.monthlyIncome
+        ? parseFloat(user.monthlyIncome)
         : 0;
 
     if (monthlyIncome <= 0) {
@@ -1452,8 +1578,8 @@ router.get("/debt-summary", protect, async (req, res) => {
     const yearlyInterest = monthlyInterest * 12;
 
     Object.keys(debtByType).forEach(type => {
-      debtByType[type].percentage = totalDebt > 0 
-        ? (debtByType[type].balance / totalDebt) * 100 
+      debtByType[type].percentage = totalDebt > 0
+        ? (debtByType[type].balance / totalDebt) * 100
         : 0;
       debtByType[type].balance = Math.round(debtByType[type].balance * 100) / 100;
       debtByType[type].percentage = Math.round(debtByType[type].percentage * 100) / 100;
@@ -1721,8 +1847,8 @@ router.get("/debt-health", protect, async (req, res) => {
         summary: {
           totalDebts: userDebts.length,
           totalBalance: Math.round(userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0) * 100) / 100,
-          avgApr: userDebts.length > 0 
-            ? Math.round((userDebts.reduce((sum, d) => sum + parseFloat(d.apr), 0) / userDebts.length) * 1000) / 10 
+          avgApr: userDebts.length > 0
+            ? Math.round((userDebts.reduce((sum, d) => sum + parseFloat(d.apr), 0) / userDebts.length) * 1000) / 10
             : 0
         }
       }
@@ -1805,7 +1931,7 @@ router.get("/debt-insights", protect, async (req, res) => {
       consolidationAnalysis = {
         eligible: totalBalance >= 5000,
         potentialBenefit: weightedAvgApr > 0.12 ? 'high' : weightedAvgApr > 0.08 ? 'medium' : 'low',
-        recommendation: weightedAvgApr > 0.15 
+        recommendation: weightedAvgApr > 0.15
           ? 'Consider a debt consolidation loan to simplify payments and reduce interest.'
           : 'Your current rates are relatively good. Consolidation may not provide significant savings.'
       };
@@ -1844,6 +1970,476 @@ router.get("/debt-insights", protect, async (req, res) => {
       success: false,
       message: "Server error generating debt insights",
       error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /analytics/global-net-worth
+ * @desc    Get net worth aggregated across all multi-currency wallets
+ */
+router.get("/global-net-worth", protect, async (req, res) => {
+  try {
+    const baseCurrency = req.query.base || 'USD';
+    const wallets = await db.select().from(currencyWallets).where(eq(currencyWallets.userId, req.user.id));
+
+    // Get all rates for conversion
+    const rates = await db.query.fxRates.findMany();
+    const rateMap = rates.reduce((acc, r) => {
+      acc[r.pair] = parseFloat(r.rate);
+      return acc;
+    }, {});
+
+    let totalNetWorth = 0;
+    const walletBreakdown = wallets.map(wallet => {
+      const currency = wallet.currency;
+      const balance = parseFloat(wallet.balance);
+      let valueInBase = balance;
+
+      if (currency !== baseCurrency) {
+        const pair = `${baseCurrency}/${currency}`;
+        const inversePair = `${currency}/${baseCurrency}`;
+
+        if (rateMap[inversePair]) {
+          valueInBase = balance * rateMap[inversePair];
+        } else if (rateMap[pair]) {
+          valueInBase = balance / rateMap[pair];
+        } else {
+          // Fallback to 1 if no rate found (should not happen for major pairs)
+          valueInBase = balance;
+        }
+      }
+
+      totalNetWorth += valueInBase;
+      return {
+        currency,
+        balance,
+        valueInBase: parseFloat(valueInBase.toFixed(2))
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        baseCurrency,
+        totalNetWorth: parseFloat(totalNetWorth.toFixed(2)),
+        walletBreakdown
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /analytics/smart-spending-analysis:
+ *   get:
+ *     summary: Get AI-powered smart spending analysis with behavioral insights
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [30days, 90days, 6months, 1year]
+ *           default: 90days
+ *         description: Time range for analysis
+ *     responses:
+ *       200:
+ *         description: Smart spending analysis results
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     status:
+ *                       type: string
+ *                       enum: [success, insufficient_data]
+ *                     patternAnalysis:
+ *                       type: object
+ *                       description: Safe/Impulsive/Anxious spending patterns
+ *                     behavioralInsights:
+ *                       type: array
+ *                       description: Behavioral pattern insights
+ *                     riskAssessment:
+ *                       type: object
+ *                       description: Spending risk evaluation
+ *                     recommendations:
+ *                       type: array
+ *                       description: Personalized recommendations
+ */
+router.get('/smart-spending-analysis', protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { timeRange = '90days' } = req.query;
+
+    // Import the service dynamically to avoid circular dependencies
+    const smartSpendingAnalysisService = (await import('../services/smartSpendingAnalysisService.js')).default;
+
+    const analysis = await smartSpendingAnalysisService.analyzeSpendingPatterns(userId, timeRange);
+
+    res.json({
+      success: true,
+      data: analysis
+    });
+
+  } catch (error) {
+    console.error('Smart spending analysis error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to generate spending analysis'
+    });
+  }
+});
+
+/**
+ * ISSUE #694: Portfolio Performance Attribution & Risk Metrics
+ * @swagger
+ * /analytics/portfolio/performance-attribution:
+ *   get:
+ *     summary: Get comprehensive performance attribution with risk metrics
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date for analysis
+ *       - in: query
+ *         name: endDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date for analysis
+ *       - in: query
+ *         name: vaultId
+ *         schema:
+ *           type: string
+ *         description: Optional vault ID for specific portfolio
+ *     responses:
+ *       200:
+ *         description: Performance attribution breakdown by asset/sector
+ */
+router.get('/portfolio/performance-attribution', protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { startDate, endDate, vaultId } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date and end date are required'
+      });
+    }
+
+    const performanceAttributionService = (await import('../services/performanceAttributionService.js')).default;
+
+    const attribution = await performanceAttributionService.calculateAttribution(
+      userId,
+      new Date(startDate),
+      new Date(endDate),
+      vaultId || null
+    );
+
+    res.json({
+      success: true,
+      data: attribution
+    });
+
+  } catch (error) {
+    console.error('Performance attribution error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to calculate performance attribution'
+    });
+  }
+});
+
+/**
+ * ISSUE #694: Calculate Risk Metrics (Volatility, Sharpe, Drawdown, Beta, VaR)
+ * @swagger
+ * /analytics/portfolio/risk-metrics:
+ *   get:
+ *     summary: Calculate comprehensive risk metrics for portfolio
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: vaultId
+ *         schema:
+ *           type: string
+ *         description: Optional vault ID
+ *     responses:
+ *       200:
+ *         description: Risk metrics including volatility, Sharpe ratio, max drawdown, beta, VaR, CVaR
+ */
+router.get('/portfolio/risk-metrics', protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { startDate, endDate, vaultId } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date and end date are required'
+      });
+    }
+
+    const performanceAttributionService = (await import('../services/performanceAttributionService.js')).default;
+
+    const riskMetrics = await performanceAttributionService.calculateRiskMetrics(
+      userId,
+      new Date(startDate),
+      new Date(endDate),
+      vaultId || null
+    );
+
+    res.json({
+      success: true,
+      data: riskMetrics
+    });
+
+  } catch (error) {
+    console.error('Risk metrics calculation error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to calculate risk metrics'
+    });
+  }
+});
+
+/**
+ * ISSUE #694: Compare Portfolio to Major Benchmarks (S&P 500, MSCI World, etc)
+ * @swagger
+ * /analytics/portfolio/benchmark-comparison:
+ *   get:
+ *     summary: Compare portfolio performance against major market benchmarks
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: vaultId
+ *         schema:
+ *           type: string
+ *         description: Optional vault ID
+ *     responses:
+ *       200:
+ *         description: Benchmark comparison results showing alpha and relative performance
+ */
+router.get('/portfolio/benchmark-comparison', protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { startDate, endDate, vaultId } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date and end date are required'
+      });
+    }
+
+    const performanceAttributionService = (await import('../services/performanceAttributionService.js')).default;
+
+    const comparison = await performanceAttributionService.compareToBenchmarks(
+      userId,
+      new Date(startDate),
+      new Date(endDate),
+      vaultId || null
+    );
+
+    res.json({
+      success: true,
+      data: comparison
+    });
+
+  } catch (error) {
+    console.error('Benchmark comparison error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to compare against benchmarks'
+    });
+  }
+});
+
+/**
+ * ISSUE #694: Analyze Historical Performance Trends
+ * @swagger
+ * /analytics/portfolio/performance-trends:
+ *   get:
+ *     summary: Analyze historical performance trends and momentum
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: vaultId
+ *         schema:
+ *           type: string
+ *         description: Optional vault ID
+ *     responses:
+ *       200:
+ *         description: Performance trends including momentum, volatility trends, and regime analysis
+ */
+router.get('/portfolio/performance-trends', protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { startDate, endDate, vaultId } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date and end date are required'
+      });
+    }
+
+    const performanceAttributionService = (await import('../services/performanceAttributionService.js')).default;
+
+    const trends = await performanceAttributionService.analyzePerformanceTrends(
+      userId,
+      new Date(startDate),
+      new Date(endDate),
+      vaultId || null
+    );
+
+    res.json({
+      success: true,
+      data: trends
+    });
+
+  } catch (error) {
+    console.error('Performance trends analysis error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to analyze performance trends'
+    });
+  }
+});
+
+/**
+ * ISSUE #694: Comprehensive Portfolio Analytics Dashboard
+ * @swagger
+ * /analytics/portfolio/comprehensive:
+ *   get:
+ *     summary: Get all portfolio analytics in one call (attribution, risk, benchmarks, trends)
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: vaultId
+ *         schema:
+ *           type: string
+ *         description: Optional vault ID
+ *     responses:
+ *       200:
+ *         description: Comprehensive portfolio analytics
+ */
+router.get('/portfolio/comprehensive', protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { startDate, endDate, vaultId } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date and end date are required'
+      });
+    }
+
+    const performanceAttributionService = (await import('../services/performanceAttributionService.js')).default;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const vault = vaultId || null;
+
+    // Fetch all analytics in parallel
+    const [attribution, riskMetrics, benchmarkComparison, trends] = await Promise.all([
+      performanceAttributionService.calculateAttribution(userId, start, end, vault),
+      performanceAttributionService.calculateRiskMetrics(userId, start, end, vault),
+      performanceAttributionService.compareToBenchmarks(userId, start, end, vault),
+      performanceAttributionService.analyzePerformanceTrends(userId, start, end, vault)
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        period: { start, end },
+        attribution,
+        riskMetrics,
+        benchmarkComparison,
+        trends,
+        generatedAt: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('Comprehensive portfolio analytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to generate comprehensive analytics'
     });
   }
 });

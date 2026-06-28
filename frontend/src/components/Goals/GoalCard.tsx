@@ -16,7 +16,18 @@ interface GoalCardProps {
   onContributeToMilestone?: (goalId: string, milestoneId: string, amount: number) => void;
 }
 
-export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) => {
+export const GoalCard: React.FC<GoalCardProps> = ({ 
+  goal, 
+  onEdit, 
+  onDelete,
+  onToggleExpand,
+  isExpanded = false,
+  milestones = [],
+  onAddMilestone,
+  onEditMilestone,
+  onDeleteMilestone,
+  onContributeToMilestone
+}) => {
   const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
   const remainingAmount = goal.targetAmount - goal.currentAmount;
   const daysUntilTarget = Math.ceil((new Date(goal.deadline || goal.targetDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
@@ -60,11 +71,11 @@ export const GoalCard: React.FC<GoalCardProps> = ({ goal, onEdit, onDelete }) =>
           <button
             onClick={() => onDelete(goal._id)}
             className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-<<<<<<< HEAD
-            title="Delete goal"
-=======
             aria-label="Delete goal"
+          >
+            <Trash2 className="h-4 w-4" />
           </button>
+        </div>
       </div>
 
       <div className="space-y-4">

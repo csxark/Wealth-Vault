@@ -1,11 +1,8 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getAIProvider } from './aiProvider.js';
 import { parseHistoricalData, identifyRecurringPatterns, calculateSeasonalTrends } from './trendAnalyzer.js';
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
 /**
- * Generate AI-powered spending insights using Gemini
+ * Generate AI-powered spending insights using universal AI Provider
  * @param {string} userId - User ID
  * @param {Object} forecastData - Forecast data
  * @returns {Object} AI-generated insights
@@ -14,8 +11,8 @@ export async function generateSpendingInsights(userId, forecastData) {
   try {
     const historicalData = await parseHistoricalData(userId, 12);
     const recurringPatterns = await identifyRecurringPatterns(userId);
-    
-    // Prepare context for Gemini
+
+    // Prepare context for AI
     const context = {
       summary: historicalData.summary,
       monthlyData: Object.entries(historicalData.monthlyData).slice(-6), // Last 6 months
@@ -53,51 +50,23 @@ Format your response as a JSON object with keys: insights, recommendations, risk
 Keep each item concise (1-2 sentences max).
 `;
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    // Parse AI response
+    const provider = getAIProvider();
     let aiInsights;
+
     try {
-      // Extract JSON from response (handling markdown code blocks)
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      aiInsights = jsonMatch ? JSON.parse(jsonMatch[0]) : {
-        insights: ['Analysis in progress'],
-        recommendations: ['Check back later'],
-        risks: ['None identified'],
-        positives: ['Good financial habits']
-      };
-    } catch (parseError) {
-      console.warn('Failed to parse AI response, using fallback insights');
-      aiInsights = {
-        insights: [
-          `Average monthly spending is $${context.summary.avgMonthlyExpenses}`,
-          `${recurringPatterns.length} recurring expenses detected`,
-          `Monthly savings rate: $${context.summary.avgMonthlySavings}`
-        ],
-        recommendations: [
-          'Review recurring subscriptions for potential savings',
-          'Build emergency fund to 3-6 months of expenses',
-          'Monitor high-spending categories closely'
-        ],
-        risks: [
-          context.forecast.dangerZones?.length > 0 
-            ? `${context.forecast.dangerZones.length} periods of potential negative balance detected`
-            : 'No immediate financial risks detected'
-        ],
-        positives: [
-          context.summary.avgMonthlySavings > 0 
-            ? `Maintaining positive cash flow of $${context.summary.avgMonthlySavings}/month`
-            : 'Tracking expenses consistently'
-        ]
-      };
+      aiInsights = await provider.generateJSON(prompt, { model: 'pro' });
+    } catch (err) {
+      console.warn('AI generation failed, falling back to local analysis', err);
+      throw err; // Re-throw to hit the outer catch and use fallback
     }
+
+    // Default structure if AI returns partial or malformed data that passed JSON.parse
+    if (!aiInsights.insights) aiInsights.insights = ['Analysis available'];
+    if (!aiInsights.recommendations) aiInsights.recommendations = [];
 
     return {
       generatedAt: new Date().toISOString(),
-      source: 'gemini-pro',
+      source: 'ai-provider',
       ...aiInsights,
       metadata: {
         dataQuality: historicalData.summary.totalTransactions > 50 ? 'high' : 'medium',
@@ -144,7 +113,7 @@ export async function detectSeasonalAnomalies(userId) {
     // Detect months with unusual spending (more than 2 standard deviations)
     Object.entries(historicalData.monthlyData).forEach(([monthKey, data]) => {
       const deviation = Math.abs(data.totalExpenses - mean) / stdDev;
-      
+
       if (deviation > 2) {
         const percentDiff = ((data.totalExpenses - mean) / mean * 100).toFixed(1);
         anomalies.push({
@@ -257,7 +226,7 @@ export async function predictFinancialRisks(userId, forecastData) {
     // Risk 3: Insufficient emergency fund
     const avgMonthlyExpenses = historicalData.summary.avgMonthlyExpenses;
     const emergencyFundMonths = forecastData.currentBalance / avgMonthlyExpenses;
-    
+
     if (emergencyFundMonths < 3) {
       risks.push({
         type: 'low_emergency_fund',
@@ -303,10 +272,10 @@ export async function predictFinancialRisks(userId, forecastData) {
  */
 function calculateOverallRiskLevel(risks) {
   if (risks.length === 0) return 'low';
-  
+
   const criticalCount = risks.filter(r => r.severity === 'critical').length;
   const highCount = risks.filter(r => r.severity === 'high').length;
-  
+
   if (criticalCount > 0) return 'critical';
   if (highCount > 1) return 'high';
   if (risks.length > 2) return 'medium';

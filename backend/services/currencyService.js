@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { exchangeRates } from '../db/schema.js';
+import { exchangeRateHistory as exchangeRates } from '../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import axios from 'axios';
 
@@ -200,9 +200,52 @@ export async function getAllRates(baseCurrency = 'USD') {
 }
 
 /**
+ * Convert amount to base currency (USD)
+ */
+export async function convertToBase(amount, fromCurrency) {
+    return await convertAmount(amount, fromCurrency, 'USD');
+}
+
+/**
  * Clear exchange rates cache
  */
 export function clearRatesCache() {
     ratesCache.clear();
     console.log('Exchange rates cache cleared');
 }
+
+/**
+ * Calculate Currency Volatility (L3)
+ * Measures the standard deviation of exchange rate changes over a period.
+ */
+export async function getCurrencyVolatility(fromCurrency, toCurrency, days = 30) {
+    const historicalRates = await db.select({
+        rate: exchangeRates.rate,
+        createdAt: exchangeRates.createdAt
+    })
+        .from(exchangeRates)
+        .where(and(
+            eq(exchangeRates.baseCurrency, fromCurrency),
+            eq(exchangeRates.targetCurrency, toCurrency),
+            gte(exchangeRates.createdAt, new Date(Date.now() - days * 24 * 60 * 60 * 1000))
+        ))
+        .orderBy(exchangeRates.createdAt, 'desc');
+
+    if (historicalRates.length < 5) return 0.01; // Default low volatility if insufficient data
+
+    const values = historicalRates.map(r => parseFloat(r.rate));
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+
+    return Math.sqrt(variance) / mean; // Coefficient of Variation as volatility proxy
+}
+
+export default {
+    fetchExchangeRates,
+    convertAmount,
+    convertToBase,
+    getExchangeRate,
+    getAllRates,
+    getCurrencyVolatility,
+    clearRatesCache
+};

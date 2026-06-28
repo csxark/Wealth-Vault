@@ -34,13 +34,13 @@ export async function projectCashFlow(userId, days = 30) {
     for (let i = 0; i < days; i++) {
       const forecastDate = new Date(today);
       forecastDate.setDate(today.getDate() + i);
-      
+
       // Estimate daily income (distributed across month)
       const dailyIncome = monthlyIncome / 30;
-      
+
       // Estimate daily expenses (with velocity adjustment)
       let dailyExpense = avgDailyExpense * (1 + velocity.growthRate / 100);
-      
+
       // Apply seasonal adjustment
       const month = forecastDate.toLocaleString('en', { month: 'short' });
       const seasonalFactor = seasonalTrends.monthlyTrends[month]?.avgExpenses / seasonalTrends.baseline || 1;
@@ -50,7 +50,7 @@ export async function projectCashFlow(userId, days = 30) {
       recurringPatterns.forEach(pattern => {
         const lastOccurrence = new Date(pattern.lastOccurrence);
         const daysSince = Math.floor((forecastDate - lastOccurrence) / (1000 * 60 * 60 * 24));
-        
+
         // If due date approaches, add recurring expense
         if (daysSince > 0 && daysSince % pattern.avgInterval === 0) {
           dailyExpense += Math.abs(parseFloat(pattern.amount));
@@ -103,7 +103,7 @@ export async function calculateProjectedBalance(userId, targetDate) {
   try {
     const today = new Date();
     const daysUntil = Math.ceil((new Date(targetDate) - today) / (1000 * 60 * 60 * 24));
-    
+
     if (daysUntil < 0) {
       throw new Error('Target date must be in the future');
     }
@@ -279,7 +279,7 @@ function calculateConfidenceScore(transactionCount, velocity) {
  */
 function calculateSeverity(lowestBalance, duration) {
   const deficit = Math.abs(lowestBalance);
-  
+
   if (deficit > 1000 || duration > 14) return 'critical';
   if (deficit > 500 || duration > 7) return 'high';
   if (deficit > 100 || duration > 3) return 'medium';
@@ -293,10 +293,10 @@ function calculateSeverity(lowestBalance, duration) {
  */
 function calculateOverallRisk(dangerZones) {
   if (dangerZones.length === 0) return 'low';
-  
+
   const criticalCount = dangerZones.filter(z => z.severity === 'critical').length;
   const highCount = dangerZones.filter(z => z.severity === 'high').length;
-  
+
   if (criticalCount > 0) return 'critical';
   if (highCount > 1) return 'high';
   if (dangerZones.length > 2) return 'medium';
@@ -310,7 +310,7 @@ function calculateOverallRisk(dangerZones) {
  */
 function generateRecommendation(zone) {
   const deficit = Math.abs(zone.lowestBalance);
-  
+
   if (zone.severity === 'critical') {
     return `Urgent: Reduce spending by $${deficit} or increase income before ${zone.startDate}`;
   } else if (zone.severity === 'high') {
@@ -322,10 +322,66 @@ function generateRecommendation(zone) {
   }
 }
 
+/**
+ * Reserve Operating Liquidity (L3)
+ * Ensures minimum cash reserves before sweeping dividend cash into long-term investments
+ * @param {string} userId - User ID
+ * @param {number} months - Months of expenses to reserve (default: 3)
+ * @returns {Object} Liquidity reservation details
+ */
+export async function reserveOperatingLiquidity(userId, months = 3) {
+  try {
+    // Get cash flow forecast
+    const forecast = await projectCashFlow(userId, months * 30);
+
+    // Calculate required operating reserve
+    const avgMonthlyExpenses = forecast.summary.totalProjectedExpenses / months;
+    const requiredReserve = avgMonthlyExpenses * months;
+
+    // Get current balance
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    const currentBalance = parseFloat(user.emergencyFund || 0) + parseFloat(user.monthlyBudget || 0);
+
+    // Calculate available for investment
+    const availableForInvestment = Math.max(0, currentBalance - requiredReserve);
+
+    // Check for upcoming danger zones
+    const dangerZones = await identifyNegativeMonths(userId, months * 30);
+
+    // If danger zones exist, increase reserve
+    let adjustedReserve = requiredReserve;
+    if (dangerZones.hasDangerZones) {
+      const maxDeficit = Math.max(...dangerZones.dangerZones.map(z => Math.abs(z.lowestBalance)));
+      adjustedReserve += maxDeficit * 1.2; // 20% buffer
+    }
+
+    const adjustedAvailable = Math.max(0, currentBalance - adjustedReserve);
+
+    return {
+      currentBalance,
+      requiredReserve: Math.round(requiredReserve * 100) / 100,
+      adjustedReserve: Math.round(adjustedReserve * 100) / 100,
+      availableForInvestment: Math.round(availableForInvestment * 100) / 100,
+      adjustedAvailable: Math.round(adjustedAvailable * 100) / 100,
+      reserveMonths: months,
+      avgMonthlyExpenses: Math.round(avgMonthlyExpenses * 100) / 100,
+      hasDangerZones: dangerZones.hasDangerZones,
+      dangerZoneCount: dangerZones.totalDangerZones,
+      recommendation: adjustedAvailable > 0
+        ? `Safe to invest up to $${adjustedAvailable.toFixed(2)}`
+        : 'Insufficient liquidity - do not sweep cash at this time'
+    };
+  } catch (error) {
+    console.error('Error reserving operating liquidity:', error);
+    throw error;
+  }
+}
+
 export default {
   projectCashFlow,
   calculateProjectedBalance,
   identifyNegativeMonths,
   saveForecastSnapshot,
-  getForecastHistory
+  getForecastHistory,
+  reserveOperatingLiquidity
 };

@@ -4,7 +4,9 @@ import { eq, and, desc, gte, sql } from "drizzle-orm";
 import db from "../config/db.js";
 import { subscriptions, subscriptionUsage, cancellationSuggestions, expenses } from "../db/schema.js";
 import { protect } from "../middleware/auth.js";
-import { asyncHandler, ValidationError, NotFoundError } from "../middleware/errorHandler.js";
+import { asyncHandler } from "../middleware/errorHandler.js";
+import { AppError } from "../utils/AppError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 import subscriptionDetector from "../services/subscriptionDetector.js";
 import subscriptionAI from "../services/subscriptionAI.js";
 
@@ -15,7 +17,7 @@ const router = express.Router();
  * @desc    Get all active subscriptions for a user
  * @access  Private
  */
-router.get("/", protect, asyncHandler(async (req, res) => {
+router.get("/", protect, asyncHandler(async (req, res, next) => {
     const userSubs = await db.query.subscriptions.findMany({
         where: eq(subscriptions.userId, req.user.id),
         orderBy: [desc(subscriptions.nextRenewalDate)],
@@ -23,10 +25,10 @@ router.get("/", protect, asyncHandler(async (req, res) => {
 
     const healthScore = await subscriptionAI.calculateHealthScore(req.user.id);
 
-    res.success({
+    return new ApiResponse(200, {
         subscriptions: userSubs,
         healthScore
-    }, "Subscriptions retrieved successfully");
+    }, "Subscriptions retrieved successfully").send(res);
 }));
 
 /**
@@ -34,9 +36,9 @@ router.get("/", protect, asyncHandler(async (req, res) => {
  * @desc    Detect subscriptions from expense patterns
  * @access  Private
  */
-router.post("/detect", protect, asyncHandler(async (req, res) => {
+router.post("/detect", protect, asyncHandler(async (req, res, next) => {
     const detected = await subscriptionDetector.detectFromExpenses(req.user.id);
-    res.success(detected, `Detected ${detected.length} potential subscriptions`);
+    return new ApiResponse(200, detected, `Detected ${detected.length} potential subscriptions`).send(res);
 }));
 
 /**
@@ -50,10 +52,10 @@ router.post("/", protect, [
     body("billingCycle").isIn(["weekly", "biweekly", "monthly", "quarterly", "yearly"]),
     body("startDate").isISO8601(),
     body("nextRenewalDate").isISO8601(),
-], asyncHandler(async (req, res) => {
+], asyncHandler(async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        throw new ValidationError(errors.array()[0].msg);
+        return next(new AppError(400, "Validation failed", errors.array()));
     }
 
     const { name, provider, category, amount, currency, billingCycle, startDate, nextRenewalDate, paymentMethod, notes, metadata } = req.body;
@@ -73,7 +75,7 @@ router.post("/", protect, [
         metadata: metadata || {},
     }).returning();
 
-    res.status(201).success(newSub, "Subscription added successfully");
+    return new ApiResponse(201, newSub, "Subscription added successfully").send(res);
 }));
 
 /**
@@ -81,11 +83,13 @@ router.post("/", protect, [
  * @desc    Update a subscription
  * @access  Private
  */
-router.patch("/:id", protect, asyncHandler(async (req, res) => {
+router.patch("/:id", protect, asyncHandler(async (req, res, next) => {
     const { id } = req.params;
 
     const [existingSub] = await db.select().from(subscriptions).where(and(eq(subscriptions.id, id), eq(subscriptions.userId, req.user.id)));
-    if (!existingSub) throw new NotFoundError("Subscription not found");
+    if (!existingSub) {
+        return next(new AppError(404, "Subscription not found"));
+    }
 
     const updateData = { ...req.body, updatedAt: new Date() };
     if (req.body.amount) updateData.amount = req.body.amount.toString();
@@ -97,7 +101,7 @@ router.patch("/:id", protect, asyncHandler(async (req, res) => {
         .where(eq(subscriptions.id, id))
         .returning();
 
-    res.success(updatedSub, "Subscription updated successfully");
+    return new ApiResponse(200, updatedSub, "Subscription updated successfully").send(res);
 }));
 
 /**
@@ -105,7 +109,7 @@ router.patch("/:id", protect, asyncHandler(async (req, res) => {
  * @desc    Get AI-powered cancellation suggestions
  * @access  Private
  */
-router.get("/suggestions", protect, asyncHandler(async (req, res) => {
+router.get("/suggestions", protect, asyncHandler(async (req, res, next) => {
     // Trigger analysis
     const newSuggestions = await subscriptionAI.analyzeSubscriptions(req.user.id);
 
@@ -135,7 +139,7 @@ router.get("/suggestions", protect, asyncHandler(async (req, res) => {
         orderBy: [desc(cancellationSuggestions.createdAt)]
     });
 
-    res.success(savedSuggestions, "Cancellation suggestions retrieved");
+    return new ApiResponse(200, savedSuggestions, "Cancellation suggestions retrieved successfully").send(res);
 }));
 
 /**
@@ -143,7 +147,7 @@ router.get("/suggestions", protect, asyncHandler(async (req, res) => {
  * @desc    Log usage for a subscription
  * @access  Private
  */
-router.post("/usage/:id", protect, asyncHandler(async (req, res) => {
+router.post("/usage/:id", protect, asyncHandler(async (req, res, next) => {
     const { id } = req.params;
     const month = new Date().toISOString().substring(0, 7); // YYYY-MM
 
@@ -164,7 +168,7 @@ router.post("/usage/:id", protect, asyncHandler(async (req, res) => {
             })
             .where(eq(subscriptionUsage.id, existingUsage.id))
             .returning();
-        res.success(updated, "Usage updated");
+        return new ApiResponse(200, updated, "Usage updated successfully").send(res);
     } else {
         const [created] = await db.insert(subscriptionUsage).values({
             subscriptionId: id,
@@ -173,7 +177,7 @@ router.post("/usage/:id", protect, asyncHandler(async (req, res) => {
             usageCount: 1,
             lastUsedAt: new Date()
         }).returning();
-        res.success(created, "Usage logged");
+        return new ApiResponse(201, created, "Usage logged successfully").send(res);
     }
 }));
 
@@ -182,7 +186,7 @@ router.post("/usage/:id", protect, asyncHandler(async (req, res) => {
  * @desc    Get detailed subscription insights
  * @access  Private
  */
-router.get("/insights", protect, asyncHandler(async (req, res) => {
+router.get("/insights", protect, asyncHandler(async (req, res, next) => {
     const stats = await db.select({
         category: subscriptions.category,
         count: sql`count(*)`,
@@ -211,11 +215,11 @@ router.get("/insights", protect, asyncHandler(async (req, res) => {
             eq(cancellationSuggestions.severity, 'high')
         ));
 
-    res.success({
+    return new ApiResponse(200, {
         categoryBreakdown: stats,
         annualPotentialSavings: annualPotentialSavings[0]?.total || 0,
         healthHistory: [] // To be implemented with historical data
-    }, "Insights retrieved");
+    }, "Insights retrieved successfully").send(res);
 }));
 
 export default router;

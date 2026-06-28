@@ -1,67 +1,54 @@
 import cron from 'node-cron';
 import db from '../config/db.js';
 import { users } from '../db/schema.js';
-import debtEngine from '../services/debtEngine.js';
-import payoffOptimizer from '../services/payoffOptimizer.js';
-import refinanceScout from '../services/refinanceScout.js';
+import arbitrageEngine from '../services/arbitrageEngine.js';
+import { logInfo, logError } from '../utils/logger.js';
 
-class DebtRecalculator {
-    /**
-     * Start the scheduled job for debt recalculation
-     * Runs on the 1st of every month at 2:00 AM
-     */
-    startScheduledJob() {
-        cron.schedule('0 2 * 1 *', async () => {
-            console.log('[DebtRecalculator] Starting monthly debt recalculation...');
-            await this.processAllUsers();
-        });
-        console.log('[DebtRecalculator] Scheduled for 1st of every month at 2:00 AM');
-    }
+/**
+ * Debt Recalculator Job (L3)
+ * Monitors debt balances and updates global WACC metrics for all active users every hour.
+ */
+class DebtRecalculatorJob {
+    start() {
+        // Runs every hour
+        cron.schedule('0 * * * *', async () => {
+            logInfo('[Debt Recalculator] Starting hourly WACC update cycle...');
 
-    /**
-     * Process all users in the system
-     */
-    async processAllUsers() {
-        try {
-            const allUsers = await db.query.users.findMany({
-                columns: { id: true }
-            });
+            try {
+                const activeUsers = await db.select({ id: users.id }).from(users).where(sql`${users.isActive} = true`);
 
-            for (const user of allUsers) {
-                await this.processSingleUser(user.id);
+                for (const user of activeUsers) {
+                    try {
+                        // 1. Recalculate WACC and save snapshot
+                        await arbitrageEngine.calculateWACC(user.id);
+
+                        // 2. Scan for new arbitrage opportunities
+                        await arbitrageEngine.generateArbitrageSignals(user.id);
+
+                        logInfo(`[Debt Recalculator] Successfully updated metrics for user ${user.id}`);
+                    } catch (userErr) {
+                        logError(`[Debt Recalculator] Failed for user ${user.id}: ${userErr.message}`);
+                    }
+                }
+
+                logInfo('[Debt Recalculator] Update cycle completed.');
+            } catch (error) {
+                logError(`[Debt Recalculator] Critical job failure: ${error.message}`);
             }
-            console.log(`[DebtRecalculator] Successfully processed ${allUsers.length} users`);
-        } catch (error) {
-            console.error('[DebtRecalculator] Error processing users:', error);
-        }
+        });
     }
 
     /**
-     * Recalculate everything for a single user
+     * Manual trigger for testing or forced updates
      */
-    async processSingleUser(userId) {
-        try {
-            // 1. Scan for new refinancing opportunities
-            await refinanceScout.scanOpportunities(userId);
-
-            // 2. Refresh active payoff strategy simulation
-            const strategy = await payoffOptimizer.getActiveStrategy(userId);
-            await payoffOptimizer.simulatePayoff(userId, strategy.strategyName, parseFloat(strategy.monthlyExtraPayment));
-
-            // 3. Update amortization schedules if needed
-            // This ensures they stay in sync with actual payments made in the previous month
-        } catch (error) {
-            console.error(`[DebtRecalculator] Error for user ${userId}:`, error.message);
+    async executeNow() {
+        logInfo('[Debt Recalculator] Manual execution triggered.');
+        const activeUsers = await db.select({ id: users.id }).from(users).where(sql`${users.isActive} = true`);
+        for (const user of activeUsers) {
+            await arbitrageEngine.calculateWACC(user.id);
+            await arbitrageEngine.generateArbitrageSignals(user.id);
         }
-    }
-
-    /**
-     * Manual trigger for testing
-     */
-    async runNow() {
-        console.log('[DebtRecalculator] Manual run triggered');
-        await this.processAllUsers();
     }
 }
 
-export default new DebtRecalculator();
+export default new DebtRecalculatorJob();

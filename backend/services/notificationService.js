@@ -1,12 +1,15 @@
 import nodemailer from 'nodemailer';
+import webpush from 'web-push';
 import db from '../config/db.js';
-import { budgetAlerts, users, securityEvents } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { pushSubscriptions } from '../db/schema.js';
+import { eq, and } from 'drizzle-orm';
 
 class NotificationService {
   constructor() {
     this.transporter = null;
+    this.pushSubscriptions = new Map(); // Cache for push subscriptions
     this.initEmailTransporter();
+    this.initWebPush();
   }
 
   initEmailTransporter() {
@@ -20,6 +23,20 @@ class NotificationService {
           pass: process.env.EMAIL_PASSWORD,
         },
       });
+    }
+  }
+
+  initWebPush() {
+    // Configure VAPID keys for push notifications
+    if (process.env.VAPID_SUBJECT && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+      webpush.setVapidDetails(
+        process.env.VAPID_SUBJECT,
+        process.env.VAPID_PUBLIC_KEY,
+        process.env.VAPID_PRIVATE_KEY
+      );
+      console.log('[WebPush] VAPID keys configured');
+    } else {
+      console.warn('[WebPush] VAPID keys not configured. Push notifications will not work.');
     }
   }
 
@@ -40,7 +57,12 @@ class NotificationService {
         await this.sendEmail(user.email, title, message);
       }
 
-      // 2. Store as Security Event (In-App Notification)
+      // 2. Send Push Notification if preferred
+      if (preferences.push) {
+        await this.sendPushNotification(userId, { title, message, type, data });
+      }
+
+      // 3. Store as Security Event (In-App Notification)
       await db.insert(securityEvents).values({
         userId,
         eventType: `notification_${type}`,
@@ -92,6 +114,179 @@ class NotificationService {
   }
 
   /**
+   * Send push notification to user
+   * @param {string} userId - ID of the user
+   * @param {object} options - Push notification options
+   */
+  async sendPushNotification(userId, { title, message, type = 'info', data = {} }) {
+    try {
+      // Get user's push subscriptions from database
+      // For now, we'll assume subscriptions are stored in user preferences or a separate table
+      // In a real implementation, you'd have a push_subscriptions table
+
+      const subscriptions = await this.getUserPushSubscriptions(userId);
+
+      if (!subscriptions || subscriptions.length === 0) {
+        console.log(`[Push] No subscriptions found for user ${userId}`);
+        return;
+      }
+
+      // Prepare push payload
+      const payload = JSON.stringify({
+        title: title || 'Wealth Vault',
+        body: message,
+        icon: '/icon-192x192.png',
+        badge: '/icon-192x192.png',
+        data: {
+          url: data.url || '/',
+          type,
+          id: data.id || Date.now().toString(),
+          ...data
+        },
+        actions: data.actions || [],
+        requireInteraction: data.requireInteraction || false,
+        silent: data.silent || false,
+        tag: data.tag || `wealth-vault-${type}`,
+        renotify: data.renotify !== false,
+        vibrate: data.vibrate || [200, 100, 200]
+      });
+
+      // Send to all user subscriptions
+      const sendPromises = subscriptions.map(async (subscription) => {
+        try {
+          await webpush.sendNotification(subscription, payload);
+          console.log(`[Push] Sent to user ${userId}`);
+        } catch (error) {
+          console.error(`[Push] Failed to send to user ${userId}:`, error);
+
+          // If subscription is invalid, remove it
+          if (error.statusCode === 410 || error.statusCode === 400) {
+            await this.removePushSubscription(userId, subscription);
+          }
+        }
+      });
+
+      await Promise.allSettled(sendPromises);
+    } catch (error) {
+      console.error('Push notification failed:', error);
+    }
+  }
+
+  /**
+   * Get user's push subscriptions
+   * @param {string} userId - User ID
+   * @returns {Array} Array of push subscriptions
+   */
+  async getUserPushSubscriptions(userId) {
+    try {
+      const subscriptions = await db
+        .select({
+          id: pushSubscriptions.id,
+          endpoint: pushSubscriptions.endpoint,
+          p256dh: pushSubscriptions.p256dh,
+          auth: pushSubscriptions.auth,
+          userAgent: pushSubscriptions.userAgent,
+          isActive: pushSubscriptions.isActive,
+          lastUsed: pushSubscriptions.lastUsed
+        })
+        .from(pushSubscriptions)
+        .where(and(
+          eq(pushSubscriptions.userId, userId),
+          eq(pushSubscriptions.isActive, true)
+        ));
+
+      // Convert to web-push format
+      return subscriptions.map(sub => ({
+        endpoint: sub.endpoint,
+        keys: {
+          p256dh: sub.p256dh,
+          auth: sub.auth
+        }
+      }));
+    } catch (error) {
+      console.error('Failed to get push subscriptions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Store push subscription for user
+   * @param {string} userId - User ID
+   * @param {object} subscription - Push subscription object from browser
+   * @param {string} userAgent - Browser user agent
+   */
+  async storePushSubscription(userId, subscription, userAgent = null) {
+    try {
+      // Check if subscription already exists
+      const existing = await db
+        .select()
+        .from(pushSubscriptions)
+        .where(and(
+          eq(pushSubscriptions.userId, userId),
+          eq(pushSubscriptions.endpoint, subscription.endpoint)
+        ));
+
+      if (existing.length > 0) {
+        // Update existing subscription
+        await db
+          .update(pushSubscriptions)
+          .set({
+            p256dh: subscription.keys.p256dh,
+            auth: subscription.keys.auth,
+            userAgent,
+            isActive: true,
+            lastUsed: new Date(),
+            updatedAt: new Date()
+          })
+          .where(and(
+            eq(pushSubscriptions.userId, userId),
+            eq(pushSubscriptions.endpoint, subscription.endpoint)
+          ));
+
+        console.log(`[Push] Updated subscription for user ${userId}`);
+      } else {
+        // Create new subscription
+        await db.insert(pushSubscriptions).values({
+          userId,
+          endpoint: subscription.endpoint,
+          p256dh: subscription.keys.p256dh,
+          auth: subscription.keys.auth,
+          userAgent,
+          isActive: true,
+          lastUsed: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+
+        console.log(`[Push] Stored new subscription for user ${userId}`);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Failed to store push subscription:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Remove all push subscriptions for user (unsubscribe)
+   * @param {string} userId - User ID
+   */
+  async removeAllPushSubscriptions(userId) {
+    try {
+      await db
+        .delete(pushSubscriptions)
+        .where(eq(pushSubscriptions.userId, userId));
+
+      console.log(`[Push] Removed all subscriptions for user ${userId}`);
+      return true;
+    } catch (error) {
+      console.error('Failed to remove push subscriptions:', error);
+      return false;
+    }
+  }
+
+  /**
    * Budget Intelligence Alerts
    */
   async sendBudgetAlert(alertData) {
@@ -114,6 +309,76 @@ class NotificationService {
         console.error("Failed to update budget alert metadata:", e);
       }
     }
+  }
+
+  /**
+   * GOAL INTELLIGENCE NOTIFICATIONS
+   */
+
+  async sendGoalProgressUpdate(userId, goal) {
+    const progressPercent = Math.round((goal.currentAmount / goal.targetAmount) * 100);
+    const title = `🎯 Goal Progress: ${goal.name}`;
+    const message = `Great progress! You've reached ${progressPercent}% of your ${goal.name} goal. Current: ${goal.currency} ${goal.currentAmount} / Target: ${goal.currency} ${goal.targetAmount}`;
+
+    await this.sendNotification(userId, {
+      title,
+      message,
+      type: 'success',
+      data: {
+        goalId: goal.id,
+        progress: progressPercent,
+        url: '/goals'
+      }
+    });
+  }
+
+  async sendGoalDeadlineReminder(userId, goal) {
+    const daysLeft = Math.ceil((new Date(goal.deadline) - new Date()) / 86400000);
+    const title = `⏰ Goal Deadline Approaching: ${goal.name}`;
+    const message = `Your ${goal.name} goal deadline is in ${daysLeft} days. Current progress: ${Math.round((goal.currentAmount / goal.targetAmount) * 100)}%`;
+
+    await this.sendNotification(userId, {
+      title,
+      message,
+      type: 'warning',
+      data: {
+        goalId: goal.id,
+        daysLeft,
+        url: '/goals'
+      }
+    });
+  }
+
+  async sendGoalMilestoneAchieved(userId, goal, milestone) {
+    const title = `🏆 Milestone Achieved: ${goal.name}`;
+    const message = `Congratulations! You've reached the ${milestone.name} milestone for your ${goal.name} goal. ${milestone.reward || 'Keep up the great work!'}`;
+
+    await this.sendNotification(userId, {
+      title,
+      message,
+      type: 'success',
+      data: {
+        goalId: goal.id,
+        milestoneId: milestone.id,
+        url: '/goals'
+      }
+    });
+  }
+
+  async sendGoalCompleted(userId, goal) {
+    const title = `🎉 Goal Completed: ${goal.name}`;
+    const message = `Congratulations! You've successfully completed your ${goal.name} goal of ${goal.currency} ${goal.targetAmount}. Time to set a new goal!`;
+
+    await this.sendNotification(userId, {
+      title,
+      message,
+      type: 'success',
+      data: {
+        goalId: goal.id,
+        completed: true,
+        url: '/goals'
+      }
+    });
   }
 
   /**
@@ -267,6 +532,29 @@ class NotificationService {
   }
 
   /**
+   * GOVERNANCE RESOLUTION NOTIFICATIONS (#453)
+   */
+  async sendGovernanceResolutionNotification(userId, resolution, vaultName) {
+    const subject = `⚖️ Governance Resolution Required in "${vaultName}"`;
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f1f5f9; border-left: 4px solid #6366f1;">
+        <h2>Action Required: Spending Resolution</h2>
+        <p>A new resolution has been proposed in <strong>"${vaultName}"</strong> that requires your vote.</p>
+        <p><strong>Proposed Action:</strong> Spend of ${resolution.payload.amount} ${resolution.payload.currency || ''}</p>
+        <p><strong>Expiry:</strong> ${new Date(resolution.expiresAt).toLocaleString()}</p>
+        <p>Please log in to vote on this resolution.</p>
+      </div>
+    `;
+
+    await this.sendNotification(userId, {
+      title: subject,
+      message: `Resolution required for proposed spend in "${vaultName}"`,
+      type: 'governance_resolution',
+      data: { resolutionId: resolution.id }
+    });
+  }
+
+  /**
    * Notify beneficiaries of inheritance trigger
    */
   async sendInheritanceTriggeredNotification(beneficiaryUser, deceasedName, assetDescription) {
@@ -346,12 +634,113 @@ class NotificationService {
   }
 
   /**
+   * Send interlock fragility warning (#465)
+   */
+  async sendInterlockFragilityWarning(userId, { targetVaultId, fragileLinkCount, depth, shockPercentage }) {
+    const title = "🕸️ Network Complexity Alert: Fragile Links Detected";
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #fef2f2; border-radius: 8px; border: 1px solid #f87171;">
+        <h3 style="margin-top: 0; color: #991b1b;">High Recursive Leverage Warning</h3>
+        <p>A simulated shock of <strong>${shockPercentage}%</strong> on vault <strong>${targetVaultId.substring(0, 8)}</strong> has identified <strong>${fragileLinkCount}</strong> fragile internal links.</p>
+        <p>The impact cascades through <strong>${depth} levels</strong> of your interlocking network. Your structure may be becoming "too complex to fail."</p>
+        <p style="margin-bottom: 0;">We recommend simplifying your internal debt structure or increasing liquidity buffers in the impacted vaults.</p>
+      </div>
+    `;
+
+    await this.sendEmailByUserId(userId, title, message);
+    await this.sendNotification(userId, {
+      title,
+      message: `Interlocking network stress test found ${fragileLinkCount} fragile links across ${depth} levels.`,
+      type: 'interlock_fragility',
+      data: { targetVaultId, fragileLinkCount, depth, shockPercentage }
+    });
+  }
+
+  /**
    * Helper to send email by userId
    */
   async sendEmailByUserId(userId, subject, message) {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (user && user.email) {
       await this.sendEmail(user.email, subject, message);
+    }
+  }
+
+  /**
+   * Schedule a notification for a future date
+   * @param {object} options - Notification options { userId, type, title, message, scheduledFor, data }
+   * Note: For production, this would use a job queue (like Bull/Redis). 
+   * For now, we'll check scheduled notifications when processing bills.
+   */
+  async scheduleNotification(options) {
+    const { userId, type, title, message, scheduledFor, data } = options;
+
+    try {
+      // Store the scheduled notification in securityEvents with scheduled time
+      // The actual sending will be handled by a cron job
+      await db.insert(securityEvents).values({
+        userId,
+        eventType: `scheduled_notification_${type}`,
+        status: 'scheduled',
+        details: {
+          title,
+          message,
+          scheduledFor: scheduledFor.toISOString(),
+          data
+        },
+      });
+
+      console.log(`[Scheduled Notification] ${title} scheduled for ${scheduledFor.toISOString()}`);
+      return true;
+    } catch (error) {
+      console.error("Error scheduling notification:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Process scheduled notifications (called by cron job)
+   */
+  async processScheduledNotifications() {
+    try {
+      const now = new Date();
+
+      // Find scheduled notifications that are due
+      const scheduledNotifications = await db.query.securityEvents.findMany({
+        where: and(
+          sql`${securityEvents.eventType} LIKE 'scheduled_notification_%'`,
+          eq(securityEvents.status, 'scheduled')
+        )
+      });
+
+      let sentCount = 0;
+
+      for (const notification of scheduledNotifications) {
+        const scheduledFor = new Date(notification.details?.scheduledFor);
+
+        if (scheduledFor <= now) {
+          // Send the notification
+          await this.sendNotification(notification.userId, {
+            title: notification.details?.title,
+            message: notification.details?.message,
+            type: 'info',
+            data: notification.details?.data
+          });
+
+          // Update status
+          await db
+            .update(securityEvents)
+            .set({ status: 'sent' })
+            .where(eq(securityEvents.id, notification.id));
+
+          sentCount++;
+        }
+      }
+
+      return sentCount;
+    } catch (error) {
+      console.error("Error processing scheduled notifications:", error);
+      return 0;
     }
   }
 }

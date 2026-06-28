@@ -1,10 +1,14 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { protect } from '../middleware/auth.js';
+import { protect, checkOwnership } from '../middleware/auth.js';
+import { securityInterceptor } from '../middleware/auditMiddleware.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import assetService from '../services/assetService.js';
 import projectionEngine from '../services/projectionEngine.js';
 import marketData from '../services/marketData.js';
+import riskEngine from '../services/riskEngine.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
+import AssetLiquidityForecasterService from '../services/assetLiquidityForecasterService.js';
 
 const router = express.Router();
 
@@ -16,17 +20,14 @@ router.get('/', protect, asyncHandler(async (req, res) => {
     const assets = await assetService.getUserAssets(req.user.id);
     const portfolio = await assetService.getPortfolioValue(req.user.id);
 
-    res.success({
-        assets,
-        portfolio
-    });
+    new ApiResponse(200, { assets, portfolio }, 'Assets fetched successfully').send(res);
 }));
 
 /**
  * @route   POST /api/assets
  * @desc    Create a new asset
  */
-router.post('/', protect, [
+router.post('/', protect, securityInterceptor(), [
     body('name').notEmpty().trim(),
     body('category').isIn(['real_estate', 'vehicle', 'jewelry ', 'art', 'collectible', 'stock', 'crypto', 'other']),
     body('purchasePrice').isFloat({ gt: 0 }),
@@ -36,7 +37,7 @@ router.post('/', protect, [
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const asset = await assetService.createAsset(req.user.id, req.body);
-    res.success(asset, 'Asset created successfully');
+    new ApiResponse(201, asset, 'Asset created successfully').send(res);
 }));
 
 /**
@@ -45,38 +46,38 @@ router.post('/', protect, [
  */
 router.get('/:id', protect, asyncHandler(async (req, res) => {
     const asset = await assetService.getAssetById(req.params.id, req.user.id);
-    res.success(asset);
+    new ApiResponse(200, asset, 'Asset fetched successfully').send(res);
 }));
 
 /**
  * @route   PUT /api/assets/:id
  * @desc    Update asset details
  */
-router.put('/:id', protect, asyncHandler(async (req, res) => {
+router.put('/:id', protect, checkOwnership('Asset'), securityInterceptor(), asyncHandler(async (req, res) => {
     const updated = await assetService.updateAsset(req.params.id, req.user.id, req.body);
-    res.success(updated, 'Asset updated successfully');
+    new ApiResponse(200, updated, 'Asset updated successfully').send(res);
 }));
 
 /**
  * @route   PUT /api/assets/:id/value
  * @desc    Update asset valuation
  */
-router.put('/:id/value', protect, [
+router.put('/:id/value', protect, checkOwnership('Asset'), securityInterceptor(), [
     body('value').isFloat({ gt: 0 }),
     body('source').optional().isIn(['manual', 'market_adjustment', 'appraisal'])
 ], asyncHandler(async (req, res) => {
     const { value, source } = req.body;
     const updated = await assetService.updateAssetValue(req.params.id, value, source);
-    res.success(updated, 'Valuation updated');
+    new ApiResponse(200, updated, 'Valuation updated').send(res);
 }));
 
 /**
  * @route   DELETE /api/assets/:id
  * @desc    Delete an asset
  */
-router.delete('/:id', protect, asyncHandler(async (req, res) => {
+router.delete('/:id', protect, checkOwnership('Asset'), securityInterceptor(), asyncHandler(async (req, res) => {
     await assetService.deleteAsset(req.params.id, req.user.id);
-    res.success(null, 'Asset deleted successfully');
+    new ApiResponse(200, null, 'Asset deleted successfully').send(res);
 }));
 
 /**
@@ -90,7 +91,7 @@ router.post('/simulate', protect, [
     body('investmentReturn').optional().isFloat(),
 ], asyncHandler(async (req, res) => {
     const result = await projectionEngine.runSimulation(req.user.id, req.body);
-    res.success(result, 'Simulation completed');
+    new ApiResponse(200, result, 'Simulation completed').send(res);
 }));
 
 /**
@@ -99,7 +100,7 @@ router.post('/simulate', protect, [
  */
 router.get('/simulations/history', protect, asyncHandler(async (req, res) => {
     const history = await projectionEngine.getSimulationHistory(req.user.id);
-    res.success(history);
+    new ApiResponse(200, history, 'Simulation history fetched successfully').send(res);
 }));
 
 /**
@@ -108,7 +109,45 @@ router.get('/simulations/history', protect, asyncHandler(async (req, res) => {
  */
 router.get('/market/indices', protect, asyncHandler(async (req, res) => {
     const indices = await marketData.getAllIndices();
-    res.success(indices);
+    new ApiResponse(200, indices, 'Market indices fetched successfully').send(res);
 }));
+
+/**
+ * @route   GET /api/assets/risk-summary
+ * @desc    Get quick risk overview for the asset dashboard
+ */
+router.get('/risk-summary', protect, asyncHandler(async (req, res) => {
+    const [varMetric, beta] = await Promise.all([
+        riskEngine.calculatePortfolioVaR(req.user.id),
+        riskEngine.calculatePortfolioBeta(req.user.id)
+    ]);
+
+    new ApiResponse(200, {
+        valueAtRisk: varMetric,
+        portfolioBeta: beta,
+        riskLevel: beta > 1.2 ? 'high' : beta > 0.8 ? 'moderate' : 'low'
+    }, 'Risk summary fetched successfully').send(res);
+}));
+
+/**
+ * Asset Liquidity Forecaster API Route
+ * POST /api/assets/liquidity/forecast
+ * Author: Ayaanshaikh12243
+ * Date: 2026-03-04
+ */
+router.post('/liquidity/forecast', async (req, res) => {
+    try {
+        const { assetData, marketData, userNeeds, options } = req.body;
+        if (!Array.isArray(assetData) || assetData.length === 0) {
+            return res.status(400).json({ error: 'assetData is required and must be a non-empty array.' });
+        }
+        const forecaster = new AssetLiquidityForecasterService(assetData, marketData, userNeeds, options);
+        const result = forecaster.runAnalysis();
+        res.json(result);
+    } catch (err) {
+        console.error('Liquidity forecast error:', err);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
 
 export default router;

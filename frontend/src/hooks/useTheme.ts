@@ -1,22 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useContext } from 'react';
+import { ThemeContext } from '../context/ThemeContext';
 
 export const useTheme = () => {
-  const [isDark, setIsDark] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    return saved ? saved === 'dark' : false;
-  });
+  const context = useContext(ThemeContext);
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
 
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDark) {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
+  // Backwards compatibility with existing code that expects toggleTheme
+  const toggleTheme = () => {
+    context.setTheme(context.theme === 'dark' ? 'light' : 'dark');
+  };
 
-  const toggleTheme = () => setIsDark(!isDark);
-
-  return { isDark, toggleTheme };
+  return { ...context, toggleTheme };
 };

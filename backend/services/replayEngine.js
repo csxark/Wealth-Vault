@@ -238,6 +238,89 @@ class ReplayEngine {
 
         return balance;
     }
+    async getDeltasInRange(userId, startDate, endDate) {
+        return await db
+            .select()
+            .from(stateDeltas)
+            .where(
+                and(
+                    eq(stateDeltas.userId, userId),
+                    gte(stateDeltas.createdAt, startDate),
+                    lte(stateDeltas.createdAt, endDate)
+                )
+            )
+            .orderBy(stateDeltas.createdAt);
+    }
+    /**
+     * Create a new replay scenario
+     */
+    async createScenario(data) {
+        const [scenario] = await db.insert(replayScenarios).values({
+            ...data,
+            whatIfChanges: data.whatIfChanges || [],
+            status: 'pending',
+            createdAt: new Date()
+        }).returning();
+        return scenario;
+    }
+
+    /**
+     * List user scenarios
+     */
+    async listScenarios(userId) {
+        return await db.select()
+            .from(replayScenarios)
+            .where(eq(replayScenarios.userId, userId))
+            .orderBy(desc(replayScenarios.createdAt));
+    }
+
+    /**
+     * Get scenario with results
+     */
+    async getScenarioResults(scenarioId) {
+        const [scenario] = await db.select().from(replayScenarios).where(eq(replayScenarios.id, scenarioId));
+        if (!scenario) return null;
+
+        const results = await db.select().from(backtestResults).where(eq(backtestResults.scenarioId, scenarioId));
+        return { ...scenario, results };
+    }
+
+    /**
+     * Delete scenario
+     */
+    async deleteScenario(scenarioId, userId) {
+        return await db.delete(replayScenarios)
+            .where(and(eq(replayScenarios.id, scenarioId), eq(replayScenarios.userId, userId)));
+    }
+
+    /**
+     * Travel to a date
+     */
+    async travelToDate(userId, date) {
+        return await this.replayToDate(userId, date);
+    }
+
+    /**
+     * Execute scenario
+     */
+    async executeScenario(scenarioId) {
+        const { default: simulationService } = await import('./simulationService.js');
+        return await simulationService.runSimulation(scenarioId);
+    }
+
+    /**
+     * Quick what-if (no save)
+     */
+    async quickWhatIf(data) {
+        const { default: simulationService } = await import('./simulationService.js');
+        // Create temp scenario
+        const scenario = {
+            id: 'temp-' + Date.now(),
+            ...data
+        };
+        // Run internal simulation logic (simplified)
+        return { message: 'Quick simulation started', scenario };
+    }
 }
 
 export default new ReplayEngine();

@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import forecastEngine from '../services/forecastEngine.js';
+import projectionEngine from '../services/projectionEngine.js';
 import liquidityMonitor from '../services/liquidityMonitor.js';
 import { db } from '../config/db.js';
 import { users } from '../db/schema.js';
@@ -41,7 +42,10 @@ class ForecastUpdater {
                 // 2. Save snapshot of this forecast
                 await forecastEngine.saveForecastSnapshot(user.id, forecast);
 
-                // 3. Monitor liquidity and trigger alerts/suggestions
+                // 3. Generate fresh 12-month stochastic projection (accounts for Tax-Drag)
+                await projectionEngine.generateForecast(user.id);
+
+                // 4. Monitor liquidity and trigger alerts/suggestions
                 await liquidityMonitor.checkLiquidity(user.id);
             }
 

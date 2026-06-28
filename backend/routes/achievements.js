@@ -43,7 +43,8 @@ router.get('/progress', authenticateToken, async (req, res) => {
 // Get available achievements
 router.get('/available', authenticateToken, async (req, res) => {
   try {
-    const achievements = await gamificationService.getAvailableAchievements();
+    const userId = req.user.id;
+    const achievements = await gamificationService.getAvailableAchievements(userId);
     res.json({
       success: true,
       data: achievements
@@ -75,24 +76,34 @@ router.get('/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// Manually trigger achievement check (for testing)
-router.post('/check/:userId', authenticateToken, async (req, res) => {
+// Get gamification dashboard
+router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
-    // Only allow admins or the user themselves to trigger checks
-    if (req.user.id !== req.params.userId && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Unauthorized to check achievements for this user'
-      });
-    }
+    const userId = req.user.id;
+    const dashboard = await gamificationService.getGamificationDashboard(userId);
+    res.json({
+      success: true,
+      data: dashboard
+    });
+  } catch (error) {
+    console.error('Error fetching gamification dashboard:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch gamification dashboard'
+    });
+  }
+});
 
-    const userId = req.params.userId;
+// Manually trigger achievement check (for testing)
+router.post('/check', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
     const results = await gamificationService.checkAllAchievements(userId);
 
     res.json({
       success: true,
       data: results,
-      message: `Checked ${results.length} achievements for user`
+      message: `Checked achievements for user`
     });
   } catch (error) {
     console.error('Error checking achievements:', error);

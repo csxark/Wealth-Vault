@@ -1,6 +1,8 @@
 import db from '../config/db.js';
-import { debts, debtPayments, users } from '../db/schema.js';
+import { debts, debtPayments, users, debtRestructuringPlans } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
+import eventBus from '../events/eventBus.js';
+import { logInfo, logError } from '../utils/logger.js';
 
 class DebtEngine {
   /**
@@ -144,6 +146,100 @@ class DebtEngine {
 
       return payment;
     });
+  }
+  /**
+   * Calculate Debt-to-Equity Arbitrage Opportunity (L3)
+   * Compares debt interest against potential investment ROI
+   */
+  async calculateArbitrageAlpha(debtId, targetROI = 0.08) {
+    const debt = await db.query.debts.findFirst({
+      where: eq(debts.id, debtId)
+    });
+
+    if (!debt) return 0;
+
+    const apr = parseFloat(debt.apr);
+    const balance = parseFloat(debt.currentBalance);
+
+    // Alpha = (Potential ROI - Borrowing Cost) * Balance
+    // A positive alpha means debt is "good" (investing is better than paying off)
+    const alpha = (targetROI - apr) * balance;
+
+    return {
+      alpha,
+      isGoodDebt: apr < targetROI,
+      savingsPerYear: alpha
+    };
+  }
+
+  /**
+   * Sync with hypothetical external rates
+   */
+  async getMarketRefinanceRate(debtType) {
+    // Simulated external rate feed integration
+    const baselineRates = {
+      'mortgage': 0.065,
+      'auto': 0.045,
+      'personal': 0.12,
+      'credit_card': 0.18
+    };
+
+    const marketFluctuation = (Math.random() * 0.02) - 0.01; // +/- 1%
+    const finalRate = baselineRates[debtType] + marketFluctuation;
+
+    // Trigger workflow engine evaluation if market rates drop significantly
+    eventBus.emit('DEBT_APR_CHANGE', {
+      variable: 'market_refi_rate',
+      value: finalRate,
+      metadata: { debtType }
+    });
+
+    return finalRate;
+  }
+
+  /**
+   * Draft Algorithmic Restructuring Plan (#441)
+   * Analyzes all debts and suggests an optimization strategy.
+   */
+  async draftRestructuringPlan(userId, predictionScoreId) {
+    const userDebts = await db.query.debts.findMany({
+      where: and(eq(debts.userId, userId), eq(debts.isActive, true))
+    });
+
+    if (userDebts.length === 0) return null;
+
+    // 1. Determine Strategy (L3 logic: Default to consolidation if count > 3)
+    let planType = 'snowball';
+    const highAprDebts = userDebts.filter(d => parseFloat(d.apr) > 0.15);
+
+    if (highAprDebts.length > 2) {
+      planType = 'avalanche';
+    } else if (userDebts.length > 5) {
+      planType = 'consolidation';
+    }
+
+    // 2. Propose detailed adjustments (Simulated logic)
+    const totalBalance = userDebts.reduce((sum, d) => sum + parseFloat(d.currentBalance), 0);
+    const proposedAdjustments = userDebts.map(d => ({
+      debtId: d.id,
+      debtName: d.name,
+      currentPayment: d.minimumPayment,
+      proposedPayment: (parseFloat(d.minimumPayment) * 1.25).toFixed(2),
+      logic: `Accelerated ${planType} allocation`
+    }));
+
+    // 3. Save the plan
+    const [plan] = await db.insert(debtRestructuringPlans).values({
+      userId,
+      predictionId: predictionScoreId,
+      planType,
+      proposedAdjustments,
+      estimatedInterestSavings: (totalBalance * 0.04).toFixed(2),
+      status: 'proposed'
+    }).returning();
+
+    logInfo(`[Debt Engine] Drafted ${planType} restructuring plan for user ${userId}`);
+    return plan;
   }
 }
 

@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import db from '../config/db.js';
 import { inactivityTriggers, inheritanceRules } from '../db/schema.js';
 import { sql, lt } from 'drizzle-orm';
-import deadMansSwitch from '../services/deadMansSwitch.js';
+import deathService from '../services/successionService.js';
 
 class InactivityMonitor {
     constructor() {
@@ -74,7 +74,7 @@ class InactivityMonitor {
             // TRIGGER INHERITANCE
             if (trigger.status !== 'triggered') {
                 console.log(`[Inactivity Monitor] CRITICAL: User ${trigger.userId} inactive for ${daysSinceLastActivity} days - TRIGGERING INHERITANCE`);
-                await deadMansSwitch.triggerInheritance(trigger.userId);
+                await deathService.triggerSuccessionEvent(trigger.userId);
                 // Send notifications to beneficiaries
             }
         } else if (daysSinceLastActivity >= warningThreshold && trigger.warningsSent < 3) {

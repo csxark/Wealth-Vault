@@ -1,7 +1,9 @@
 import db from '../config/db.js';
-import { auditLogs } from '../db/schema.js';
+import { auditLogs, stateDeltas, auditSnapshots } from '../db/schema.js';
 import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
 import crypto from 'crypto';
+import differentialLogCompression from './differentialLogCompression.js';
+import { logInfo, logWarn } from '../utils/logger.js';
 
 // Audit Action Types
 export const AuditActions = {
@@ -14,29 +16,83 @@ export const AuditActions = {
   AUTH_PASSWORD_CHANGE: 'AUTH_PASSWORD_CHANGE',
   AUTH_TOKEN_REFRESH: 'AUTH_TOKEN_REFRESH',
   AUTH_SESSION_REVOKED: 'AUTH_SESSION_REVOKED',
-  
+  AUTH_VERIFY_EMAIL: 'AUTH_VERIFY_EMAIL',
+  AUTH_RESEND_VERIFICATION: 'AUTH_RESEND_VERIFICATION',
+
   // User Profile
   PROFILE_UPDATE: 'PROFILE_UPDATE',
   PROFILE_PICTURE_UPLOAD: 'PROFILE_PICTURE_UPLOAD',
   PROFILE_PICTURE_DELETE: 'PROFILE_PICTURE_DELETE',
   ACCOUNT_DEACTIVATE: 'ACCOUNT_DEACTIVATE',
-  
+
   // Expenses
   EXPENSE_CREATE: 'EXPENSE_CREATE',
   EXPENSE_UPDATE: 'EXPENSE_UPDATE',
   EXPENSE_DELETE: 'EXPENSE_DELETE',
   EXPENSE_IMPORT: 'EXPENSE_IMPORT',
-  
+
   // Goals
   GOAL_CREATE: 'GOAL_CREATE',
   GOAL_UPDATE: 'GOAL_UPDATE',
   GOAL_DELETE: 'GOAL_DELETE',
-  
+
   // Categories
   CATEGORY_CREATE: 'CATEGORY_CREATE',
   CATEGORY_UPDATE: 'CATEGORY_UPDATE',
   CATEGORY_DELETE: 'CATEGORY_DELETE',
+
+  // Investments
+  INVESTMENT_CREATE: 'INVESTMENT_CREATE',
+  INVESTMENT_UPDATE: 'INVESTMENT_UPDATE',
+  INVESTMENT_DELETE: 'INVESTMENT_DELETE',
+
+  // Assets
+  ASSET_CREATE: 'ASSET_CREATE',
+  ASSET_UPDATE: 'ASSET_UPDATE',
+  ASSET_DELETE: 'ASSET_DELETE',
+
+  // Budgets & Forecasts
+  BUDGET_UPDATE: 'BUDGET_UPDATE',
+  FORECAST_CREATE: 'FORECAST_CREATE',
+  FORECAST_DELETE: 'FORECAST_DELETE',
+  SUCCESSION_TRIGGER: 'SUCCESSION_TRIGGER',
+  SUCCESSION_EXECUTE: 'SUCCESSION_EXECUTE',
+  MULTI_SIG_VOTE: 'MULTI_SIG_VOTE',
+  MULTI_SIG_EXECUTE: 'MULTI_SIG_EXECUTE',
+  MONTE_CARLO_SIMULATION: 'MONTE_CARLO_SIMULATION',
+  RETIREMENT_PARAM_UPDATE: 'RETIREMENT_PARAM_UPDATE',
+  RISK_REBALANCED: 'RISK_REBALANCED',
+  ENTITY_CREATE: 'ENTITY_CREATE',
+  INTER_COMPANY_TRANSFER: 'INTER_COMPANY_TRANSFER',
+  COST_BASIS_ADJUSTMENT: 'COST_BASIS_ADJUSTMENT',
+  TAX_HARVEST_DETECTED: 'TAX_HARVEST_DETECTED',
+  ANOMALY_DETECTED: 'ANOMALY_DETECTED',
+  CIRCUIT_BREAKER_TRIPPED: 'CIRCUIT_BREAKER_TRIPPED',
+  RISK_PROFILE_UPDATED: 'RISK_PROFILE_UPDATED',
+  ASSET_SWAP: 'ASSET_SWAP',
+  TRIANGULAR_SWAP: 'TRIANGULAR_SWAP',
+  DEBT_ARBITRAGE_SHIFT: 'DEBT_ARBITRAGE_SHIFT',
+  REFINANCE_PROPOSED: 'REFINANCE_PROPOSED',
+  REFINANCE_SCAN_COMPLETED: 'REFINANCE_SCAN_COMPLETED',
+  DIVIDEND_SWEEP_SKIPPED: 'DIVIDEND_SWEEP_SKIPPED',
+  DIVIDEND_AUTO_REINVESTED: 'DIVIDEND_AUTO_REINVESTED',
+  TAX_LOT_ADJUSTED: 'TAX_LOT_ADJUSTED',
+  HARVEST_EXECUTED: 'HARVEST_EXECUTED',
+  SHIELD_ACTIVATED: 'SHIELD_ACTIVATED',
+  VAULT_LOCK_EXECUTED: 'VAULT_LOCK_EXECUTED',
+  ARBITRAGE_PROPOSED: 'ARBITRAGE_PROPOSED',
+  ARBITRAGE_EXECUTED: 'ARBITRAGE_EXECUTED',
+  WACC_RECALCULATED: 'WACC_RECALCULATED',
+  HEDGE_EXECUTED: 'HEDGE_EXECUTED',
+  SAFE_MODE_TRIGGERED: 'SAFE_MODE_TRIGGERED',
+  INTER_COMPANY_TRANSFER_EXECUTED: 'INTER_COMPANY_TRANSFER_EXECUTED',
+  CORPORATE_LEDGER_MUTATION: 'CORPORATE_LEDGER_MUTATION',
+  SUCCESSION_TRIGGERED: 'SUCCESSION_TRIGGERED',
+  WILL_SETTLED: 'WILL_SETTLED',
+  RESIDENCY_UPDATED: 'RESIDENCY_UPDATED',
+  TAX_WITHHELD: 'TAX_WITHHELD',
 };
+
 
 // Resource Types
 export const ResourceTypes = {
@@ -45,7 +101,17 @@ export const ResourceTypes = {
   GOAL: 'goal',
   CATEGORY: 'category',
   SESSION: 'session',
+  INVESTMENT: 'investment',
+  ASSET: 'asset',
+  PORTFOLIO: 'portfolio',
+  BUDGET: 'budget',
+  FORECAST: 'forecast',
+  REPLAY: 'replay',
+  FORENSIC: 'forensic',
+  SUCCESSION: 'succession',
+  ENTITY: 'entity'
 };
+
 
 /**
  * Log an audit event asynchronously
@@ -58,6 +124,8 @@ export const ResourceTypes = {
  * @param {string} params.status - 'success' or 'failure'
  * @param {string} params.ipAddress - Client IP address
  * @param {string} params.userAgent - Client user agent
+ * @param {boolean} params.useCompression - Whether to use compression (default: true)
+ * @param {string} params.tenantId - Tenant ID for compression context
  */
 export const logAuditEvent = async ({
   userId = null,
@@ -68,10 +136,11 @@ export const logAuditEvent = async ({
   status = 'success',
   ipAddress = null,
   userAgent = null,
+  useCompression = true,
+  tenantId = null,
 }) => {
   try {
-    // Perform async insert without blocking the main request
-    await db.insert(auditLogs).values({
+    const logEntry = {
       userId,
       action,
       resourceType,
@@ -80,10 +149,103 @@ export const logAuditEvent = async ({
       status,
       ipAddress,
       userAgent,
-    });
+      createdAt: new Date()
+    };
+
+    // Check if compression is enabled and should be used
+    if (useCompression && differentialLogCompression.compressionEnabled && tenantId) {
+      try {
+        // Compress the log entry
+        const compressionResult = await differentialLogCompression.compressLogEntry(logEntry, tenantId);
+
+        // Store compressed log in database
+        await db.execute(sql`
+          SELECT compress_audit_log(${tenantId}, ${JSON.stringify(logEntry)}, ${JSON.stringify(compressionResult.metadata)})
+        `);
+
+        logInfo('Audit log compressed and stored', {
+          tenantId,
+          compressionRatio: compressionResult.metadata.compressionRatio,
+          isDeltaEncoded: compressionResult.metadata.isDeltaEncoded
+        });
+
+        return;
+      } catch (compressionError) {
+        // Log compression failure but continue with uncompressed logging
+        logWarn('Audit log compression failed, falling back to uncompressed', {
+          error: compressionError.message,
+          tenantId
+        });
+      }
+    }
+
+    // Fallback to regular uncompressed logging
+    await db.insert(auditLogs).values(logEntry);
+
   } catch (error) {
     // Log error but don't throw - audit logging should not break main flow
     console.error('Audit logging failed:', error);
+  }
+};
+
+/**
+ * Convenience wrapper for logging from middleware
+ * @param {Object} req - Express request
+ * @param {Object} params - Audit parameters
+ */
+export const logAudit = async (req, params) => {
+  const clientInfo = getClientInfo(req);
+  return logAuditEvent({
+    ...params,
+    userId: params.userId || req.user?.id,
+    ipAddress: clientInfo.ipAddress,
+    userAgent: clientInfo.userAgent,
+    requestId: req.id || req.headers['x-request-id']
+  });
+};
+
+/**
+ * Log a state change delta for deterministic replay
+ * @param {Object} params - State delta parameters
+ */
+export const logStateDelta = async ({
+  userId,
+  resourceType,
+  resourceId,
+  operation,
+  beforeState,
+  afterState,
+  triggeredBy = 'user_action',
+  req = null
+}) => {
+  try {
+    const changedFields = operation === 'UPDATE'
+      ? Object.keys(afterState).filter(key => JSON.stringify(beforeState[key]) !== JSON.stringify(afterState[key]))
+      : [];
+
+    const checksum = crypto.createHash('sha256')
+      .update(JSON.stringify(afterState || {}))
+      .digest('hex');
+
+    const clientInfo = req ? getClientInfo(req) : {};
+
+    await db.insert(stateDeltas).values({
+      userId,
+      resourceType,
+      resourceId,
+      operation,
+      beforeState,
+      afterState,
+      changedFields,
+      triggeredBy,
+      ipAddress: clientInfo.ipAddress,
+      userAgent: clientInfo.userAgent,
+      requestId: req?.id || req?.headers?.['x-request-id'],
+      checksum,
+      createdAt: new Date()
+    });
+  } catch (error) {
+    console.error('State delta tracking failed:', error);
   }
 };
 
@@ -388,7 +550,7 @@ export const detectSuspiciousActivity = async (userId, options = {}) => {
   const alerts = [];
 
   // Check for excessive deletions
-  const deleteActions = recentLogs.filter(log => 
+  const deleteActions = recentLogs.filter(log =>
     log.action.includes('DELETE')
   );
   if (deleteActions.length >= deleteThreshold) {
@@ -404,7 +566,7 @@ export const detectSuspiciousActivity = async (userId, options = {}) => {
   }
 
   // Check for failed authentication attempts
-  const failedAuthActions = recentLogs.filter(log => 
+  const failedAuthActions = recentLogs.filter(log =>
     log.action === AuditActions.AUTH_LOGIN_FAILED
   );
   if (failedAuthActions.length >= failedAuthThreshold) {
@@ -420,7 +582,7 @@ export const detectSuspiciousActivity = async (userId, options = {}) => {
   }
 
   // Check for bulk updates
-  const updateActions = recentLogs.filter(log => 
+  const updateActions = recentLogs.filter(log =>
     log.action.includes('UPDATE')
   );
   if (updateActions.length >= bulkUpdateThreshold) {
@@ -495,7 +657,7 @@ export const getAuditAnalytics = async (options = {}) => {
   } = options;
 
   const conditions = [];
-  
+
   if (userId) conditions.push(eq(auditLogs.userId, userId));
   if (resourceType) conditions.push(eq(auditLogs.resourceType, resourceType));
   if (startDate) conditions.push(gte(auditLogs.performedAt, new Date(startDate)));
@@ -506,7 +668,7 @@ export const getAuditAnalytics = async (options = {}) => {
   const [logs, actionCounts, statusCounts] = await Promise.all([
     // Get all logs
     db.select().from(auditLogs).where(whereClause),
-    
+
     // Count by action
     db
       .select({
@@ -516,7 +678,7 @@ export const getAuditAnalytics = async (options = {}) => {
       .from(auditLogs)
       .where(whereClause)
       .groupBy(auditLogs.action),
-    
+
     // Count by status
     db
       .select({
@@ -531,7 +693,7 @@ export const getAuditAnalytics = async (options = {}) => {
   // Calculate statistics
   const uniqueUsers = new Set(logs.map(log => log.userId).filter(Boolean)).size;
   const uniqueIPs = new Set(logs.map(log => log.ipAddress).filter(Boolean)).size;
-  
+
   const hourlyDistribution = {};
   logs.forEach(log => {
     const hour = new Date(log.performedAt).getHours();
@@ -641,4 +803,6 @@ export default {
   getAuditAnalytics,
   verifyDeltaIntegrity,
   getResourceAuditHistory,
+  logAudit,
+  logStateDelta,
 };

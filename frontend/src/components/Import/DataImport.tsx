@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle, Download } from 'lucide-react';
+import { Upload, FileText, AlertCircle, CheckCircle, Download, Brain } from 'lucide-react';
 import Papa from 'papaparse';
 import { useAuth } from '../../hooks/useAuth';
 // import { useToast } from '../../context/ToastContext';
@@ -8,9 +8,12 @@ import { useAuth } from '../../hooks/useAuth';
 export const DataImport: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [categorizing, setCategorizing] = useState(false);
+  const [autoCategorize, setAutoCategorize] = useState(true);
   const [importResults, setImportResults] = useState<{ success: number; errors: string[] } | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryMapping, setCategoryMapping] = useState<Record<SpendingCategory, string>>({
+  const [categorizationResults, setCategorizationResults] = useState<{ applied: number; skipped: number } | null>(null);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categoryMapping, setCategoryMapping] = useState<Record<string, string>>({
     safe: '',
     impulsive: '',
     anxious: ''
@@ -146,6 +149,35 @@ export const DataImport: React.FC = () => {
             success: response.data.imported,
             errors: response.data.errorDetails || []
           });
+
+          // Auto-categorize imported expenses if enabled
+          if (response.data.imported > 0 && autoCategorize && response.data.expenseIds) {
+            setCategorizing(true);
+            try {
+              const categorizeResponse = await fetch('/api/expenses/categorize', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({
+                  expenseIds: response.data.expenseIds,
+                  autoApply: true
+                })
+              });
+
+              if (categorizeResponse.ok) {
+                const categorizeData = await categorizeResponse.json();
+                setCategorizationResults({
+                  applied: categorizeData.data.summary.applied,
+                  skipped: categorizeData.data.summary.skipped
+                });
+              }
+            } catch (categorizeError) {
+              console.error('Auto-categorization error:', categorizeError);
+            }
+            setCategorizing(false);
+          }
 
           if (response.data.imported > 0) {
             showToast(`Successfully imported ${response.data.imported} transactions`, 'success');
@@ -286,6 +318,17 @@ export const DataImport: React.FC = () => {
                   <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 mr-2" />
                   <span className="text-green-800 dark:text-green-200 font-medium">
                     Successfully imported {importResults.success} transactions
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {categorizationResults && (
+              <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4 mb-4">
+                <div className="flex items-center">
+                  <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400 mr-2" />
+                  <span className="text-purple-800 dark:text-purple-200 font-medium">
+                    AI categorization: {categorizationResults.applied} applied, {categorizationResults.skipped} skipped
                   </span>
                 </div>
               </div>
